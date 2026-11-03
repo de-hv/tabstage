@@ -1,6 +1,6 @@
 import { StatusEditor } from '@/components/StatusEditor';
 import { useStatuses } from '@/hooks/useStatuses';
-import { TITLE_SEPARATOR } from '@/lib/title';
+import { TITLE_SEPARATOR } from '@/lib/types';
 
 /** The options page: edits the list of statuses. */
 function App() {

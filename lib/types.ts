@@ -1,5 +1,8 @@
 import type { GroupColor } from './colors';
 
+/** Separates the group name from its status label in a group title. */
+export const TITLE_SEPARATOR = ' · ';
+
 /** Stable id of a status. It doesn't change when the status is renamed. */
 export type StatusId = string;
 

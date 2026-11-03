@@ -1,7 +1,6 @@
 import { storage } from '#imports';
 import type { GroupColor } from './colors';
-import { TITLE_SEPARATOR } from './title';
-import type { Status, StatusId } from './types';
+import { TITLE_SEPARATOR, type Status, type StatusId } from './types';
 
 export const DEFAULT_STATUSES: readonly Status[] = [
   { id: 'todo', label: 'To do', color: 'grey', order: 0 },

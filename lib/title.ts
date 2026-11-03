@@ -1,8 +1,5 @@
 import { findStatusByLabel } from './statuses';
-import type { ParsedTitle, Status } from './types';
-
-/** Separates the group name from its status label. */
-export const TITLE_SEPARATOR = ' · ';
+import { TITLE_SEPARATOR, type ParsedTitle, type Status } from './types';
 
 const TICKET_KEY = /[A-Z][A-Z0-9]+-\d+/;
 

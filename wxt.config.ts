@@ -2,10 +2,19 @@ import { defineConfig } from 'wxt';
 
 const GECKO_ID = 'tabstage@de-hv';
 const FIREFOX_MIN_VERSION = '140.0';
+/** `@wxt-dev/auto-icons` writes `icons/<size>.png` for each size. */
+const ICON_SIZES = [16, 32, 48, 96, 128];
+const ACTION_ICONS = Object.fromEntries(
+  [16, 32, 48].map((size) => [size, `icons/${size}.png`]),
+);
 
 // See https://wxt.dev/api/reference/wxt/interfaces/inlineconfig.html
 export default defineConfig({
-  modules: ['@wxt-dev/module-react'],
+  modules: ['@wxt-dev/module-react', '@wxt-dev/auto-icons'],
+  autoIcons: {
+    baseIconPath: 'assets/icon.svg',
+    sizes: ICON_SIZES,
+  },
   // WXT builds Firefox as MV2 by default; tabstage targets MV3 everywhere.
   manifestVersion: 3,
   manifest: ({ browser }) => {
@@ -17,6 +26,7 @@ export default defineConfig({
       // WXT adds `sidePanel` on Chrome MV3 and maps the side panel to
       // `sidebar_action` on Firefox, so it is not listed here.
       permissions: ['tabs', 'tabGroups', 'storage'],
+      action: { default_icon: ACTION_ICONS },
       commands: {
         _execute_action: {
           suggested_key: { default: 'Alt+Shift+K', mac: 'Command+Shift+K' },
