@@ -1,17 +1,17 @@
-import { GROUP_COLORS, type GroupColor } from '@/lib/colors';
+import { ACCENT_COLORS, type AccentColor } from '@/lib/colors';
 
 interface ColorSelectProps {
-  value: GroupColor;
-  onChange: (color: GroupColor) => void;
-  /** Names the group for screen readers, e.g. "Color of Dev". */
+  value: AccentColor;
+  onChange: (color: AccentColor) => void;
+  /** Names the group for screen readers, e.g. "Color of In dev". */
   label: string;
 }
 
-/** The 9 native tab group colors as swatches; one is checked. */
+/** The 10 accent colors as swatches; one is checked. */
 export function ColorSelect({ value, onChange, label }: ColorSelectProps) {
   return (
     <div className="color-select" role="radiogroup" aria-label={label}>
-      {GROUP_COLORS.map((color) => (
+      {ACCENT_COLORS.map((color) => (
         <button
           key={color}
           type="button"

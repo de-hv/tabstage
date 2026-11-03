@@ -22,14 +22,20 @@ export default defineConfig({
 
     return {
       name: 'Tabstage',
-      description: 'Jira-like statuses for native tab groups.',
+      description: 'Editable statuses for the tabs you choose, in a tiled side panel.',
       // WXT adds `sidePanel` on Chrome MV3 and maps the side panel to
-      // `sidebar_action` on Firefox, so it is not listed here.
-      permissions: ['tabs', 'tabGroups', 'storage'],
-      action: { default_icon: ACTION_ICONS },
+      // `sidebar_action` on Firefox, so it is not listed here. Firefox names
+      // the context menu permission `menus` (with the `tab` context).
+      permissions: ['tabs', 'storage', isFirefox ? 'menus' : 'contextMenus'],
+      // Requested only by the opt-in cleanup of v1 titles in Options. Nothing
+      // else touches native tab groups.
+      optional_permissions: ['tabGroups'],
+      // No popup: the icon opens and closes the panel.
+      action: { default_icon: ACTION_ICONS, default_title: 'Toggle Tabstage' },
       commands: {
-        _execute_action: {
+        'open-palette': {
           suggested_key: { default: 'Alt+Shift+K', mac: 'Command+Shift+K' },
+          description: 'Open the Tabstage panel with the command palette',
         },
         ...(isFirefox
           ? {

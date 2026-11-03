@@ -1,184 +1,111 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { FakeTabGroups } from '../../__mocks__/fake-tab-groups';
-import { TabGroupBuilder } from '../../__mocks__/tab-group.builder';
+import { BoardMother } from '../../__mocks__/board.mother';
+import { FakeTabs } from '../../__mocks__/fake-tabs';
 import { TabBuilder } from '../../__mocks__/tab.builder';
-import { statusBackupItem } from '../../lib/backup';
-import { setStatus } from '../../lib/groups';
-import {
-  getStatuses,
-  removeStatus,
-  renameStatus,
-  saveStatuses,
-} from '../../lib/statuses';
+import { boardItem, getBoard } from '../../lib/board';
+import { paletteRequestItem } from '../../lib/panel';
+import { renameStatus, saveStatuses, getStatuses } from '../../lib/statuses';
 import background from './index';
 
-type SidePanel = { open: (options: { windowId: number }) => Promise<void> };
+let fake: FakeTabs;
 
-const api = fakeBrowser as unknown as { sidePanel: SidePanel | undefined };
-const originalSidePanel = api.sidePanel;
-let fake: FakeTabGroups;
+/** Lets storage watchers and queued menu rebuilds finish. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-beforeEach(() => {
+beforeEach(async () => {
   fakeBrowser.reset();
-  fake = FakeTabGroups.install().with({
-    groups: [
-      new TabGroupBuilder().with({ id: 1, title: 'CAR-6124 · STG', color: 'orange' }).build(),
-      new TabGroupBuilder().with({ id: 2, title: 'CAR-6100 · Dev', color: 'cyan' }).build(),
-    ],
+  vi.stubEnv('BROWSER', 'chrome');
+  fake = FakeTabs.install().with({
+    tabs: [new TabBuilder().with({ id: 1, url: 'https://jira.example.com/browse/CAR-6124' }).build()],
   });
+  await boardItem.setValue(BoardMother.sample());
   background.main();
+  await settle();
 });
 
 afterEach(() => {
   fake.uninstall();
-  api.sidePanel = originalSidePanel;
+  vi.unstubAllEnvs();
 });
 
 describe('background', () => {
-  describe('tab group events', () => {
-    it.each(['onCreated', 'onUpdated'] as const)(
-      'saves the status of a group on %s',
-      async (event) => {
-        await fake[event].trigger(fake.group(1)!);
+  it('relinks the board to the open tabs on start', async () => {
+    expect((await getBoard()).items.map((item) => item.tabId)).toEqual([1, null, null, null]);
+  });
 
-        expect(await statusBackupItem.getValue()).toEqual({ 'CAR-6124': 'stg' });
-      },
+  it('builds the page menu and rebuilds it when a status changes', async () => {
+    expect(fake.menus.map((entry) => entry.title)).toContain('In progress');
+
+    await saveStatuses(renameStatus(await getStatuses(), 'in-progress', 'Doing'));
+    await settle();
+
+    expect(fake.menus.map((entry) => entry.title)).toContain('Doing');
+  });
+
+  it('rebuilds the page menu when a group is renamed', async () => {
+    await boardItem.setValue({
+      ...BoardMother.sample(),
+      groups: [{ ...BoardMother.sample().groups[0]!, name: 'CAR-7000' }],
+    });
+    await settle();
+
+    expect(fake.menus.map((entry) => entry.title)).toContain('CAR-7000 (In progress)');
+  });
+
+  it('adds the page tab from the menu', async () => {
+    await fake.onMenuClicked.trigger(
+      { menuItemId: 'tabstage-status:done' },
+      new TabBuilder().with({ id: 5, url: 'https://new.test' }).build(),
     );
+    await settle();
 
-    it('adds the saved status back to a hand-edited title, once', async () => {
-      await statusBackupItem.setValue({ 'CAR-6124': 'stg' });
-      const group = fake.group(1)!;
-      group.title = 'CAR-6124 hotfix';
-      group.color = 'grey';
-
-      await fake.onUpdated.trigger({ ...group });
-
-      expect(fake.group(1)).toMatchObject({
-        title: 'CAR-6124 hotfix · STG',
-        color: 'orange',
-      });
-      expect(fake.updates).toHaveLength(1);
-    });
-
-    it('restores the status of a re-created ticket group', async () => {
-      await statusBackupItem.setValue({ 'CAR-6115': 'review' });
-      fake.with({ tabs: [new TabBuilder().with({ id: 5 }).build()] });
-
-      const groupId = await fakeBrowser.tabs.group({ tabIds: 5 });
-      await fakeBrowser.tabGroups.update(groupId, { title: 'CAR-6115' });
-
-      expect(fake.group(groupId)).toMatchObject({
-        title: 'CAR-6115 · Review',
-        color: 'purple',
-      });
-    });
-
-    it('ignores a manual color change', async () => {
-      await fakeBrowser.tabGroups.update(1, { color: 'red' });
-
-      expect(fake.group(1)).toMatchObject({ title: 'CAR-6124 · STG', color: 'red' });
-      expect(fake.updates).toHaveLength(1);
-    });
-
-    it('does not loop on its own status updates', async () => {
-      await setStatus(1, 'done');
-
-      expect(fake.updates).toHaveLength(1);
-      expect(await statusBackupItem.getValue()).toEqual({ 'CAR-6124': 'done' });
-    });
-
-    it('does not add back a status cleared with setStatus', async () => {
-      await statusBackupItem.setValue({ 'CAR-6124': 'stg' });
-
-      await setStatus(1, null);
-
-      expect(fake.group(1)?.title).toBe('CAR-6124');
-      expect(fake.updates).toHaveLength(1);
-    });
-
-    it('logs and swallows errors', async () => {
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      vi.spyOn(fakeBrowser.tabGroups, 'update').mockRejectedValue(new Error('gone'));
-      await statusBackupItem.setValue({ 'CAR-6124': 'stg' });
-
-      await fake.onUpdated.trigger({ ...fake.group(1)!, title: 'CAR-6124' });
-
-      expect(warn).toHaveBeenCalledWith(
-        'Tabstage: could not sync group',
-        1,
-        expect.any(Error),
-      );
-    });
+    expect((await getBoard()).items.at(-1)).toMatchObject({ tabId: 5, statusId: 'done' });
   });
 
-  describe('status list changes', () => {
-    it('rewrites the titles of a renamed status and keeps its color', async () => {
-      await saveStatuses(renameStatus(await getStatuses(), 'stg', 'Staging'));
-
-      await vi.waitFor(() => {
-        expect(fake.group(1)).toMatchObject({
-          title: 'CAR-6124 · Staging',
-          color: 'orange',
-        });
-      });
-      expect(fake.group(2)?.title).toBe('CAR-6100 · Dev');
-    });
-
-    it('moves the groups of a deleted status to "No status" for good', async () => {
-      await fake.onUpdated.trigger(fake.group(1)!);
-
-      await saveStatuses(removeStatus(await getStatuses(), 'stg'));
-
-      await vi.waitFor(() => {
-        expect(fake.group(1)?.title).toBe('CAR-6124');
-      });
-      expect(fake.updates).toHaveLength(1);
-      expect(await statusBackupItem.getValue()).toEqual({});
-    });
+  it('makes the toolbar icon toggle the side panel on Chrome', () => {
+    expect(fake.sidePanel.setPanelBehavior).toHaveBeenCalledWith({ openPanelOnActionClick: true });
   });
 
-  describe('toggle-panel command', () => {
-    it('does nothing, without throwing, when browser.sidePanel is undefined', async () => {
-      api.sidePanel = undefined;
-      const tab = new TabBuilder().with({ windowId: 3 }).build();
+  it('opens the side panel on toggle-panel', async () => {
+    await fake.onCommand.trigger('toggle-panel', new TabBuilder().with({ windowId: 4 }).build());
 
-      await expect(fake.onCommand.trigger('toggle-panel', tab)).resolves.toBeUndefined();
-    });
+    expect(fake.sidePanel.open).toHaveBeenCalledWith({ windowId: 4 });
+  });
 
-    it("opens the side panel in the tab's window", async () => {
-      const open = vi.fn<SidePanel['open']>().mockResolvedValue(undefined);
-      api.sidePanel = { open };
+  it('opens the panel and requests the palette on open-palette', async () => {
+    await fake.onCommand.trigger('open-palette', new TabBuilder().with({ windowId: 4 }).build());
+    await settle();
 
-      await fake.onCommand.trigger(
-        'toggle-panel',
-        new TabBuilder().with({ windowId: 3 }).build(),
-      );
+    expect(fake.sidePanel.open).toHaveBeenCalledWith({ windowId: 4 });
+    expect(await paletteRequestItem.getValue()).toEqual(expect.any(Number));
+  });
 
-      await vi.waitFor(() => {
-        expect(open).toHaveBeenCalledWith({ windowId: 3 });
-      });
-    });
+  it('ignores other commands', async () => {
+    await fake.onCommand.trigger('other', new TabBuilder().build());
 
-    it('falls back to the current window when there is no tab', async () => {
-      const open = vi.fn<SidePanel['open']>().mockResolvedValue(undefined);
-      api.sidePanel = { open };
-      const current = await fakeBrowser.windows.create({ focused: true });
+    expect(fake.sidePanel.open).not.toHaveBeenCalled();
+  });
 
-      await fake.onCommand.trigger('toggle-panel', undefined);
+  it('never calls tabGroups.*, tabs.group or tabs.ungroup', async () => {
+    await fakeBrowser.tabs.create({ url: 'https://docs.example.com/guide' });
+    await fake.changeTab(1, { title: 'Renamed' });
+    await fake.onMenuClicked.trigger({ menuItemId: 'tabstage-group:group-1' }, fake.tab(1));
+    await fake.closeTab(1);
+    await fake.onCommand.trigger('toggle-panel', undefined);
+    await settle();
 
-      await vi.waitFor(() => {
-        expect(open).toHaveBeenCalledWith({ windowId: current?.id });
-      });
-    });
+    expect(fake.forbidden).toEqual([]);
+  });
+});
 
-    it('ignores other commands', async () => {
-      const open = vi.fn<SidePanel['open']>();
-      api.sidePanel = { open };
+describe('background on Firefox', () => {
+  it('toggles the sidebar from the toolbar icon', async () => {
+    vi.stubEnv('BROWSER', 'firefox');
+    background.main();
 
-      await fake.onCommand.trigger('something-else', new TabBuilder().build());
+    await fake.onActionClicked.trigger(new TabBuilder().build());
 
-      expect(open).not.toHaveBeenCalled();
-    });
+    expect(fake.sidebarAction.toggle).toHaveBeenCalledOnce();
   });
 });

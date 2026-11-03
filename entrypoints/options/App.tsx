@@ -1,23 +1,29 @@
+import { BackupPanel } from '@/components/BackupPanel';
+import { CleanupPanel } from '@/components/CleanupPanel';
 import { StatusEditor } from '@/components/StatusEditor';
+import { useBoard } from '@/hooks/useBoard';
 import { useStatuses } from '@/hooks/useStatuses';
-import { TITLE_SEPARATOR } from '@/lib/types';
 
-/** The options page: edits the list of statuses. */
+/** The options page: statuses, backup and the opt-in v1 cleanup. */
 function App() {
   const statuses = useStatuses();
+  const board = useBoard();
 
   return (
     <main className="options">
       <header className="options__header">
         <h1>Statuses</h1>
         <p className="options__intro">
-          Each tab group shows its status at the end of its title, as in{' '}
-          <code>CAR-6124{TITLE_SEPARATOR}STG</code>, and takes the status color. Renaming,
-          recoloring or deleting a status updates every group that uses it.
+          Add, rename, recolor, reorder or delete statuses. Any tab or group can go to any status; there
+          is no fixed flow. Deleting a status with tabs asks where to move them.
         </p>
       </header>
-      {statuses ? (
-        <StatusEditor statuses={statuses} />
+      {statuses && board ? (
+        <>
+          <StatusEditor statuses={statuses} board={board} />
+          <BackupPanel statuses={statuses} board={board} />
+          <CleanupPanel statuses={statuses} />
+        </>
       ) : (
         <p className="options__message">Loading statuses…</p>
       )}

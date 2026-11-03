@@ -1,53 +1,45 @@
 import { browser, type Browser } from '#imports';
-import { remember, restore } from '@/lib/backup';
-import { migrateTitles } from '@/lib/migrate';
-import { getStatuses, statusesItem } from '@/lib/statuses';
+import { boardItem } from '@/lib/board';
+import { handleMenuClick, menusApi, rebuildMenus } from '@/lib/menus';
+import { enableActionToggle, openPalette, openPanel } from '@/lib/panel';
+import { statusesItem } from '@/lib/statuses';
+import { registerTracker } from '@/lib/tracker';
+import type { Board } from '@/lib/types';
 
 const TOGGLE_PANEL = 'toggle-panel';
+const OPEN_PALETTE = 'open-palette';
 
-/**
- * Saves the group's status, or adds a saved one back to a title with none.
- * Both write only on change, so the extension's own updates don't loop.
- */
-async function syncGroup(group: Browser.tabGroups.TabGroup): Promise<void> {
-  try {
-    const statuses = await getStatuses();
-    if (!(await restore(group, statuses))) await remember(group, statuses);
-  } catch (error) {
-    console.warn('Tabstage: could not sync group', group.id, error);
-  }
+/** What the page menu shows of the board: the groups' names, statuses and order. */
+function menuSignature(board: Board | null): string {
+  return JSON.stringify(
+    (board?.groups ?? []).map(({ id, name, statusId, order }) => [id, name, statusId, order]),
+  );
+}
+
+function warn(what: string) {
+  return (error: unknown) => console.warn(`Tabstage: could not ${what}`, error);
 }
 
 /**
- * Opens the side panel in the tab's window. Chrome only: Firefox opens the
- * sidebar with `_execute_sidebar_action`, and `browser.sidePanel` is undefined
- * there and on Chrome until a side panel entrypoint exists.
+ * Tracks the added tabs, builds the page menu and opens the panel. It never
+ * reads or changes native tab groups.
  */
-async function openSidePanel(tab: Browser.tabs.Tab | undefined): Promise<void> {
-  const sidePanel = browser.sidePanel as typeof browser.sidePanel | undefined;
-  if (!sidePanel?.open) return;
-  // Uses the tab's window first: an extra await could lose the user gesture
-  // that `sidePanel.open` needs.
-  const windowId = tab?.windowId ?? (await browser.windows.getCurrent()).id;
-  if (windowId === undefined) return;
-  try {
-    await sidePanel.open({ windowId });
-  } catch (error) {
-    console.warn('Tabstage: could not open the side panel', error);
-  }
-}
-
 export default defineBackground(() => {
-  browser.tabGroups.onCreated.addListener(syncGroup);
-  browser.tabGroups.onUpdated.addListener(syncGroup);
+  void registerTracker();
+  enableActionToggle();
 
-  statusesItem.watch((next, prev) => {
-    migrateTitles(prev, next).catch((error: unknown) => {
-      console.warn('Tabstage: could not migrate group titles', error);
-    });
+  void rebuildMenus();
+  statusesItem.watch(() => void rebuildMenus());
+  boardItem.watch((next, prev) => {
+    if (menuSignature(next) !== menuSignature(prev)) void rebuildMenus();
+  });
+  menusApi()?.onClicked.addListener((info, tab) => {
+    handleMenuClick(info.menuItemId, tab).catch(warn('add the tab'));
   });
 
-  browser.commands.onCommand.addListener((command, tab) => {
-    if (command === TOGGLE_PANEL) void openSidePanel(tab);
+  browser.commands.onCommand.addListener((command: string, tab?: Browser.tabs.Tab) => {
+    // Both open calls run before any await, while the shortcut's gesture holds.
+    if (command === TOGGLE_PANEL) openPanel(tab?.windowId).catch(warn('open the side panel'));
+    if (command === OPEN_PALETTE) openPalette(tab?.windowId).catch(warn('open the palette'));
   });
 });

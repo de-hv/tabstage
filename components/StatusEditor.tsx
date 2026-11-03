@@ -1,56 +1,37 @@
 import { useState, type FormEvent } from 'react';
-import { forgetStatuses } from '@/lib/backup';
-import type { GroupColor } from '@/lib/colors';
-import { listGroups } from '@/lib/groups';
-import { NO_STATUS_LABEL } from '@/lib/lanes';
-import {
-  DEFAULT_STATUSES,
-  addStatus,
-  moveStatus,
-  recolorStatus,
-  removeStatus,
-  renameStatus,
-  resetStatuses,
-  saveStatuses,
-  validateStatuses,
-  type StatusError,
-} from '@/lib/statuses';
-import type { Status, StatusId } from '@/lib/types';
+import * as actions from '@/lib/actions';
+import { countInStatus, type DeleteStatusChoice } from '@/lib/board';
+import type { AccentColor } from '@/lib/colors';
+import { DEFAULT_STATUSES, type StatusError } from '@/lib/statuses';
+import type { Board, Status } from '@/lib/types';
 import { ColorSelect } from './ColorSelect';
+import { DeleteStatusDialog } from './DeleteStatusDialog';
 import { StatusRow } from './StatusRow';
 
 interface StatusEditorProps {
   statuses: readonly Status[];
-}
-
-interface PendingDelete {
-  id: StatusId;
-  /** Groups that use the status, or `null` when they couldn't be counted. */
-  count: number | null;
+  board: Board;
 }
 
 const SAVE_FAILED: StatusError = { statusId: null, message: 'Could not save the statuses.' };
 
 /**
  * Edits the status list: add, rename, recolor, reorder, delete and restore
- * the defaults. Every change is validated, then saved; the background
- * rewrites the group titles.
+ * the defaults. Deleting a status with tabs asks where they go, as in the
+ * panel. Every change is validated, then saved.
  */
-export function StatusEditor({ statuses }: StatusEditorProps) {
+export function StatusEditor({ statuses, board }: StatusEditorProps) {
   const [errors, setErrors] = useState<StatusError[]>([]);
-  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [deleting, setDeleting] = useState<Status | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [newLabel, setNewLabel] = useState('');
-  const [newColor, setNewColor] = useState<GroupColor>('grey');
+  const [newColor, setNewColor] = useState<AccentColor>('lavender');
 
-  const save = async (next: Status[], removed: StatusId[] = []): Promise<boolean> => {
-    const found = validateStatuses(next);
-    setErrors(found);
-    if (found.length > 0) return false;
+  const run = async (work: Promise<StatusError[] | void>): Promise<boolean> => {
     try {
-      await saveStatuses(next);
-      await forgetStatuses(removed);
-      return true;
+      const found = (await work) ?? [];
+      setErrors(found);
+      return found.length === 0;
     } catch (error) {
       console.warn('Tabstage: could not save the statuses', error);
       setErrors([SAVE_FAILED]);
@@ -60,44 +41,32 @@ export function StatusEditor({ statuses }: StatusEditorProps) {
 
   const add = async (event: FormEvent) => {
     event.preventDefault();
-    if (await save(addStatus(statuses, { label: newLabel.trim(), color: newColor }))) {
-      setNewLabel('');
+    const label = newLabel.trim();
+    if (!label) {
+      setErrors([{ statusId: null, message: 'A status needs a label.' }]);
+      return;
+    }
+    if (await run(actions.addNewStatus({ label, color: newColor }))) setNewLabel('');
+  };
+
+  const requestDelete = (status: Status) => {
+    if (countInStatus(board, status.id) === 0) {
+      void run(actions.deleteStatusAndItems(status.id, { remove: true }));
+    } else {
+      setDeleting(status);
     }
   };
 
-  const requestDelete = async (id: StatusId) => {
-    let count: number | null;
-    try {
-      const groups = await listGroups(statuses);
-      count = groups.filter((group) => group.statusId === id).length;
-    } catch (error) {
-      console.warn('Tabstage: could not count the groups', error);
-      count = null;
-    }
-    if (count === 0) await remove(id);
-    else setPendingDelete({ id, count });
+  const confirmDelete = (choice: DeleteStatusChoice) => {
+    const status = deleting!;
+    setDeleting(null);
+    void run(actions.deleteStatusAndItems(status.id, choice));
   };
 
-  const remove = async (id: StatusId) => {
-    setPendingDelete(null);
-    await save(removeStatus(statuses, id), [id]);
-  };
-
-  const reset = async () => {
+  const reset = () => {
     setConfirmReset(false);
-    setErrors([]);
-    const defaultIds = new Set(DEFAULT_STATUSES.map((status) => status.id));
-    try {
-      await resetStatuses();
-      await forgetStatuses(statuses.map((s) => s.id).filter((id) => !defaultIds.has(id)));
-    } catch (error) {
-      console.warn('Tabstage: could not restore the defaults', error);
-      setErrors([SAVE_FAILED]);
-    }
+    void run(actions.restoreDefaultStatuses());
   };
-
-  const listIds = new Set(statuses.map((status) => status.id));
-  const addInvalid = errors.some((error) => error.statusId && !listIds.has(error.statusId));
 
   return (
     <section className="editor" aria-label="Statuses">
@@ -114,17 +83,15 @@ export function StatusEditor({ statuses }: StatusEditorProps) {
           <StatusRow
             key={status.id}
             status={status}
+            count={countInStatus(board, status.id)}
             isFirst={index === 0}
             isLast={index === statuses.length - 1}
             canDelete={statuses.length > 1}
-            pendingDeleteCount={pendingDelete?.id === status.id ? pendingDelete.count : undefined}
             invalid={errors.some((error) => error.statusId === status.id)}
-            onRename={(label) => void save(renameStatus(statuses, status.id, label))}
-            onRecolor={(color) => void save(recolorStatus(statuses, status.id, color))}
-            onMove={(offset) => void save(moveStatus(statuses, status.id, index + offset))}
-            onDelete={() => void requestDelete(status.id)}
-            onConfirmDelete={() => void remove(status.id)}
-            onCancelDelete={() => setPendingDelete(null)}
+            onRename={(label) => void run(actions.renameStatusLabel(status.id, label))}
+            onRecolor={(color) => void run(actions.setStatusColor(status.id, color))}
+            onMove={(offset) => void run(actions.shiftStatus(status.id, offset))}
+            onDelete={() => requestDelete(status)}
           />
         ))}
       </ol>
@@ -133,7 +100,6 @@ export function StatusEditor({ statuses }: StatusEditorProps) {
         <input
           className="editor__add-label"
           aria-label="New status label"
-          aria-invalid={addInvalid || undefined}
           placeholder="New status"
           value={newLabel}
           onChange={(event) => setNewLabel(event.target.value)}
@@ -148,10 +114,10 @@ export function StatusEditor({ statuses }: StatusEditorProps) {
         {confirmReset ? (
           <div className="confirm" role="alertdialog" aria-label="Restore defaults?">
             <p>
-              Replace your statuses with the {DEFAULT_STATUSES.length} defaults? Groups whose
-              status is removed move to “{NO_STATUS_LABEL}”.
+              Replace your statuses with the {DEFAULT_STATUSES.length} defaults? Tabs in a status
+              that goes away move to “{DEFAULT_STATUSES[0]!.label}”.
             </p>
-            <button type="button" className="button button--danger" onClick={() => void reset()}>
+            <button type="button" className="button button--danger" onClick={reset}>
               Restore
             </button>
             <button type="button" className="button" onClick={() => setConfirmReset(false)}>
@@ -164,6 +130,16 @@ export function StatusEditor({ statuses }: StatusEditorProps) {
           </button>
         )}
       </footer>
+
+      {deleting && (
+        <DeleteStatusDialog
+          status={deleting}
+          count={countInStatus(board, deleting.id)}
+          statuses={statuses}
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleting(null)}
+        />
+      )}
     </section>
   );
 }

@@ -1,32 +1,63 @@
 import { storage } from '#imports';
-import type { GroupColor } from './colors';
-import { TITLE_SEPARATOR, type Status, type StatusId } from './types';
+import { V1_COLOR_TO_ACCENT, isAccentColor, type AccentColor } from './colors';
+import type { Status, StatusId } from './types';
 
 export const DEFAULT_STATUSES: readonly Status[] = [
-  { id: 'todo', label: 'To do', color: 'grey', order: 0 },
+  { id: 'todo', label: 'To do', color: 'lavender', order: 0 },
   { id: 'in-progress', label: 'In progress', color: 'blue', order: 1 },
-  { id: 'review', label: 'Review', color: 'purple', order: 2 },
-  { id: 'dev', label: 'Dev', color: 'cyan', order: 3 },
-  { id: 'test', label: 'Test', color: 'yellow', order: 4 },
-  { id: 'stg', label: 'STG', color: 'orange', order: 5 },
-  { id: 'prod', label: 'PROD', color: 'pink', order: 6 },
-  { id: 'done', label: 'Done', color: 'green', order: 7 },
+  { id: 'in-review', label: 'In review', color: 'mauve', order: 2 },
+  { id: 'in-dev', label: 'In dev', color: 'peach', order: 3 },
+  { id: 'done', label: 'Done', color: 'green', order: 4 },
 ];
 
-/** The configured statuses, synced across the user's browsers. */
-export const statusesItem = storage.defineItem<Status[]>('sync:statuses', {
-  fallback: copyDefaults(),
-});
+/** The ids of the v1 default statuses, used to spot an untouched v1 list. */
+export const V1_DEFAULT_IDS = ['todo', 'in-progress', 'review', 'dev', 'test', 'stg', 'prod', 'done'];
+
+/** The v1 default labels; the opt-in cleanup strips them from native titles. */
+export const V1_DEFAULT_LABELS = ['To do', 'In progress', 'Review', 'Dev', 'Test', 'STG', 'PROD', 'Done'];
 
 function copyDefaults(): Status[] {
   return DEFAULT_STATUSES.map((status) => ({ ...status }));
 }
 
-/** Sorts by `order` and renumbers from 0, returning new objects. */
-function normalize(statuses: readonly Status[]): Status[] {
+function toAccent(color: unknown): AccentColor {
+  if (isAccentColor(color)) return color;
+  return (typeof color === 'string' && V1_COLOR_TO_ACCENT[color]) || 'lavender';
+}
+
+/**
+ * Turns the v1 list (native group colors) into v2: an untouched v1 default
+ * list becomes the new defaults; a customized one keeps its statuses and
+ * gets the closest accent for each color.
+ */
+export function migrateV1Statuses(stored: unknown): Status[] {
+  if (!Array.isArray(stored) || stored.length === 0) return copyDefaults();
+  const list = stored as Status[];
+  const ids = list.map((status) => status.id);
+  const untouched =
+    ids.length === V1_DEFAULT_IDS.length && V1_DEFAULT_IDS.every((id) => ids.includes(id));
+  if (untouched) return copyDefaults();
+  return normalizeStatuses(list);
+}
+
+/**
+ * The configured statuses, synced across the user's browsers. Version 2
+ * moved from native group colors to the accent palette.
+ */
+export const statusesItem = storage.defineItem<Status[]>('sync:statuses', {
+  fallback: copyDefaults(),
+  version: 2,
+  migrations: { 2: migrateV1Statuses },
+});
+
+/**
+ * Sorts by `order`, renumbers from 0 and fixes any color that is not an
+ * accent (a browser still on v1 can sync one in). Returns new objects.
+ */
+export function normalizeStatuses(statuses: readonly Status[]): Status[] {
   return [...statuses]
     .sort((a, b) => a.order - b.order)
-    .map((status, index) => ({ ...status, order: index }));
+    .map((status, index) => ({ ...status, color: toAccent(status.color), order: index }));
 }
 
 function slugify(label: string): string {
@@ -46,11 +77,11 @@ function uniqueId(label: string, statuses: readonly Status[]): StatusId {
 }
 
 export async function getStatuses(): Promise<Status[]> {
-  return normalize(await statusesItem.getValue());
+  return normalizeStatuses(await statusesItem.getValue());
 }
 
 export async function saveStatuses(statuses: readonly Status[]): Promise<void> {
-  await statusesItem.setValue(normalize(statuses));
+  await statusesItem.setValue(normalizeStatuses(statuses));
 }
 
 /** Stores the default statuses again. */
@@ -58,56 +89,45 @@ export async function resetStatuses(): Promise<void> {
   await statusesItem.setValue(copyDefaults());
 }
 
-/** Adds a status at the end of the list, with an id made from its label. */
+/**
+ * Adds a status with an id made from its label, at the end of the list or
+ * right after `afterId`.
+ */
 export function addStatus(
   statuses: readonly Status[],
   { label, color }: Pick<Status, 'label' | 'color'>,
+  afterId?: StatusId,
 ): Status[] {
-  const list = normalize(statuses);
-  return [
-    ...list,
-    { id: uniqueId(label, list), label, color, order: list.length },
-  ];
+  const list = normalizeStatuses(statuses);
+  const added: Status = { id: uniqueId(label, list), label, color, order: list.length };
+  const at = afterId === undefined ? -1 : list.findIndex((status) => status.id === afterId);
+  if (at === -1) return [...list, added];
+  return moveStatus([...list, added], added.id, at + 1);
 }
 
-export function removeStatus(
-  statuses: readonly Status[],
-  id: StatusId,
-): Status[] {
-  return normalize(statuses.filter((status) => status.id !== id));
+export function removeStatus(statuses: readonly Status[], id: StatusId): Status[] {
+  return normalizeStatuses(statuses.filter((status) => status.id !== id));
 }
 
-export function renameStatus(
-  statuses: readonly Status[],
-  id: StatusId,
-  label: string,
-): Status[] {
-  return normalize(
-    statuses.map((status) =>
-      status.id === id ? { ...status, label } : status,
-    ),
+export function renameStatus(statuses: readonly Status[], id: StatusId, label: string): Status[] {
+  return normalizeStatuses(
+    statuses.map((status) => (status.id === id ? { ...status, label } : status)),
   );
 }
 
 export function recolorStatus(
   statuses: readonly Status[],
   id: StatusId,
-  color: GroupColor,
+  color: AccentColor,
 ): Status[] {
-  return normalize(
-    statuses.map((status) =>
-      status.id === id ? { ...status, color } : status,
-    ),
+  return normalizeStatuses(
+    statuses.map((status) => (status.id === id ? { ...status, color } : status)),
   );
 }
 
 /** Moves a status to `toIndex`, clamped to the list bounds. */
-export function moveStatus(
-  statuses: readonly Status[],
-  id: StatusId,
-  toIndex: number,
-): Status[] {
-  const list = normalize(statuses);
+export function moveStatus(statuses: readonly Status[], id: StatusId, toIndex: number): Status[] {
+  const list = normalizeStatuses(statuses);
   const moved = list.find((status) => status.id === id);
   if (!moved) return list;
   const rest = list.filter((status) => status !== moved);
@@ -132,10 +152,9 @@ export interface StatusError {
 }
 
 /**
- * Checks a list before it is saved: at least one status, and every label
- * non-empty, unique ignoring case and free of the title separator. Every
- * status that shares a label gets an error. The list helpers above don't
- * validate, so this is the only guard. Returns no errors for a valid list.
+ * Checks a list before it is saved: at least one status, every label
+ * non-empty and unique ignoring case, every color an accent. Every status
+ * that shares a label gets an error. Returns no errors for a valid list.
  */
 export function validateStatuses(statuses: readonly Status[]): StatusError[] {
   if (statuses.length === 0) {
@@ -149,20 +168,17 @@ export function validateStatuses(statuses: readonly Status[]): StatusError[] {
   }
 
   const errors: StatusError[] = [];
-  for (const { id, label } of statuses) {
+  for (const { id, label, color } of statuses) {
     const trimmed = label.trim();
     if (!trimmed) {
       errors.push({ statusId: id, message: 'A status needs a label.' });
-    } else if (label.includes(TITLE_SEPARATOR)) {
-      errors.push({
-        statusId: id,
-        message: `"${trimmed}" can't contain "${TITLE_SEPARATOR.trim()}" between spaces: it separates the status in group titles.`,
-      });
     } else if ((count.get(trimmed.toLowerCase()) ?? 0) > 1) {
       errors.push({
         statusId: id,
         message: `"${trimmed}" is used by more than one status (case is ignored).`,
       });
+    } else if (!isAccentColor(color)) {
+      errors.push({ statusId: id, message: `"${trimmed}" has an unknown color.` });
     }
   }
   return errors;

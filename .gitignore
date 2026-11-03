@@ -154,3 +154,4 @@ stats.html
 stats-*.json
 web-ext.config.ts
 web-ext-artifacts
+.DS_Store

@@ -10,7 +10,7 @@ interface PaletteInputProps {
   activeId?: string;
 }
 
-/** The palette's command box. It has focus as soon as the popup opens. */
+/** The palette's command box. It has focus as soon as the palette opens. */
 export function PaletteInput({ value, onChange, onKeyDown, listId, activeId }: PaletteInputProps) {
   return (
     <input
@@ -22,7 +22,7 @@ export function PaletteInput({ value, onChange, onKeyDown, listId, activeId }: P
       aria-controls={listId}
       aria-activedescendant={activeId}
       aria-autocomplete="list"
-      placeholder="Search groups and tabs, or type “6115 dev”"
+      placeholder="Search, “6115 dev”, “done” or “add”"
       value={value}
       autoFocus
       autoComplete="off"

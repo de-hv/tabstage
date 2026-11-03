@@ -1,10 +1,6 @@
 import { useEffect, useState } from 'react';
-import { getStatuses, statusesItem } from '@/lib/statuses';
+import { getStatuses, normalizeStatuses, statusesItem } from '@/lib/statuses';
 import type { Status } from '@/lib/types';
-
-function sortByOrder(statuses: readonly Status[]): Status[] {
-  return [...statuses].sort((a, b) => a.order - b.order);
-}
 
 /**
  * The configured statuses, in order, kept in sync with `sync:statuses`.
@@ -23,7 +19,7 @@ export function useStatuses(): Status[] | undefined {
         console.warn('Tabstage: could not read statuses', error);
       });
     const unwatch = statusesItem.watch((next) => {
-      if (active) setStatuses(sortByOrder(next));
+      if (active) setStatuses(normalizeStatuses(next ?? []));
     });
     return () => {
       active = false;

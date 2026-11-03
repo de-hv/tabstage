@@ -1,8 +1,8 @@
 {
   "name": "tabstage",
-  "description": "Jira-like statuses for native tab groups",
+  "description": "Editable statuses for the tabs you choose, in a tiled side panel",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -22,6 +22,8 @@
     "postinstall": "wxt prepare"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@fontsource/ibm-plex-sans-condensed": "^5.3.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },

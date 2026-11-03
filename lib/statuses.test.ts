@@ -5,6 +5,8 @@ import { StatusMother } from '../__mocks__/status.mother';
 import {
   DEFAULT_STATUSES,
   addStatus,
+  migrateV1Statuses,
+  normalizeStatuses,
   findStatusByLabel,
   getStatuses,
   moveStatus,
@@ -23,13 +25,13 @@ const ids = (statuses: Status[]) => statuses.map((status) => status.id);
 const contiguous = (length: number) => Array.from({ length }, (_, i) => i);
 
 describe('DEFAULT_STATUSES', () => {
-  it('lists the 8 English statuses with their colors, in order', () => {
+  it('lists To do, In progress, In review, In dev and Done with accents, in order', () => {
     expect(DEFAULT_STATUSES).toEqual(StatusMother.defaults());
   });
 
   it('has unique ids and labels', () => {
-    expect(new Set(DEFAULT_STATUSES.map((s) => s.id)).size).toBe(8);
-    expect(new Set(DEFAULT_STATUSES.map((s) => s.label)).size).toBe(8);
+    expect(new Set(DEFAULT_STATUSES.map((s) => s.id)).size).toBe(5);
+    expect(new Set(DEFAULT_STATUSES.map((s) => s.label)).size).toBe(5);
   });
 });
 
@@ -63,7 +65,7 @@ describe('storage', () => {
   describe('saveStatuses', () => {
     it('stores the list in sync:statuses with contiguous order', async () => {
       const qa = new StatusBuilder().with({ order: 4 }).build();
-      const stg = { ...StatusMother.stg(), order: 9 };
+      const stg = { ...StatusMother.inDev(), order: 9 };
 
       await saveStatuses([stg, qa]);
 
@@ -98,9 +100,20 @@ describe('addStatus', () => {
       id: 'qa',
       label: 'QA',
       color: 'red',
-      order: 8,
+      order: 5,
     });
-    expect(orders(result)).toEqual(contiguous(9));
+    expect(orders(result)).toEqual(contiguous(6));
+  });
+
+  it('inserts the status right after afterId', () => {
+    const result = addStatus(StatusMother.defaults(), { label: 'QA', color: 'red' }, 'in-review');
+
+    expect(ids(result)).toEqual(['todo', 'in-progress', 'in-review', 'qa', 'in-dev', 'done']);
+    expect(orders(result)).toEqual(contiguous(6));
+  });
+
+  it('appends when afterId is unknown', () => {
+    expect(ids(addStatus(StatusMother.defaults(), { label: 'QA', color: 'red' }, 'nope')).at(-1)).toBe('qa');
   });
 
   it.each([
@@ -132,10 +145,10 @@ describe('addStatus', () => {
 
 describe('removeStatus', () => {
   it('removes the status and closes the order gap', () => {
-    const result = removeStatus(StatusMother.defaults(), 'review');
+    const result = removeStatus(StatusMother.defaults(), 'in-review');
 
-    expect(ids(result)).not.toContain('review');
-    expect(orders(result)).toEqual(contiguous(7));
+    expect(ids(result)).not.toContain('in-review');
+    expect(orders(result)).toEqual(contiguous(4));
   });
 
   it('returns an equal list when the id is unknown', () => {
@@ -155,10 +168,10 @@ describe('removeStatus', () => {
 
 describe('renameStatus', () => {
   it('changes the label and keeps the id, color and order', () => {
-    const result = renameStatus(StatusMother.defaults(), 'stg', 'Staging');
+    const result = renameStatus(StatusMother.defaults(), 'in-dev', 'Staging');
 
-    expect(result[5]).toEqual({ ...StatusMother.stg(), label: 'Staging' });
-    expect(orders(result)).toEqual(contiguous(8));
+    expect(result[3]).toEqual({ ...StatusMother.inDev(), label: 'Staging' });
+    expect(orders(result)).toEqual(contiguous(5));
   });
 
   it('returns an equal list when the id is unknown', () => {
@@ -170,7 +183,7 @@ describe('renameStatus', () => {
   it('does not mutate its input', () => {
     const input = StatusMother.defaults();
 
-    renameStatus(input, 'stg', 'Staging');
+    renameStatus(input, 'in-dev', 'Staging');
 
     expect(input).toEqual(StatusMother.defaults());
   });
@@ -178,16 +191,16 @@ describe('renameStatus', () => {
 
 describe('recolorStatus', () => {
   it('changes the color and keeps the rest', () => {
-    const result = recolorStatus(StatusMother.defaults(), 'dev', 'red');
+    const result = recolorStatus(StatusMother.defaults(), 'in-dev', 'red');
 
-    expect(result[3]).toEqual({ ...StatusMother.dev(), color: 'red' });
-    expect(orders(result)).toEqual(contiguous(8));
+    expect(result[3]).toEqual({ ...StatusMother.inDev(), color: 'red' });
+    expect(orders(result)).toEqual(contiguous(5));
   });
 
   it('does not mutate its input', () => {
     const input = StatusMother.defaults();
 
-    recolorStatus(input, 'dev', 'red');
+    recolorStatus(input, 'in-dev', 'red');
 
     expect(input).toEqual(StatusMother.defaults());
   });
@@ -195,11 +208,11 @@ describe('recolorStatus', () => {
 
 describe('moveStatus', () => {
   it.each([
-    ['down', 'todo', 2, ['in-progress', 'review', 'todo']],
-    ['up', 'review', 0, ['review', 'todo', 'in-progress']],
-    ['to the same index', 'in-progress', 1, ['todo', 'in-progress', 'review']],
-    ['past the end (clamped)', 'todo', 99, ['in-progress', 'review', 'todo']],
-    ['before the start (clamped)', 'review', -5, ['review', 'todo', 'in-progress']],
+    ['down', 'todo', 2, ['in-progress', 'in-review', 'todo']],
+    ['up', 'in-review', 0, ['in-review', 'todo', 'in-progress']],
+    ['to the same index', 'in-progress', 1, ['todo', 'in-progress', 'in-review']],
+    ['past the end (clamped)', 'todo', 99, ['in-progress', 'in-review', 'todo']],
+    ['before the start (clamped)', 'in-review', -5, ['in-review', 'todo', 'in-progress']],
   ])('moves a status %s', (_, id, toIndex, expected) => {
     const input = StatusMother.defaults().slice(0, 3);
 
@@ -239,9 +252,9 @@ describe('list helpers with gaps in order', () => {
 });
 
 describe('findStatusByLabel', () => {
-  it.each(['STG', 'stg', 'Stg', '  stg  '])('finds STG from "%s"', (label) => {
+  it.each(['Done', 'done', 'DONE', '  done  '])('finds Done from "%s"', (label) => {
     expect(findStatusByLabel(StatusMother.defaults(), label)).toEqual(
-      StatusMother.stg(),
+      StatusMother.done(),
     );
   });
 
@@ -251,7 +264,7 @@ describe('findStatusByLabel', () => {
     );
   });
 
-  it.each(['Staging', '', 'ST G'])(
+  it.each(['Staging', '', 'Do ne'])(
     'returns undefined for the unknown label "%s"',
     (label) => {
       expect(findStatusByLabel(StatusMother.defaults(), label)).toBeUndefined();
@@ -282,31 +295,25 @@ describe('validateStatuses', () => {
     ]);
   });
 
-  it.each(['Dev · QA', 'Dev · ', ' · QA'])(
-    'rejects the label "%s", which holds the title separator',
-    (label) => {
-      const status = new StatusBuilder().with({ id: 'qa', label }).build();
+  it.each(['Dev · QA', 'Dev - QA', 'Dev.QA'])('accepts the label "%s"', (label) => {
+    expect(validateStatuses([new StatusBuilder().with({ label }).build()])).toEqual([]);
+  });
 
-      expect(validateStatuses([status])).toEqual([
-        { statusId: 'qa', message: expect.stringContaining("can't contain") },
-      ]);
-    },
-  );
+  it('rejects a color that is not an accent', () => {
+    const status = { ...new StatusBuilder().build(), color: 'orange' } as unknown as Status;
 
-  it.each(['Dev·QA', 'Dev - QA', 'Dev.QA'])(
-    'accepts "%s", which has no spaced separator',
-    (label) => {
-      expect(validateStatuses([new StatusBuilder().with({ label }).build()])).toEqual([]);
-    },
-  );
+    expect(validateStatuses([status])).toEqual([
+      { statusId: 'qa', message: '"QA" has an unknown color.' },
+    ]);
+  });
 
-  it.each(['STG', 'stg', 'Stg', ' STG '])(
-    'rejects "%s" next to STG, ignoring case and spaces',
+  it.each(['Done', 'done', 'DONE', ' Done '])(
+    'rejects "%s" next to Done, ignoring case and spaces',
     (label) => {
       const copy = new StatusBuilder().with({ id: 'copy', label, order: 8 }).build();
 
       expect(validateStatuses([...StatusMother.defaults(), copy])).toEqual([
-        { statusId: 'stg', message: expect.stringContaining('more than one status') },
+        { statusId: 'done', message: expect.stringContaining('more than one status') },
         { statusId: 'copy', message: expect.stringContaining('more than one status') },
       ]);
     },
@@ -314,7 +321,7 @@ describe('validateStatuses', () => {
 
   it('reports one error per invalid status', () => {
     const empty = new StatusBuilder().with({ id: 'empty', label: '' }).build();
-    const separator = new StatusBuilder().with({ id: 'sep', label: 'A · B' }).build();
+    const separator = { ...new StatusBuilder().with({ id: 'sep', label: 'A' }).build(), color: 'grey' } as unknown as Status;
     const duplicate = new StatusBuilder().with({ id: 'dup', label: 'done' }).build();
 
     expect(
@@ -322,5 +329,57 @@ describe('validateStatuses', () => {
         (error) => error.statusId,
       ),
     ).toEqual(['done', 'empty', 'sep', 'dup']);
+  });
+});
+
+describe('normalizeStatuses', () => {
+  it('maps a v1 native color to its accent', () => {
+    const status = { ...StatusMother.todo(), color: 'grey' } as unknown as Status;
+
+    expect(normalizeStatuses([status])[0]?.color).toBe('lavender');
+  });
+
+  it('uses lavender for an unknown color', () => {
+    const status = { ...StatusMother.todo(), color: 'black' } as unknown as Status;
+
+    expect(normalizeStatuses([status])[0]?.color).toBe('lavender');
+  });
+});
+
+describe('migrateV1Statuses', () => {
+  it('replaces the untouched v1 defaults with the v2 defaults', () => {
+    expect(migrateV1Statuses(StatusMother.v1Defaults())).toEqual(StatusMother.defaults());
+  });
+
+  it('keeps a customized v1 list and maps its colors to accents', () => {
+    const custom = [
+      { id: 'todo', label: 'Backlog', color: 'grey', order: 0 },
+      { id: 'stg', label: 'STG', color: 'orange', order: 1 },
+      { id: 'qa', label: 'QA', color: 'cyan', order: 2 },
+    ];
+
+    expect(migrateV1Statuses(custom)).toEqual([
+      { id: 'todo', label: 'Backlog', color: 'lavender', order: 0 },
+      { id: 'stg', label: 'STG', color: 'peach', order: 1 },
+      { id: 'qa', label: 'QA', color: 'teal', order: 2 },
+    ]);
+  });
+
+  it.each([null, undefined, [], 'statuses'])('returns the defaults for %j', (value) => {
+    expect(migrateV1Statuses(value)).toEqual(StatusMother.defaults());
+  });
+
+  describe('through statusesItem', () => {
+    beforeEach(() => {
+      fakeBrowser.reset();
+    });
+
+    it('migrates a v1 value stored with no version', async () => {
+      await fakeBrowser.storage.sync.set({ statuses: StatusMother.v1Defaults() });
+
+      await statusesItem.migrate();
+
+      expect(await getStatuses()).toEqual(StatusMother.defaults());
+    });
   });
 });

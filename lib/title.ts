@@ -1,37 +1,15 @@
-import { findStatusByLabel } from './statuses';
-import { TITLE_SEPARATOR, type ParsedTitle, type Status } from './types';
-
-const TICKET_KEY = /[A-Z][A-Z0-9]+-\d+/;
+/** Separated the group name from its status label in v1 native group titles. */
+export const TITLE_SEPARATOR = ' · ';
 
 /**
- * Splits `"<name> · <label>"` on the last separator. When the suffix is not a
- * known status, the whole title is the name and `statusId` is `null`.
+ * Strips a v1 ` · <label>` suffix from a native group title when `<label>`
+ * is one of `labels` (case and surrounding spaces ignored). Returns `null`
+ * when the title has no such suffix, so callers know there is nothing to do.
  */
-export function parseTitle(
-  title: string,
-  statuses: readonly Status[],
-): ParsedTitle {
+export function stripStatusSuffix(title: string, labels: readonly string[]): string | null {
   const at = title.lastIndexOf(TITLE_SEPARATOR);
-  const status =
-    at === -1
-      ? undefined
-      : findStatusByLabel(statuses, title.slice(at + TITLE_SEPARATOR.length));
-  const name = (status ? title.slice(0, at) : title).trim();
-
-  return {
-    name,
-    ticketKey: extractTicketKey(name),
-    statusId: status?.id ?? null,
-  };
-}
-
-/** Builds a group title; with no status, the title is the name alone. */
-export function formatTitle(name: string, status: Status | null): string {
-  const trimmed = name.trim();
-  return status ? `${trimmed}${TITLE_SEPARATOR}${status.label}` : trimmed;
-}
-
-/** Returns the first Jira key in the name, or the trimmed name. */
-export function extractTicketKey(name: string): string {
-  return name.match(TICKET_KEY)?.[0] ?? name.trim();
+  if (at === -1) return null;
+  const suffix = title.slice(at + TITLE_SEPARATOR.length).trim().toLowerCase();
+  const known = labels.some((label) => label.trim().toLowerCase() === suffix);
+  return known && suffix ? title.slice(0, at).trimEnd() : null;
 }

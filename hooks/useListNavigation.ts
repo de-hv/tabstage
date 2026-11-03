@@ -7,8 +7,8 @@ interface ListNavigationOptions {
   resetKey?: unknown;
   /** Enter on the selected item. Not called on an empty list. */
   onEnter: (index: number) => void;
-  /** Escape. Closes the window (the popup) by default. */
-  onEscape?: () => void;
+  /** Escape. */
+  onEscape: () => void;
 }
 
 interface ListNavigation {
@@ -21,13 +21,13 @@ interface ListNavigation {
 
 /**
  * Keyboard selection for a list: ↑/↓ move (and wrap), Enter runs the
- * selected item, Escape closes.
+ * selected item, Escape calls `onEscape`.
  */
 export function useListNavigation({
   count,
   resetKey,
   onEnter,
-  onEscape = () => window.close(),
+  onEscape,
 }: ListNavigationOptions): ListNavigation {
   // The key is stored with the index, so a new key derives index 0 without an
   // effect.

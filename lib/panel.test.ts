@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeBrowser } from 'wxt/testing/fake-browser';
-import { openPanel } from './panel';
+import { FakeTabs } from '../__mocks__/fake-tabs';
+import { TabBuilder } from '../__mocks__/tab.builder';
+import { enableActionToggle, openPalette, openPanel, paletteRequestItem } from './panel';
 
 interface Apis {
   sidePanel?: { open: (options: { windowId: number }) => Promise<void> };
@@ -106,5 +108,59 @@ describe('openPanel', () => {
     api.sidePanel = { open: vi.fn().mockRejectedValue(new Error('No user gesture')) };
 
     await expect(openPanel(7)).rejects.toThrow('No user gesture');
+  });
+});
+
+describe('enableActionToggle', () => {
+  let fake: FakeTabs;
+
+  beforeEach(() => {
+    fake = FakeTabs.install();
+  });
+
+  afterEach(() => {
+    fake.uninstall();
+  });
+
+  it('lets Chrome open and close the side panel from the icon', () => {
+    vi.stubEnv('BROWSER', 'chrome');
+
+    enableActionToggle();
+
+    expect(fake.sidePanel.setPanelBehavior).toHaveBeenCalledWith({ openPanelOnActionClick: true });
+    expect(fake.onActionClicked.hasListeners()).toBe(false);
+  });
+
+  it('toggles the Firefox sidebar on an icon click', async () => {
+    vi.stubEnv('BROWSER', 'firefox');
+    enableActionToggle();
+
+    await fake.onActionClicked.trigger(new TabBuilder().build());
+
+    expect(fake.sidebarAction.toggle).toHaveBeenCalledOnce();
+    expect(fake.sidePanel.setPanelBehavior).not.toHaveBeenCalled();
+  });
+});
+
+describe('openPalette', () => {
+  let fake: FakeTabs;
+
+  beforeEach(() => {
+    fake = FakeTabs.install();
+  });
+
+  afterEach(() => {
+    fake.uninstall();
+  });
+
+  it('opens the panel first, then stores the palette request', async () => {
+    vi.stubEnv('BROWSER', 'chrome');
+    vi.spyOn(Date, 'now').mockReturnValue(1234);
+
+    const opening = openPalette(7);
+
+    expect(fake.sidePanel.open).toHaveBeenCalledWith({ windowId: 7 });
+    await opening;
+    expect(await paletteRequestItem.getValue()).toBe(1234);
   });
 });

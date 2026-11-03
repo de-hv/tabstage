@@ -1,40 +1,32 @@
-import type { Group, GroupTab } from './groups';
-import { NO_STATUS_LABEL } from './lanes';
-import type { Status, StatusId } from './types';
+import { itemStatusId } from './board';
+import type { Board, BoardGroup, BoardItem, Status } from './types';
 
 /** What a palette result does when it runs. */
 export type PaletteAction =
-  /** Focuses the group's active tab, or its first one. */
-  | { kind: 'focus-group'; id: string; group: Group; tabId: number }
-  | { kind: 'focus-tab'; id: string; group: Group; tab: GroupTab }
-  /** `status` is `null` for "No status". */
-  | { kind: 'set-status'; id: string; group: Group; status: Status | null }
-  | { kind: 'open-panel'; id: string };
+  /** Focuses the item's tab, or reopens a closed link. */
+  | { kind: 'open-item'; id: string; item: BoardItem; status: Status | undefined }
+  /** Scrolls the panel to the group and focuses it. */
+  | { kind: 'show-group'; id: string; group: BoardGroup; status: Status | undefined }
+  | { kind: 'move-item'; id: string; item: BoardItem; status: Status }
+  | { kind: 'move-group'; id: string; group: BoardGroup; status: Status }
+  /** Adds the active tab of the current window. */
+  | { kind: 'add-tab'; id: string; status: Status };
 
 /** At most this many results are returned. */
 export const MAX_RESULTS = 50;
 
-export const OPEN_PANEL_ID = 'open-panel';
-const PANEL_WORDS = ['panel', 'side panel', 'sidebar', 'open panel', 'open side panel'];
-const NO_STATUS_ALIASES = [NO_STATUS_LABEL.toLowerCase(), 'none'];
+const ADD_WORD = 'add';
 
 const SCORE = {
-  panelExact: 1000,
+  addExact: 1000,
   statusList: 800,
-  setStatus: 600,
+  move: 600,
   statusExactBonus: 50,
   statusPrefixList: 250,
   group: 200,
-  tab: 100,
-  panelPrefix: 90,
+  item: 100,
+  addPrefix: 90,
 } as const;
-
-/** A status, or "No status", as a target the palette can match by name. */
-interface Target {
-  status: Status | null;
-  id: StatusId | null;
-  names: string[];
-}
 
 interface Scored {
   action: PaletteAction;
@@ -45,83 +37,61 @@ function normalize(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-function targetsOf(statuses: readonly Status[]): Target[] {
-  return [
-    ...[...statuses]
-      .sort((a, b) => a.order - b.order)
-      .map((status) => ({
-        status,
-        id: status.id,
-        names: [normalize(status.label), status.id.toLowerCase()],
-      })),
-    { status: null, id: null, names: NO_STATUS_ALIASES },
-  ];
-}
-
-/** 2 for an exact name, 1 for a name prefix, 0 for no match. */
-function matchTarget(target: Target, query: string): number {
-  if (target.names.includes(query)) return 2;
-  return target.names.some((name) => name.startsWith(query)) ? 1 : 0;
-}
+const TICKET_KEY = /[a-z][a-z0-9]+-(\d+)/;
 
 /**
- * How well `query` names the group: 100 for the full ticket key, 90 for its
- * number, 70 for a key prefix or a number suffix (`6115` for `CAR-6115`), 60
- * for a name prefix, 50 for a name match, 0 for none.
+ * How well `query` names a group or item: 100 for the whole name, 90 for a
+ * ticket number in it (`6115` for `CAR-6115 spec`), 70 for a name prefix or a
+ * ticket number suffix, 50 for a name match, 0 for none.
  */
-export function scoreGroup(group: Group, query: string): number {
-  const key = group.ticketKey.toLowerCase();
-  const number = /-(\d+)$/.exec(key)?.[1];
-  const name = group.name.toLowerCase();
-  if (key === query) return 100;
+export function scoreName(name: string, query: string): number {
+  const text = normalize(name);
+  const number = TICKET_KEY.exec(text)?.[1];
+  if (text === query) return 100;
   if (number === query) return 90;
-  if (key.startsWith(query) || (number?.endsWith(query) ?? false)) return 70;
-  if (name.startsWith(query)) return 60;
-  if (name.includes(query)) return 50;
+  if (text.startsWith(query) || (number?.endsWith(query) ?? false)) return 70;
+  if (text.includes(query)) return 50;
   return 0;
 }
 
-function scoreTab(tab: GroupTab, query: string): number {
-  const title = tab.title.toLowerCase();
-  if (title.startsWith(query)) return 40;
-  if (title.includes(query)) return 30;
-  if (tab.url.toLowerCase().includes(query)) return 20;
-  return 0;
+function scoreItem(item: BoardItem, query: string): number {
+  const score = scoreName(item.title, query);
+  if (score) return score;
+  return item.url.toLowerCase().includes(query) ? 20 : 0;
 }
 
-function focusGroup(group: Group): PaletteAction | undefined {
-  const tab = group.tabs.find((t) => t.active) ?? group.tabs[0];
-  if (!tab) return undefined;
-  return { kind: 'focus-group', id: `group-${group.id}`, group, tabId: tab.id };
+/** 2 for an exact label or id, 1 for a prefix, 0 for no match. */
+function matchStatus(status: Status, query: string): number {
+  const names = [normalize(status.label), status.id.toLowerCase()];
+  if (names.includes(query)) return 2;
+  return names.some((name) => name.startsWith(query)) ? 1 : 0;
 }
 
-const openPanelAction: PaletteAction = { kind: 'open-panel', id: OPEN_PANEL_ID };
-
-/** `<key|number|name> <status>`: every split of the words into a ref and a status. */
-function setStatusResults(
-  words: string[],
-  groups: readonly Group[],
-  targets: Target[],
-): Scored[] {
+/** `<item|group> <status>`: every split of the words into a ref and a status. */
+function moveResults(words: string[], board: Board, statuses: readonly Status[]): Scored[] {
   const results: Scored[] = [];
   for (let split = 1; split < words.length; split++) {
     const ref = words.slice(0, split).join(' ');
     const statusPart = words.slice(split).join(' ');
-    for (const target of targets) {
-      const statusMatch = matchTarget(target, statusPart);
-      if (!statusMatch) continue;
-      for (const group of groups) {
-        const refScore = scoreGroup(group, ref);
-        if (!refScore || group.statusId === target.id) continue;
+    if (ref === ADD_WORD) continue;
+    for (const status of statuses) {
+      const match = matchStatus(status, statusPart);
+      if (!match) continue;
+      const bonus = match === 2 ? SCORE.statusExactBonus : 0;
+      for (const group of board.groups) {
+        const score = scoreName(group.name, ref);
+        if (!score || group.statusId === status.id) continue;
         results.push({
-          action: {
-            kind: 'set-status',
-            id: `set-${group.id}-${target.id ?? 'none'}`,
-            group,
-            status: target.status,
-          },
-          score:
-            SCORE.setStatus + refScore + (statusMatch === 2 ? SCORE.statusExactBonus : 0),
+          action: { kind: 'move-group', id: `move-group-${group.id}-${status.id}`, group, status },
+          score: SCORE.move + score + 10 + bonus,
+        });
+      }
+      for (const item of board.items) {
+        const score = scoreItem(item, ref);
+        if (!score || itemStatusId(board, item) === status.id) continue;
+        results.push({
+          action: { kind: 'move-item', id: `move-item-${item.id}-${status.id}`, item, status },
+          score: SCORE.move + score + bonus,
         });
       }
     }
@@ -129,90 +99,106 @@ function setStatusResults(
   return results;
 }
 
-/** `<status>`: the groups in a status named, or starting with, the query. */
-function statusListResults(
-  query: string,
-  groups: readonly Group[],
-  targets: Target[],
-): Scored[] {
+function statusOf(statuses: readonly Status[], id: string): Status | undefined {
+  return statuses.find((status) => status.id === id);
+}
+
+function openItem(board: Board, item: BoardItem, statuses: readonly Status[]): PaletteAction {
+  return { kind: 'open-item', id: `item-${item.id}`, item, status: statusOf(statuses, itemStatusId(board, item)) };
+}
+
+function showGroup(group: BoardGroup, statuses: readonly Status[]): PaletteAction {
+  return { kind: 'show-group', id: `group-${group.id}`, group, status: statusOf(statuses, group.statusId) };
+}
+
+/** `<status>`: the groups and items in a status named, or starting with, the query. */
+function statusListResults(query: string, board: Board, statuses: readonly Status[]): Scored[] {
   const results: Scored[] = [];
-  for (const target of targets) {
-    const match = matchTarget(target, query);
+  for (const status of statuses) {
+    const match = matchStatus(status, query);
     if (!match) continue;
-    for (const group of groups) {
-      if (group.statusId !== target.id) continue;
-      const action = focusGroup(group);
-      if (action) {
-        results.push({
-          action,
-          score: match === 2 ? SCORE.statusList : SCORE.statusPrefixList,
-        });
+    const score = match === 2 ? SCORE.statusList : SCORE.statusPrefixList;
+    for (const group of board.groups) {
+      if (group.statusId === status.id) results.push({ action: showGroup(group, statuses), score });
+    }
+    for (const item of board.items) {
+      if (itemStatusId(board, item) === status.id) {
+        results.push({ action: openItem(board, item, statuses), score });
       }
     }
   }
   return results;
 }
 
-/** `<text>`: groups by key, number or name, and tabs by title or URL. */
-function textResults(query: string, groups: readonly Group[]): Scored[] {
+/** `<text>`: groups by name, items by title or URL. */
+function textResults(query: string, board: Board, statuses: readonly Status[]): Scored[] {
   const results: Scored[] = [];
-  for (const group of groups) {
-    const score = scoreGroup(group, query);
-    const action = score ? focusGroup(group) : undefined;
-    if (action) results.push({ action, score: SCORE.group + score });
+  for (const group of board.groups) {
+    const score = scoreName(group.name, query);
+    if (score) results.push({ action: showGroup(group, statuses), score: SCORE.group + score });
   }
-  for (const group of groups) {
-    for (const tab of group.tabs) {
-      const score = scoreTab(tab, query);
-      if (score) {
-        results.push({
-          action: { kind: 'focus-tab', id: `tab-${tab.id}`, group, tab },
-          score: SCORE.tab + score,
-        });
-      }
-    }
+  for (const item of board.items) {
+    const score = scoreItem(item, query);
+    if (score) results.push({ action: openItem(board, item, statuses), score: SCORE.item + score });
   }
   return results;
 }
 
-function panelResults(query: string): Scored[] {
-  if (PANEL_WORDS.includes(query)) return [{ action: openPanelAction, score: SCORE.panelExact }];
-  if (PANEL_WORDS.some((word) => word.startsWith(query))) {
-    return [{ action: openPanelAction, score: SCORE.panelPrefix }];
+/** `add` adds the current tab to the first status; `add <status>` to that one. */
+function addResults(words: string[], statuses: readonly Status[]): Scored[] {
+  const [first, ...rest] = words;
+  if (!first) return [];
+  if (rest.length === 0) {
+    if (!ADD_WORD.startsWith(first)) return [];
+    const exact = first === ADD_WORD;
+    // A bare `add` offers every status, the first one on top.
+    return statuses.map((status, index) => ({
+      action: { kind: 'add-tab', id: `add-${status.id}`, status },
+      score: (exact ? SCORE.addExact : SCORE.addPrefix) - index,
+    }));
   }
-  return [];
+  if (first !== ADD_WORD) return [];
+  const statusPart = rest.join(' ');
+  return statuses.flatMap((status) => {
+    const match = matchStatus(status, statusPart);
+    return match
+      ? [{
+          action: { kind: 'add-tab', id: `add-${status.id}`, status } as PaletteAction,
+          score: SCORE.addExact + (match === 2 ? SCORE.statusExactBonus : 0),
+        }]
+      : [];
+  });
 }
 
 /**
  * Turns the palette input into ranked actions, best first. Matching ignores
  * case and extra spaces.
- * - empty: every group (focus), then "Open side panel"
- * - `<key|number> <status>`: set that group's status (`6115 dev`), also with
- *   a status prefix (`6115 d` offers Dev and Done) or `none` / `no status`
- * - `<status>`: the groups in that status
- * - `panel`: open the side panel
- * - any text: groups by ticket key, number or name, and tabs by title or URL
+ * - empty: every group, then every item
+ * - `<item|group> <status>`: move it (`6115 dev`, `pr review`); the status may
+ *   be a prefix
+ * - `<status>`: the groups and items in that status
+ * - `add` / `add <status>`: add the current tab
+ * - any text: groups by name, items by title or URL
  *
- * Ties keep that order, then the groups' order. Each action appears once,
+ * Ties keep that order, then the board's order. Each action appears once,
  * with its best score.
  */
-export function parseCommand(
-  input: string,
-  groups: readonly Group[],
-  statuses: readonly Status[],
-): PaletteAction[] {
+export function parseCommand(input: string, board: Board, statuses: readonly Status[]): PaletteAction[] {
+  const ordered = [...statuses].sort((a, b) => a.order - b.order);
   const query = normalize(input);
   if (!query) {
-    const all = groups.map(focusGroup).filter((a): a is PaletteAction => a !== undefined);
-    return [...all, openPanelAction].slice(0, MAX_RESULTS);
+    return [
+      ...board.groups.map((group) => showGroup(group, ordered)),
+      ...board.items.map((item) => openItem(board, item, ordered)),
+    ].slice(0, MAX_RESULTS);
   }
 
-  const targets = targetsOf(statuses);
+  const words = query.split(' ');
   const scored = [
-    ...setStatusResults(query.split(' '), groups, targets),
-    ...statusListResults(query, groups, targets),
-    ...textResults(query, groups),
-    ...panelResults(query),
+    ...addResults(words, ordered),
+    ...moveResults(words, board, ordered),
+    ...statusListResults(query, board, ordered),
+    ...textResults(query, board, ordered),
   ];
 
   const best = new Map<string, Scored>();

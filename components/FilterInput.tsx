@@ -9,8 +9,8 @@ export function FilterInput({ value, onChange }: FilterInputProps) {
     <input
       type="search"
       className="filter-input"
-      aria-label="Filter groups"
-      placeholder="Filter by ticket, name or tab"
+      aria-label="Filter tabs"
+      placeholder="Filter tabs and groups"
       value={value}
       autoComplete="off"
       spellCheck={false}

@@ -1,14 +1,18 @@
 # Tabstage
 
-Jira-like statuses for native tab groups, in Chrome and other Chromium browsers, Firefox and Zen.
+Editable statuses for the tabs you choose, in a tiled side panel, for Chrome and other
+Chromium browsers, Firefox and Zen.
 
-Use one tab group per ticket and give each group a status. The status lives in the group
-title (`CAR-6124 · STG`) and in the group's native color, so it survives restarts and needs
-no account or server.
+Add the tabs you are working on, put each one (or a group of them) in a status, and move them
+around as your work moves. Everything lives in the extension's own storage: no account, no
+server, and your native tab groups are never touched.
 
-- **Side panel:** your groups in lanes by status, with a filter and a status chip per group.
-- **Command palette:** change a group's status or jump to a group or tab from the keyboard.
-- **Options page:** add, rename, recolor, reorder and delete statuses.
+- **Side panel:** one tile per status (design "Tiling", Catppuccin Mocha / Latte, IBM Plex
+  Sans bundled with the extension) with the tabs you added, loose or in groups.
+- **Command palette:** inside the panel; search, move a tab or group to a status, or add the
+  current tab, from the keyboard.
+- **Options page:** edit statuses, back up the board to JSON, and an opt-in cleanup of the
+  v0.1 title suffixes.
 
 The extension is installed locally only. It is not published in any store yet (see
 [Future steps: store publishing](#future-steps-store-publishing)).
@@ -31,8 +35,8 @@ npm run build:all        # → .output/chrome-mv3 and .output/firefox-mv3
 2. Turn on **Developer mode**.
 3. Click **Load unpacked** and pick the `.output/chrome-mv3` folder.
 
-To update: `git pull && npm install && npm run build`, then click the reload (↻) button on the
-Tabstage card.
+To update (or reinstall after a new version): `git pull && npm install && npm run build`, then
+click the reload (↻) button on the Tabstage card. Your board and statuses are kept.
 
 ### Firefox and Zen
 
@@ -67,63 +71,102 @@ addons.mozilla.org (AMO).
 To update: `git pull && npm install`, bump `version` in `package.json` (AMO never signs the
 same version twice), run `npm run sign:firefox` again and install the new `.xpi`.
 
-Firefox 140 or later is required. Zen exposes Firefox's tab groups API, so Tabstage works
-there too.
+After updating from 0.1 to 0.2: the version is already bumped to `0.2.0`, so run
+`npm run sign:firefox` once and install the new `.xpi` over the old one. Your v0.1 statuses
+are migrated (the untouched v0.1 defaults become the new defaults).
+
+Firefox 140 or later is required. Zen is Firefox-based and works the same way.
 
 For development only, you can load `.output/firefox-mv3` without signing via
 `about:debugging` → **This Firefox** → **Load Temporary Add-on…**; it is removed on restart.
 
 ## Use
 
-### Shortcuts
+### The model
 
-| Action | Shortcut |
+- **Statuses** belong to Tabstage: To do, In progress, In review, In dev and Done by default,
+  all editable. There is no fixed flow: any tab or group can go to any status.
+- **Tabs** show in the panel only after you add them. Nothing is added or grouped
+  automatically, and tabs you didn't add are not shown.
+- **Groups** are optional folders inside a status, with any name (a ticket like `CAR-6115`,
+  or "Research"). A tab in a group follows the group's status.
+- **Closed tabs stay as links:** dimmed, marked "closed". Click one to reopen it. Remove it
+  with ✕, **Remove from Tabstage**, or **Clear closed links** on its group.
+- **Restarts:** tab ids change when the browser restarts, so Tabstage relinks open tabs to
+  your items by URL at startup and when a tab is created.
+- **Native tab groups are never touched**: Tabstage doesn't read or change their titles,
+  colors or members, and doesn't ask for the tab groups permission (except for the opt-in
+  cleanup below).
+
+### Adding tabs
+
+- Right-click a page → **Tabstage → Add to ▸** a status or a group. In Firefox and Zen the
+  same menu is also on the tab strip (right-click a tab).
+- In the panel, press **+**, tick the open tabs of this window and pick a status or a group.
+- In the palette, type `add` or `add <status>` to add the current tab.
+
+### Opening the panel
+
+| Action | How |
 | --- | --- |
-| Open the command palette | `Alt+Shift+K` (macOS: `Cmd+Shift+K`) |
-| Open the side panel | `Alt+Shift+L` |
+| Open and close the panel | Click the Tabstage toolbar icon |
+| Open the panel (Chrome) / toggle the sidebar (Firefox, Zen) | `Alt+Shift+L` |
+| Open the panel with the palette focused | `Alt+Shift+K` (macOS: `Cmd+Shift+K`) |
 
-Change them in `chrome://extensions/shortcuts` (Chromium) or in `about:addons` → gear menu →
-**Manage Extension Shortcuts** (Firefox, Zen). The toolbar button also opens the palette.
+Change the shortcuts in `chrome://extensions/shortcuts` (Chromium) or in `about:addons` →
+gear menu → **Manage Extension Shortcuts** (Firefox, Zen).
+
+**Panel on the right:** no extension API can choose the side; each browser keeps it in its
+own settings.
+
+- **Chrome:** Settings → Appearance → **Side panel** → *Show on right side*.
+- **Other Chromium browsers (Edge, Brave):** look for a *side panel position* option in their
+  Appearance settings. Arc shows extension panels in its own sidebar.
+- **Firefox:** View → Sidebar → **Move Sidebar to Right** (with the new sidebar, its
+  *Customize sidebar* settings have the position).
+- **Zen:** the extension sidebar follows Firefox's sidebar position; set it as in Firefox.
+
+### Panel actions
+
+- **Right-click a tab** (or press the Menu key / `Shift+F10` on it): New group with tab, Add
+  to group ▸, Move to status ▸, Take out of group, Reopen / Go to tab, Remove from Tabstage.
+- **Right-click a group header:** Rename, Move to status ▸, Open all, Clear closed links,
+  Ungroup, Remove group. Click the header to collapse or expand it.
+- **Status tile:** double-click its name to rename it. The **⋯** button has Rename, Color ▸,
+  Move up, Move down, Add status after and Delete status. Deleting a status that has tabs
+  asks whether to move them (with their groups) to another status or remove them.
+- The menus work with the keyboard: `↑` / `↓`, `Enter`, `→` opens a submenu, `←` / `Esc`
+  goes back.
 
 ### Command palette
 
-Type in the palette; matching ignores case and extra spaces. Use `↑` / `↓` to move, `Enter`
-to run the selected result and `Esc` to close.
+Open it with `Alt+Shift+K` or the ⌕ button. Matching ignores case and extra spaces. Use `↑` /
+`↓` to move, `Enter` to run and `Esc` to close.
 
 | You type | Result |
 | --- | --- |
-| nothing | every group, then "Open side panel" |
-| any text, e.g. `CAR-6124`, `6124`, `login` | groups by ticket key, ticket number or name, and tabs by title or URL; picking one focuses it |
-| `<key or number> <status>`, e.g. `6115 dev`, `CAR-6115 stg` | sets that group's status. The status can be a prefix (`6115 d` offers Dev and Done) |
-| `<key or number> none` or `<key or number> no status` | clears that group's status |
-| `<status>`, e.g. `review` | lists the groups in that status (statuses that only start with the text rank lower) |
-| `none` or `no status` | lists the groups with no status |
-| `panel`, `side panel`, `sidebar`, `open panel` | opens the side panel |
+| nothing | every group, then every tab |
+| any text, e.g. `CAR-6124`, `6124`, `login` | groups by name and tabs by title or URL; a tab is focused (a closed one reopens), a group is shown in the panel |
+| `<tab or group> <status>`, e.g. `6115 done`, `login in review` | moves it to that status. The status can be a prefix (`6115 in` offers In progress, In review and In dev) |
+| `<status>`, e.g. `in review` | lists the groups and tabs in that status |
+| `add`, `add <status>` | adds the current tab (to the first status, or to that one) |
 
-A status matches by its label or its id (`in progress` or `in-progress`). A group can also be
-named by a word of its name instead of its key.
+A status matches by its label or its id (`in progress` or `in-progress`); a ticket number
+(`6115`) matches names that contain `CAR-6115`.
 
-### Side panel
+### Options page
 
-Groups appear in one lane per status, in the order of your statuses, plus a **No status** lane
-for groups whose title has no known status. Click a group's status chip to change it, and use
-the filter to find a ticket, name or tab.
+Right-click the toolbar icon → **Options** (or the extension's details page):
 
-### Statuses and the options page
-
-Default statuses: To do, In progress, Review, Dev, Test, STG, PROD, Done. Edit them on the
-options page (right-click the toolbar button → **Options**, or the extension's details page):
-
-- **Add**, **rename** and **recolor** a status. Renaming updates the titles of the groups in
-  that status, and recoloring updates their color.
-- **Reorder** with the up / down buttons; the side panel lanes follow.
-- **Delete** a status. If groups use it, the page asks first, and those groups move to
-  "No status".
-- **Restore defaults** replaces your list with the defaults.
-
-The list is synced across your browsers through the browser's sync storage. The group title is
-the source of truth: typing ` · Dev` at the end of a group name by hand also sets the status,
-and the extension never fights a color you set by hand.
+- **Statuses:** add, rename, recolor (10 Catppuccin accents), reorder, delete (asks where the
+  tabs go) and restore defaults (tabs of removed statuses move to To do). Statuses sync across
+  your browsers through the browser's sync storage; the board stays local to each browser.
+- **Backup:** **Export board** downloads `tabstage-backup.json` with your statuses and board;
+  **Import board…** replaces both after checking the whole file. Imported tabs come back as
+  closed links and relink to open tabs with the same URL.
+- **Clean up v1 titles:** Tabstage 0.1 wrote ` · <status>` at the end of native group titles.
+  **Remove Tabstage suffix from native group titles** strips it once. It asks for the tab
+  groups permission only when you press it, and never changes colors or grouping.
 
 ## Development
 

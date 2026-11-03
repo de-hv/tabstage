@@ -11,7 +11,7 @@ interface HarnessProps {
 }
 
 /** An input that reports the hook's selected index. */
-function Harness({ count, resetKey, onEnter = vi.fn(), onEscape }: HarnessProps) {
+function Harness({ count, resetKey, onEnter = vi.fn(), onEscape = vi.fn() }: HarnessProps) {
   const { index, setIndex, onKeyDown } = useListNavigation({ count, resetKey, onEnter, onEscape });
   return (
     <>
@@ -90,15 +90,6 @@ describe('useListNavigation', () => {
     await user.keyboard('{Escape}');
 
     expect(onEscape).toHaveBeenCalledOnce();
-  });
-
-  it('closes the window on Escape by default', async () => {
-    const close = vi.spyOn(window, 'close').mockImplementation(() => {});
-    const { user } = await setup({ count: 3 });
-
-    await user.keyboard('{Escape}');
-
-    expect(close).toHaveBeenCalledOnce();
   });
 
   it('goes back to the first item when resetKey changes', async () => {

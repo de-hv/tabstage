@@ -1,44 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { GROUP_COLORS, isGroupColor } from './colors';
+import { ACCENT_COLORS, V1_COLOR_TO_ACCENT, isAccentColor } from './colors';
 
-describe('GROUP_COLORS', () => {
-  it('lists the 9 native tab group colors', () => {
-    expect(GROUP_COLORS).toEqual([
-      'grey',
-      'blue',
-      'red',
-      'yellow',
-      'green',
-      'pink',
-      'purple',
-      'cyan',
-      'orange',
-    ]);
-  });
-
-  it('has no duplicates', () => {
-    expect(new Set(GROUP_COLORS).size).toBe(GROUP_COLORS.length);
+describe('ACCENT_COLORS', () => {
+  it('lists 10 Catppuccin accents with no duplicates', () => {
+    expect(ACCENT_COLORS).toHaveLength(10);
+    expect(new Set(ACCENT_COLORS).size).toBe(10);
   });
 });
 
-describe('isGroupColor', () => {
-  it.each(GROUP_COLORS)('accepts "%s"', (color) => {
-    expect(isGroupColor(color)).toBe(true);
+describe('isAccentColor', () => {
+  it.each(ACCENT_COLORS)('accepts "%s"', (color) => {
+    expect(isAccentColor(color)).toBe(true);
   });
 
-  it.each(['gray', 'Blue', 'BLUE', 'white', 'black', '', ' blue'])(
+  it.each(['grey', 'purple', 'cyan', 'Mauve', '', ' blue'])(
     'rejects the string "%s"',
     (value) => {
-      expect(isGroupColor(value)).toBe(false);
+      expect(isAccentColor(value)).toBe(false);
     },
   );
 
-  it.each([undefined, null, 0, 1, true, {}, [], ['blue']])(
+  it.each([undefined, null, 0, true, {}, ['blue']])(
     'rejects the non-string value %j',
     (value) => {
-      expect(isGroupColor(value)).toBe(false);
+      expect(isAccentColor(value)).toBe(false);
     },
   );
+});
+
+describe('V1_COLOR_TO_ACCENT', () => {
+  it('maps every v1 native color to an accent', () => {
+    const v1 = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'];
+
+    expect(Object.keys(V1_COLOR_TO_ACCENT).sort()).toEqual([...v1].sort());
+    expect(Object.values(V1_COLOR_TO_ACCENT).every(isAccentColor)).toBe(true);
+  });
 });
 
 describe('WxtVitest', () => {
