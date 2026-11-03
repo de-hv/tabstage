@@ -43,8 +43,9 @@ interface Patch {
 
 /**
  * In-memory `tabGroups.*`, `tabs.query/get/update/group/ungroup`,
- * `windows.update` and `commands.onCommand`, installed on top of WXT's
- * `fakeBrowser`, which throws on all of them.
+ * `tabs.onMoved/onAttached/onDetached`, `windows.update` and
+ * `commands.onCommand`, installed on top of WXT's `fakeBrowser`, which throws
+ * on all of them.
  *
  * Unlike the real browser, the fake awaits event listeners inside the call
  * that fires them, so `await setStatus(...)` also waits for the background.
@@ -61,6 +62,9 @@ export class FakeTabGroups {
   readonly onRemoved = new FakeEvent<[TabGroup]>();
   readonly onMoved = new FakeEvent<[TabGroup]>();
   readonly onCommand = new FakeEvent<[string, Tab | undefined]>();
+  readonly onTabMoved = new FakeEvent<[number, Browser.tabs.OnMovedInfo]>();
+  readonly onTabAttached = new FakeEvent<[number, Browser.tabs.OnAttachedInfo]>();
+  readonly onTabDetached = new FakeEvent<[number, Browser.tabs.OnDetachedInfo]>();
 
   private nextGroupId = 1;
   private updateDepth = 0;
@@ -102,6 +106,9 @@ export class FakeTabGroups {
     this.patch(tabs, 'update', this.updateTab);
     this.patch(tabs, 'group', this.groupTabs);
     this.patch(tabs, 'ungroup', this.ungroupTabs);
+    this.patch(tabs, 'onMoved', this.onTabMoved);
+    this.patch(tabs, 'onAttached', this.onTabAttached);
+    this.patch(tabs, 'onDetached', this.onTabDetached);
     this.patch(api.windows as Record<string, unknown>, 'update', this.updateWindow);
     this.patch(api.commands as Record<string, unknown>, 'onCommand', this.onCommand);
     return this;
