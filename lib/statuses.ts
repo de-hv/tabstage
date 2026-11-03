@@ -1,5 +1,6 @@
 import { storage } from '#imports';
 import type { GroupColor } from './colors';
+import { TITLE_SEPARATOR } from './title';
 import type { Status, StatusId } from './types';
 
 export const DEFAULT_STATUSES: readonly Status[] = [
@@ -123,4 +124,47 @@ export function findStatusByLabel(
 ): Status | undefined {
   const wanted = label.trim().toLowerCase();
   return statuses.find((status) => status.label.trim().toLowerCase() === wanted);
+}
+
+/** A reason a status list can't be saved. `statusId` is `null` for the list. */
+export interface StatusError {
+  statusId: StatusId | null;
+  message: string;
+}
+
+/**
+ * Checks a list before it is saved: at least one status, and every label
+ * non-empty, unique ignoring case and free of the title separator. Every
+ * status that shares a label gets an error. The list helpers above don't
+ * validate, so this is the only guard. Returns no errors for a valid list.
+ */
+export function validateStatuses(statuses: readonly Status[]): StatusError[] {
+  if (statuses.length === 0) {
+    return [{ statusId: null, message: 'Keep at least one status.' }];
+  }
+
+  const count = new Map<string, number>();
+  for (const { label } of statuses) {
+    const key = label.trim().toLowerCase();
+    count.set(key, (count.get(key) ?? 0) + 1);
+  }
+
+  const errors: StatusError[] = [];
+  for (const { id, label } of statuses) {
+    const trimmed = label.trim();
+    if (!trimmed) {
+      errors.push({ statusId: id, message: 'A status needs a label.' });
+    } else if (label.includes(TITLE_SEPARATOR)) {
+      errors.push({
+        statusId: id,
+        message: `"${trimmed}" can't contain "${TITLE_SEPARATOR.trim()}" between spaces: it separates the status in group titles.`,
+      });
+    } else if ((count.get(trimmed.toLowerCase()) ?? 0) > 1) {
+      errors.push({
+        statusId: id,
+        message: `"${trimmed}" is used by more than one status (case is ignored).`,
+      });
+    }
+  }
+  return errors;
 }

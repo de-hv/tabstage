@@ -14,6 +14,7 @@ import {
   resetStatuses,
   saveStatuses,
   statusesItem,
+  validateStatuses,
 } from './statuses';
 import type { Status } from './types';
 
@@ -256,4 +257,70 @@ describe('findStatusByLabel', () => {
       expect(findStatusByLabel(StatusMother.defaults(), label)).toBeUndefined();
     },
   );
+});
+
+describe('validateStatuses', () => {
+  it('accepts the default statuses', () => {
+    expect(validateStatuses(StatusMother.defaults())).toEqual([]);
+  });
+
+  it('accepts a single status', () => {
+    expect(validateStatuses([new StatusBuilder().build()])).toEqual([]);
+  });
+
+  it('rejects an empty list', () => {
+    expect(validateStatuses([])).toEqual([
+      { statusId: null, message: 'Keep at least one status.' },
+    ]);
+  });
+
+  it.each(['', '   '])('rejects the empty label "%s"', (label) => {
+    const status = new StatusBuilder().with({ id: 'qa', label }).build();
+
+    expect(validateStatuses([status])).toEqual([
+      { statusId: 'qa', message: 'A status needs a label.' },
+    ]);
+  });
+
+  it.each(['Dev · QA', 'Dev · ', ' · QA'])(
+    'rejects the label "%s", which holds the title separator',
+    (label) => {
+      const status = new StatusBuilder().with({ id: 'qa', label }).build();
+
+      expect(validateStatuses([status])).toEqual([
+        { statusId: 'qa', message: expect.stringContaining("can't contain") },
+      ]);
+    },
+  );
+
+  it.each(['Dev·QA', 'Dev - QA', 'Dev.QA'])(
+    'accepts "%s", which has no spaced separator',
+    (label) => {
+      expect(validateStatuses([new StatusBuilder().with({ label }).build()])).toEqual([]);
+    },
+  );
+
+  it.each(['STG', 'stg', 'Stg', ' STG '])(
+    'rejects "%s" next to STG, ignoring case and spaces',
+    (label) => {
+      const copy = new StatusBuilder().with({ id: 'copy', label, order: 8 }).build();
+
+      expect(validateStatuses([...StatusMother.defaults(), copy])).toEqual([
+        { statusId: 'stg', message: expect.stringContaining('more than one status') },
+        { statusId: 'copy', message: expect.stringContaining('more than one status') },
+      ]);
+    },
+  );
+
+  it('reports one error per invalid status', () => {
+    const empty = new StatusBuilder().with({ id: 'empty', label: '' }).build();
+    const separator = new StatusBuilder().with({ id: 'sep', label: 'A · B' }).build();
+    const duplicate = new StatusBuilder().with({ id: 'dup', label: 'done' }).build();
+
+    expect(
+      validateStatuses([StatusMother.done(), empty, separator, duplicate]).map(
+        (error) => error.statusId,
+      ),
+    ).toEqual(['done', 'empty', 'sep', 'dup']);
+  });
 });
