@@ -2,7 +2,7 @@
   "name": "tabstage",
   "description": "Editable statuses for the tabs you choose, in a tiled side panel",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "engines": {
     "node": ">=22"
