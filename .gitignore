@@ -155,3 +155,6 @@ stats-*.json
 web-ext.config.ts
 web-ext-artifacts
 .DS_Store
+
+# Original store screenshots (may show personal tabs)
+store/screenshots/raw/

@@ -15,6 +15,10 @@ export default defineConfig({
     baseIconPath: 'assets/icon.svg',
     sizes: ICON_SIZES,
   },
+  // Store texts and screenshots aren't needed to build, so keep them out of the AMO sources zip.
+  zip: {
+    excludeSources: ['store/**'],
+  },
   // WXT builds Firefox as MV2 by default; tabstage targets MV3 everywhere.
   manifestVersion: 3,
   manifest: ({ browser }) => {
