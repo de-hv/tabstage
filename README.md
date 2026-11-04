@@ -189,7 +189,8 @@ The icons are generated from `assets/icon.svg` by `@wxt-dev/auto-icons` on every
 
 ## Future steps: store publishing
 
-Not done yet; the extension is private and installed locally. When it is published:
+In progress. Listing texts, permission justifications and the privacy policy are in
+[`store/listing.md`](store/listing.md) and [`store/PRIVACY.md`](store/PRIVACY.md).
 
 - **Chrome Web Store:** register a developer account (USD 5 one-time fee), run `npm run zip`
   and upload `.output/tabstage-<version>-chrome.zip` in the developer dashboard with the store
