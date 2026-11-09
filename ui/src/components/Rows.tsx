@@ -44,7 +44,7 @@ export function TabItem({ tab, status, prefix, actions }: TabItemProps) {
   if (actions.editing === tab.id) {
     return (
       <InlineInput
-        label="Nuevo nombre"
+        label="New name"
         initial={tab.title}
         onCancel={actions.onCancelRename}
         onSubmit={(title) => actions.onRenameTab(tab, title)}
@@ -60,12 +60,12 @@ export function TabItem({ tab, status, prefix, actions }: TabItemProps) {
           {tab.title} <span className="row__host">{hostOf(tab.url)}</span>
         </span>
         <span className="row__hint" aria-hidden="true">
-          {actions.canFocusTabs ? 'Abrir o ir al tab' : 'Abrir'}
+          {actions.canFocusTabs ? 'Open or go to tab' : 'Open'}
         </span>
         <StatusChip status={status} />
       </button>
       <RowMenu
-        label={`Opciones de ${tab.title}`}
+        label={`Options for ${tab.title}`}
         status={{
           statuses: actions.statuses,
           current: tab.status,
@@ -95,7 +95,7 @@ export function FolderHeader({ folder, status, toggle, actions }: FolderHeaderPr
   if (actions.editing === folder.id) {
     return (
       <InlineInput
-        label="Nuevo nombre"
+        label="New name"
         initial={folder.name}
         onCancel={actions.onCancelRename}
         onSubmit={(name) => actions.onRenameFolder(folder, name)}
@@ -117,7 +117,7 @@ export function FolderHeader({ folder, status, toggle, actions }: FolderHeaderPr
           type="button"
           className="row"
           aria-expanded={!folder.collapsed}
-          aria-label={`${folder.collapsed ? 'Expandir' : 'Contraer'} ${folder.name}`}
+          aria-label={`${folder.collapsed ? 'Expand' : 'Collapse'} ${folder.name}`}
           onClick={() => actions.onToggleFolder(folder)}
         >
           {folder.collapsed ? (
@@ -133,14 +133,14 @@ export function FolderHeader({ folder, status, toggle, actions }: FolderHeaderPr
       <button
         type="button"
         className="icon-button"
-        title="Abrir los tabs de la carpeta"
-        aria-label="Abrir los tabs de la carpeta"
+        title="Open the folder's tabs"
+        aria-label="Open the folder's tabs"
         onClick={() => actions.onOpenFolder(folder)}
       >
         <ExternalLink className="icon" aria-hidden="true" />
       </button>
       <RowMenu
-        label={`Opciones de la carpeta ${folder.name}`}
+        label={`Options for folder ${folder.name}`}
         status={{
           statuses: actions.statuses,
           current: folder.status,

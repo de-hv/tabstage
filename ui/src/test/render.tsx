@@ -20,5 +20,5 @@ export async function renderApp(handlers: Parameters<typeof installIpc>[0] = {})
 }
 
 export function sidebar() {
-  return screen.getByRole('navigation', { name: 'Grupos' });
+  return screen.getByRole('navigation', { name: 'Groups' });
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { Banner } from './components/Banner';
+import { CreateDialog, type CreateRequest } from './components/CreateDialog';
 import { DragProvider } from './components/DragDrop';
 import { GroupView, type View } from './components/GroupView';
 import { Palette } from './components/Palette';
@@ -15,6 +16,7 @@ export function App() {
   const [selectNew, setSelectNew] = useState(false);
   const [view, setView] = useState<View>(readView);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [createRequest, setCreateRequest] = useState<CreateRequest | null>(null);
   const { snapshot, error } = workspace;
 
   useEffect(() => {
@@ -59,10 +61,16 @@ export function App() {
         }}
         settingsOpen={settingsOpen}
         onOpenSettings={() => setSettingsOpen(true)}
-        onAddGroup={async (name, color) => {
-          const failure = await workspace.apply({ type: 'addGroup', name, color });
+        onAddGroup={async (profile, name, color) => {
+          const failure = await workspace.apply({ type: 'addGroup', profile, name, color });
           if (!failure) setSelectNew(true);
           return !failure;
+        }}
+        onAddProfile={async (name) => !(await workspace.apply({ type: 'addProfile', name }))}
+        apply={workspace.apply}
+        onCreate={(profile, kind) => {
+          const found = snapshot.workspace.profiles.find((candidate) => candidate.id === profile);
+          if (found) setCreateRequest({ profile: found, kind });
         }}
       />
       {settingsOpen ? (
@@ -71,6 +79,7 @@ export function App() {
           apply={(command) => void workspace.apply(command)}
           inspectDataFolder={workspace.inspectDataFolder}
           relocate={workspace.relocate}
+          onRevealDataFile={() => void workspace.revealDataFile()}
         />
       ) : group ? (
         <GroupView
@@ -85,13 +94,20 @@ export function App() {
           openTab={workspace.openTab}
           openFolder={workspace.openFolder}
           openGroup={workspace.openGroup}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
       ) : (
         <main className="group">
-          <p className="group__empty">Crea tu primer grupo con “Nuevo grupo”.</p>
+          <p className="group__empty">Create your first group with the + of a profile.</p>
         </main>
       )}
       <Palette snapshot={snapshot} openTab={workspace.openTab} openFolder={workspace.openFolder} />
+      <CreateDialog
+        request={createRequest}
+        groups={createRequest ? groups.filter((candidate) => candidate.profile === createRequest.profile.id) : []}
+        apply={workspace.apply}
+        onClose={() => setCreateRequest(null)}
+      />
       <p className="toast" role="status">
         {workspace.notice}
       </p>

@@ -92,12 +92,28 @@ fn is_script_safe(bundle: &BrowserId) -> bool {
 }
 
 /// Program and arguments that open `url` in the app with this bundle id.
+///
+/// With `flags` (profile, new window) it starts a new `open` instance so the
+/// flags reach the browser; Chromium and Firefox hand the URL over to the
+/// running browser process.
 #[must_use]
-pub fn open_command(bundle: &BrowserId, url: &TabUrl) -> (&'static str, Vec<String>) {
-    (
-        "open",
-        vec!["-b".to_owned(), bundle.to_string(), url.to_string()],
-    )
+pub fn open_command(
+    bundle: &BrowserId,
+    url: &TabUrl,
+    flags: &[String],
+) -> (&'static str, Vec<String>) {
+    let mut args = Vec::with_capacity(flags.len() + 5);
+    if !flags.is_empty() {
+        args.push("-n".to_owned());
+    }
+    args.push("-b".to_owned());
+    args.push(bundle.to_string());
+    if !flags.is_empty() {
+        args.push("--args".to_owned());
+        args.extend(flags.iter().cloned());
+    }
+    args.push(url.to_string());
+    ("open", args)
 }
 
 /// Reads an app's `Info.plist` and returns it as a browser when it handles
@@ -261,10 +277,34 @@ mod tests {
     fn open_command_uses_bundle_id() {
         let url = TabUrl::parse("https://a.dev/x").expect("url");
 
-        let (program, args) = open_command(&id("com.google.Chrome"), &url);
+        let (program, args) = open_command(&id("com.google.Chrome"), &url, &[]);
 
         assert_eq!(program, "open");
         assert_eq!(args, ["-b", "com.google.Chrome", "https://a.dev/x"]);
+    }
+
+    #[test]
+    fn open_command_passes_flags_through_a_new_open_instance() {
+        let url = TabUrl::parse("https://a.dev/x").expect("url");
+        let flags = [
+            "--profile-directory=Profile 1".to_owned(),
+            "--new-window".to_owned(),
+        ];
+
+        let (_, args) = open_command(&id("com.google.Chrome"), &url, &flags);
+
+        assert_eq!(
+            args,
+            [
+                "-n",
+                "-b",
+                "com.google.Chrome",
+                "--args",
+                "--profile-directory=Profile 1",
+                "--new-window",
+                "https://a.dev/x"
+            ]
+        );
     }
 
     #[test]

@@ -4,17 +4,11 @@ expression: to_json_redacted(&sample())
 ---
 {
   "app": "tabstage-desktop",
-  "settings": {
-    "defaultBrowser": "org.mozilla.firefox"
-  },
-  "version": 1,
+  "settings": {},
+  "version": 2,
   "workspace": {
     "groups": [
       {
-        "browser": {
-          "browser": "com.google.Chrome",
-          "kind": "specific"
-        },
         "children": [
           {
             "collapsed": false,
@@ -33,7 +27,20 @@ expression: to_json_redacted(&sample())
         ],
         "color": "blue",
         "id": "[uuid]",
-        "name": "Work"
+        "name": "Work",
+        "profile": "[uuid]"
+      }
+    ],
+    "profiles": [
+      {
+        "color": 0,
+        "id": "[uuid]",
+        "name": "Default"
+      },
+      {
+        "color": 1,
+        "id": "[uuid]",
+        "name": "Trabajo"
       }
     ],
     "statuses": [
@@ -41,26 +48,6 @@ expression: to_json_redacted(&sample())
         "color": "lavender",
         "id": "todo",
         "label": "To do"
-      },
-      {
-        "color": "blue",
-        "id": "in-progress",
-        "label": "In progress"
-      },
-      {
-        "color": "mauve",
-        "id": "in-review",
-        "label": "In review"
-      },
-      {
-        "color": "peach",
-        "id": "in-dev",
-        "label": "In dev"
-      },
-      {
-        "color": "green",
-        "id": "done",
-        "label": "Done"
       }
     ]
   }

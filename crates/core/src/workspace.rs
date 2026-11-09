@@ -10,8 +10,8 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::browser::BrowserChoice;
-use crate::ids::{FolderId, GroupId, TabId};
+use crate::ids::{FolderId, GroupId, ProfileId, TabId};
+use crate::profile::{DEFAULT_PROFILE_NAME, Profile, ProfileColor};
 use crate::status::{AccentColor, Status, StatusId, default_statuses};
 use crate::url::TabUrl;
 
@@ -57,7 +57,7 @@ pub enum Node {
     Folder(Folder),
 }
 
-/// A group of tabs and folders that opens in one browser.
+/// A group of tabs and folders. It opens with its profile's browser.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Group {
     /// Stable id.
@@ -66,9 +66,8 @@ pub struct Group {
     pub name: String,
     /// Accent color.
     pub color: AccentColor,
-    /// Browser that opens this group's tabs.
-    #[serde(default)]
-    pub browser: BrowserChoice,
+    /// Profile the group belongs to and opens with.
+    pub profile: ProfileId,
     /// Tabs and folders in display order.
     #[serde(default)]
     pub children: Vec<Node>,
@@ -132,6 +131,15 @@ pub enum WorkspaceError {
     /// Two groups, folders or tabs share the same id.
     #[error("id {0} is used more than once")]
     DuplicateId(String),
+    /// No profile has this id.
+    #[error("profile {0} not found")]
+    ProfileNotFound(ProfileId),
+    /// A profile cannot take over its own groups when it is removed.
+    #[error("a profile cannot be replaced by itself")]
+    SameProfile,
+    /// A workspace must have at least one profile.
+    #[error("the workspace has no profiles")]
+    NoProfiles,
 }
 
 /// Result type for workspace changes.
@@ -141,6 +149,7 @@ pub type Result<T> = std::result::Result<T, WorkspaceError>;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Workspace {
     statuses: Vec<Status>,
+    profiles: Vec<Profile>,
     groups: Vec<Group>,
 }
 
@@ -151,13 +160,123 @@ impl Default for Workspace {
 }
 
 impl Workspace {
-    /// An empty workspace with the default statuses.
+    /// An empty workspace with the default statuses and one profile.
     #[must_use]
     pub fn new() -> Self {
         Self {
             statuses: default_statuses(),
+            profiles: vec![Profile {
+                id: ProfileId::new(),
+                name: DEFAULT_PROFILE_NAME.to_owned(),
+                color: ProfileColor::default(),
+            }],
             groups: Vec::new(),
         }
+    }
+
+    /// Profiles in display order. There is always at least one.
+    #[must_use]
+    pub fn profiles(&self) -> &[Profile] {
+        &self.profiles
+    }
+
+    /// The profile with this id.
+    #[must_use]
+    pub fn profile(&self, id: ProfileId) -> Option<&Profile> {
+        self.profiles.iter().find(|profile| profile.id == id)
+    }
+
+    /// Adds a profile at the end.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::EmptyName`] when `name` is blank.
+    pub fn add_profile(&mut self, name: &str) -> Result<ProfileId> {
+        let name = clean_name(name)?;
+        let id = ProfileId::new();
+        let color = ProfileColor::next_after(self.profiles.iter().map(|profile| profile.color));
+        self.profiles.push(Profile { id, name, color });
+        Ok(id)
+    }
+
+    /// Changes the color of a profile's dot.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::ProfileNotFound`].
+    pub fn set_profile_color(&mut self, id: ProfileId, color: ProfileColor) -> Result<()> {
+        self.profile_mut(id)?.color = color;
+        Ok(())
+    }
+
+    /// Renames a profile.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::EmptyName`] or [`WorkspaceError::ProfileNotFound`].
+    pub fn rename_profile(&mut self, id: ProfileId, name: &str) -> Result<()> {
+        let name = clean_name(name)?;
+        self.profile_mut(id)?.name = name;
+        Ok(())
+    }
+
+    /// Moves a profile to `index`, clamped to the end.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::ProfileNotFound`].
+    pub fn move_profile(&mut self, id: ProfileId, index: usize) -> Result<()> {
+        let from = self.profile_index(id)?;
+        let profile = self.profiles.remove(from);
+        let to = index.min(self.profiles.len());
+        self.profiles.insert(to, profile);
+        Ok(())
+    }
+
+    /// Removes a profile and moves its groups to `move_groups_to`.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::ProfileNotFound`] for either id,
+    /// or [`WorkspaceError::SameProfile`] when both ids are equal. Together
+    /// these keep at least one profile.
+    pub fn remove_profile(&mut self, id: ProfileId, move_groups_to: ProfileId) -> Result<Profile> {
+        let index = self.profile_index(id)?;
+        // The target must be another existing profile, so the last profile
+        // can never be removed.
+        if id == move_groups_to {
+            return Err(WorkspaceError::SameProfile);
+        }
+        self.profile_index(move_groups_to)?;
+        for group in self.groups.iter_mut().filter(|group| group.profile == id) {
+            group.profile = move_groups_to;
+        }
+        Ok(self.profiles.remove(index))
+    }
+
+    /// Moves a group to another profile.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::GroupNotFound`] or [`WorkspaceError::ProfileNotFound`].
+    pub fn set_group_profile(&mut self, id: GroupId, profile: ProfileId) -> Result<()> {
+        self.profile_index(profile)?;
+        self.group_mut(id)?.profile = profile;
+        Ok(())
+    }
+
+    fn profile_index(&self, id: ProfileId) -> Result<usize> {
+        self.profiles
+            .iter()
+            .position(|profile| profile.id == id)
+            .ok_or(WorkspaceError::ProfileNotFound(id))
+    }
+
+    fn profile_mut(&mut self, id: ProfileId) -> Result<&mut Profile> {
+        self.profiles
+            .iter_mut()
+            .find(|profile| profile.id == id)
+            .ok_or(WorkspaceError::ProfileNotFound(id))
     }
 
     /// Groups in display order.
@@ -178,19 +297,26 @@ impl Workspace {
         self.groups.iter().find(|group| group.id == id)
     }
 
-    /// Adds a group at the end.
+    /// Adds a group at the end, in `profile`.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::EmptyName`] when `name` is blank.
-    pub fn add_group(&mut self, name: &str, color: AccentColor) -> Result<GroupId> {
+    /// [`WorkspaceError::EmptyName`] when `name` is blank or
+    /// [`WorkspaceError::ProfileNotFound`].
+    pub fn add_group(
+        &mut self,
+        profile: ProfileId,
+        name: &str,
+        color: AccentColor,
+    ) -> Result<GroupId> {
         let name = clean_name(name)?;
+        self.profile_index(profile)?;
         let id = GroupId::new();
         self.groups.push(Group {
             id,
             name,
             color,
-            browser: BrowserChoice::Default,
+            profile,
             children: Vec::new(),
         });
         Ok(id)
@@ -204,16 +330,6 @@ impl Workspace {
     pub fn rename_group(&mut self, id: GroupId, name: &str) -> Result<()> {
         let name = clean_name(name)?;
         self.group_mut(id)?.name = name;
-        Ok(())
-    }
-
-    /// Sets which browser opens a group.
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::GroupNotFound`].
-    pub fn set_group_browser(&mut self, id: GroupId, browser: BrowserChoice) -> Result<()> {
-        self.group_mut(id)?.browser = browser;
         Ok(())
     }
 
@@ -438,6 +554,9 @@ impl Workspace {
             _ => Ok(()),
         };
 
+        if self.profiles.is_empty() {
+            return Err(WorkspaceError::NoProfiles);
+        }
         let mut ids = HashSet::new();
         let mut unique = |id: String| {
             if ids.insert(id.clone()) {
@@ -446,8 +565,14 @@ impl Workspace {
                 Err(WorkspaceError::DuplicateId(id))
             }
         };
+        for profile in &self.profiles {
+            unique(profile.id.to_string())?;
+        }
         for group in &self.groups {
             unique(group.id.to_string())?;
+            if self.profile(group.profile).is_none() {
+                return Err(WorkspaceError::ProfileNotFound(group.profile));
+            }
             for node in &group.children {
                 match node {
                     Node::Tab(tab) => {
@@ -718,7 +843,10 @@ fn clean_name(raw: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::browser::BrowserId;
+
+    fn first_profile(workspace: &Workspace) -> ProfileId {
+        workspace.profiles()[0].id
+    }
 
     fn url(raw: &str) -> TabUrl {
         TabUrl::parse(raw).expect("valid test url")
@@ -753,47 +881,226 @@ mod tests {
             .expect("folder exists")
     }
 
-    /// A workspace with one group "Work" holding a folder "Sprint".
+    /// Adds the extension's board statuses, which tests use by id
+    /// (`in-progress`, `in-review`, `in-dev`, `done`).
+    fn add_board_statuses(workspace: &mut Workspace) {
+        for label in ["In progress", "In review", "In dev", "Done"] {
+            workspace
+                .add_status(label, AccentColor::Blue)
+                .expect("status");
+        }
+    }
+
+    /// A workspace with one group "Work" holding a folder "Sprint", and the
+    /// board statuses.
     fn work() -> (Workspace, GroupId, FolderId) {
         let mut workspace = Workspace::new();
+        add_board_statuses(&mut workspace);
+        let profile = first_profile(&workspace);
         let group = workspace
-            .add_group("Work", AccentColor::Blue)
+            .add_group(profile, "Work", AccentColor::Blue)
             .expect("add group");
         let folder = workspace.add_folder(group, "Sprint").expect("add folder");
         (workspace, group, folder)
     }
 
     #[test]
-    fn new_workspace_has_default_statuses_and_no_groups() {
+    fn new_workspace_has_default_statuses_one_profile_and_no_groups() {
         let workspace = Workspace::new();
 
         assert_eq!(workspace.statuses(), default_statuses().as_slice());
+        let names: Vec<_> = workspace
+            .profiles()
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
+        assert_eq!(names, [DEFAULT_PROFILE_NAME]);
         assert!(workspace.groups().is_empty());
     }
 
     #[test]
-    fn add_group_trims_name_and_follows_default_browser() {
+    fn add_group_trims_name_and_belongs_to_its_profile() {
         let mut workspace = Workspace::new();
+        let profile = first_profile(&workspace);
 
         let id = workspace
-            .add_group("  Work  ", AccentColor::Mauve)
+            .add_group(profile, "  Work  ", AccentColor::Mauve)
             .expect("add group");
 
         let group = workspace.group(id).expect("group exists");
         assert_eq!(group.name, "Work");
         assert_eq!(group.color, AccentColor::Mauve);
-        assert_eq!(group.browser, BrowserChoice::Default);
+        assert_eq!(group.profile, profile);
     }
 
     #[test]
-    fn add_group_rejects_blank_name() {
+    fn add_group_rejects_blank_name_or_unknown_profile() {
         let mut workspace = Workspace::new();
+        let missing = ProfileId::new();
 
         assert_eq!(
-            workspace.add_group("   ", AccentColor::Blue),
+            workspace.add_group(first_profile(&workspace), "   ", AccentColor::Blue),
             Err(WorkspaceError::EmptyName)
         );
+        assert_eq!(
+            workspace.add_group(missing, "Work", AccentColor::Blue),
+            Err(WorkspaceError::ProfileNotFound(missing))
+        );
         assert!(workspace.groups().is_empty());
+    }
+
+    #[test]
+    fn add_profile_trims_name_and_appends() {
+        let mut workspace = Workspace::new();
+
+        let work = workspace.add_profile("  Trabajo ").expect("add");
+
+        assert_eq!(workspace.profiles().len(), 2);
+        assert_eq!(
+            workspace.profile(work).map(|p| p.name.as_str()),
+            Some("Trabajo")
+        );
+        assert_eq!(workspace.add_profile(" "), Err(WorkspaceError::EmptyName));
+    }
+
+    #[test]
+    fn new_profiles_get_a_color_no_other_profile_uses() {
+        let mut workspace = Workspace::new();
+
+        let work = workspace.add_profile("Trabajo").expect("add");
+        let qa = workspace.add_profile("QA").expect("add");
+
+        let colors: Vec<_> = workspace
+            .profiles()
+            .iter()
+            .map(|p| p.color.index())
+            .collect();
+        assert_eq!(colors, [0, 1, 2]);
+        workspace
+            .set_profile_color(work, ProfileColor::new(5).expect("color"))
+            .expect("recolor");
+        assert_eq!(workspace.profile(work).map(|p| p.color.index()), Some(5));
+        let next = workspace.add_profile("Next").expect("add");
+        assert_eq!(workspace.profile(next).map(|p| p.color.index()), Some(1));
+        let missing = ProfileId::new();
+        assert_eq!(
+            workspace.set_profile_color(missing, ProfileColor::default()),
+            Err(WorkspaceError::ProfileNotFound(missing))
+        );
+        let _ = qa;
+    }
+
+    #[test]
+    fn rename_and_move_profiles() {
+        let mut workspace = Workspace::new();
+        let first = first_profile(&workspace);
+        let work = workspace.add_profile("Trabajo").expect("add");
+
+        workspace.rename_profile(first, "Personal").expect("rename");
+        workspace.move_profile(work, 0).expect("move");
+
+        let names: Vec<_> = workspace
+            .profiles()
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
+        assert_eq!(names, ["Trabajo", "Personal"]);
+        let missing = ProfileId::new();
+        assert_eq!(
+            workspace.rename_profile(missing, "x"),
+            Err(WorkspaceError::ProfileNotFound(missing))
+        );
+    }
+
+    #[test]
+    fn removing_a_profile_moves_its_groups() {
+        let (mut workspace, group, _) = work();
+        let first = first_profile(&workspace);
+        let work_profile = workspace.add_profile("Trabajo").expect("add");
+
+        let removed = workspace
+            .remove_profile(first, work_profile)
+            .expect("remove");
+
+        assert_eq!(removed.name, DEFAULT_PROFILE_NAME);
+        assert_eq!(workspace.group(group).expect("group").profile, work_profile);
+        assert_eq!(workspace.validate(), Ok(()));
+    }
+
+    #[test]
+    fn remove_profile_rejects_last_itself_or_unknown_target() {
+        let mut workspace = Workspace::new();
+        let first = first_profile(&workspace);
+
+        assert_eq!(
+            workspace.remove_profile(first, first),
+            Err(WorkspaceError::SameProfile)
+        );
+        let missing = ProfileId::new();
+        assert_eq!(
+            workspace.remove_profile(first, missing),
+            Err(WorkspaceError::ProfileNotFound(missing))
+        );
+        let other = workspace.add_profile("Otro").expect("add");
+        workspace.remove_profile(other, first).expect("remove");
+        assert_eq!(
+            workspace.remove_profile(first, other),
+            Err(WorkspaceError::ProfileNotFound(other))
+        );
+        assert_eq!(workspace.profiles().len(), 1);
+    }
+
+    #[test]
+    fn the_only_profile_cannot_be_removed() {
+        let mut workspace = Workspace::new();
+        let first = first_profile(&workspace);
+        let other = workspace.add_profile("Otro").expect("add");
+        workspace.remove_profile(other, first).expect("remove");
+
+        // Only one left: there is no other profile to move its groups to.
+        let ghost = ProfileId::new();
+        assert_eq!(
+            workspace.remove_profile(first, ghost),
+            Err(WorkspaceError::ProfileNotFound(ghost))
+        );
+        assert_eq!(workspace.profiles().len(), 1);
+    }
+
+    #[test]
+    fn set_group_profile_moves_a_group() {
+        let (mut workspace, group, _) = work();
+        let work_profile = workspace.add_profile("Trabajo").expect("add");
+
+        workspace
+            .set_group_profile(group, work_profile)
+            .expect("set");
+
+        assert_eq!(workspace.group(group).expect("group").profile, work_profile);
+        let missing = ProfileId::new();
+        assert_eq!(
+            workspace.set_group_profile(group, missing),
+            Err(WorkspaceError::ProfileNotFound(missing))
+        );
+    }
+
+    #[test]
+    fn validate_rejects_groups_of_unknown_profiles_and_empty_profiles() {
+        let ghost = "00000000-0000-0000-0000-0000000000ff";
+        let group = format!(
+            r#"{{"id":"00000000-0000-0000-0000-000000000001","name":"G","color":"blue","profile":"{ghost}"}}"#
+        );
+        let profile = r#"{"id":"00000000-0000-0000-0000-0000000000aa","name":"P","color":0}"#;
+
+        let unknown = from_json(&format!(
+            r#"{{"statuses":[],"profiles":[{profile}],"groups":[{group}]}}"#
+        ));
+        let empty = from_json(r#"{"statuses":[],"profiles":[],"groups":[]}"#);
+
+        assert_eq!(
+            unknown.validate(),
+            Err(WorkspaceError::ProfileNotFound(ghost.parse().expect("id")))
+        );
+        assert_eq!(empty.validate(), Err(WorkspaceError::NoProfiles));
     }
 
     #[test]
@@ -808,23 +1115,12 @@ mod tests {
     }
 
     #[test]
-    fn set_group_browser_assigns_a_specific_browser() {
-        let (mut workspace, group, _) = work();
-        let chrome = BrowserChoice::Specific(BrowserId::parse("com.google.Chrome").expect("id"));
-
-        workspace
-            .set_group_browser(group, chrome.clone())
-            .expect("set browser");
-
-        assert_eq!(workspace.group(group).expect("group").browser, chrome);
-    }
-
-    #[test]
     fn move_group_reorders_and_clamps_index() {
         let mut workspace = Workspace::new();
-        let a = workspace.add_group("A", AccentColor::Blue).expect("a");
-        let b = workspace.add_group("B", AccentColor::Blue).expect("b");
-        let c = workspace.add_group("C", AccentColor::Blue).expect("c");
+        let p = first_profile(&workspace);
+        let a = workspace.add_group(p, "A", AccentColor::Blue).expect("a");
+        let b = workspace.add_group(p, "B", AccentColor::Blue).expect("b");
+        let c = workspace.add_group(p, "C", AccentColor::Blue).expect("c");
 
         workspace.move_group(a, 99).expect("move");
 
@@ -963,7 +1259,7 @@ mod tests {
             .add_tab(Place::Folder(sprint), url("https://a.dev/"), "a")
             .expect("tab");
         let other = workspace
-            .add_group("Other", AccentColor::Green)
+            .add_group(first_profile(&workspace), "Other", AccentColor::Green)
             .expect("group");
 
         workspace.move_folder(sprint, other, 0).expect("move");
@@ -1027,7 +1323,7 @@ mod tests {
     fn move_tab_from_group_into_another_groups_folder() {
         let (mut workspace, work_group, _) = work();
         let other = workspace
-            .add_group("Other", AccentColor::Green)
+            .add_group(first_profile(&workspace), "Other", AccentColor::Green)
             .expect("other");
         let research = workspace.add_folder(other, "Research").expect("folder");
         let tab = workspace
@@ -1192,6 +1488,7 @@ mod tests {
     #[test]
     fn move_status_reorders_and_clamps() {
         let mut workspace = Workspace::new();
+        add_board_statuses(&mut workspace);
 
         workspace.move_status(&status("todo"), 99).expect("move");
 
@@ -1252,11 +1549,12 @@ mod tests {
 
     const TAB_A: &str = "00000000-0000-0000-0000-00000000000a";
     const GROUP_1: &str = "00000000-0000-0000-0000-000000000001";
+    const PROFILE_1: &str = "00000000-0000-0000-0000-0000000000aa";
 
     #[test]
     fn validate_rejects_unknown_status_reference() {
         let workspace = from_json(&format!(
-            r#"{{"statuses":[],"groups":[{{"id":"{GROUP_1}","name":"G","color":"blue",
+            r#"{{"statuses":[],"profiles":[{{"id":"{PROFILE_1}","name":"P","color":0}}],"groups":[{{"id":"{GROUP_1}","name":"G","color":"blue","profile":"{PROFILE_1}",
             "children":[{{"type":"tab","id":"{TAB_A}","url":"https://a.dev","title":"a","status":"ghost"}}]}}]}}"#
         ));
 
@@ -1268,9 +1566,9 @@ mod tests {
 
     #[test]
     fn validate_rejects_duplicate_status() {
-        let workspace = from_json(
-            r#"{"statuses":[{"id":"todo","label":"A","color":"blue"},{"id":"todo","label":"B","color":"red"}],"groups":[]}"#,
-        );
+        let workspace = from_json(&format!(
+            r#"{{"statuses":[{{"id":"todo","label":"A","color":"blue"}},{{"id":"todo","label":"B","color":"red"}}],"profiles":[{{"id":"{PROFILE_1}","name":"P","color":0}}],"groups":[]}}"#
+        ));
 
         assert_eq!(
             workspace.validate(),
@@ -1281,7 +1579,7 @@ mod tests {
     #[test]
     fn validate_rejects_tab_id_used_twice() {
         let workspace = from_json(&format!(
-            r#"{{"statuses":[],"groups":[{{"id":"{GROUP_1}","name":"G","color":"blue","children":[
+            r#"{{"statuses":[],"profiles":[{{"id":"{PROFILE_1}","name":"P","color":0}}],"groups":[{{"id":"{GROUP_1}","name":"G","color":"blue","profile":"{PROFILE_1}","children":[
             {{"type":"tab","id":"{TAB_A}","url":"https://a.dev","title":"a"}},
             {{"type":"folder","id":"00000000-0000-0000-0000-0000000000f1","name":"F","tabs":[
               {{"id":"{TAB_A}","url":"https://b.dev","title":"b"}}]}}]}}]}}"#
@@ -1318,7 +1616,7 @@ mod tests {
                 moves in prop::collection::vec((0usize..6, 0usize..4, 0usize..8), 0..40)
             ) {
                 let (mut workspace, group, folder_id) = work();
-                let other = workspace.add_group("Other", AccentColor::Green).expect("other");
+                let other = workspace.add_group(first_profile(&workspace), "Other", AccentColor::Green).expect("other");
                 let other_folder = workspace.add_folder(other, "F").expect("folder");
                 let places = [
                     Place::Group(group),

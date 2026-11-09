@@ -55,7 +55,7 @@ describe('drag and drop', () => {
   it('drops a tab into a folder through its header', async () => {
     const { calls } = await renderApp();
 
-    drag(row(/^Runbook/), row('Contraer Sprint 42'));
+    drag(row(/^Runbook/), row('Collapse Sprint 42'));
 
     expect(appliedCommands(calls)).toEqual([
       { type: 'moveTab', tab: RUNBOOK_TAB, place: { folder: SPRINT }, index: 2 },
@@ -65,7 +65,7 @@ describe('drag and drop', () => {
   it('reorders folders', async () => {
     const { calls } = await renderApp();
 
-    drag(row('Expandir Incidentes'), row('Contraer Sprint 42'));
+    drag(row('Expand Incidentes'), row('Collapse Sprint 42'));
 
     expect(appliedCommands(calls)).toEqual([
       { type: 'moveFolder', folder: INCIDENTS, group: WORK, index: 0 },
@@ -75,24 +75,26 @@ describe('drag and drop', () => {
   it('moves a tab to another group through the sidebar', async () => {
     const { calls } = await renderApp();
 
-    drag(row(/^Grafana/), groupItem(/Investigación/));
+    drag(row(/^Grafana/), groupItem(/^Investigación$/));
 
     expect(appliedCommands(calls)).toEqual([
       { type: 'moveTab', tab: GRAFANA_TAB, place: { group: RESEARCH }, index: 1 },
     ]);
   });
 
-  it('reorders groups in the sidebar', async () => {
+  it('moves a group to the profile of the group it is dropped on', async () => {
     const { calls } = await renderApp();
 
-    drag(groupItem(/Docs Rust/), groupItem(/Trabajo/));
+    drag(groupItem(/^Docs Rust$/), groupItem(/^Trabajo · Jira$/));
 
-    expect(appliedCommands(calls)).toEqual([{ type: 'moveGroup', group: DOCS, index: 0 }]);
+    expect(appliedCommands(calls)).toEqual([
+      { type: 'setGroupProfile', group: DOCS, profile: '00000000-0000-0000-0000-0000000000c1' },
+    ]);
   });
 
   it('sets the status by dropping on a board tile', async () => {
     const { calls, user } = await renderApp();
-    await user.click(screen.getByRole('button', { name: 'Por estado' }));
+    await user.click(screen.getByRole('button', { name: 'By status' }));
 
     drag(row(/^Grafana/), screen.getByRole('region', { name: 'Done' }));
 
@@ -127,8 +129,8 @@ describe('Move to menu', () => {
   it('moves a tab to another group', async () => {
     const { calls, user } = await renderApp();
 
-    await user.click(screen.getByRole('button', { name: 'Opciones de Grafana · latencia API' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Mover a…' }));
+    await user.click(screen.getByRole('button', { name: 'Options for Grafana · latencia API' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Move to…' }));
     clickSubmenuItem('Investigación');
 
     expect(appliedCommands(calls)).toEqual([
@@ -139,8 +141,8 @@ describe('Move to menu', () => {
   it('lists folders as destinations for tabs and leaves out the current place', async () => {
     const { user } = await renderApp();
 
-    await user.click(screen.getByRole('button', { name: 'Opciones de Grafana · latencia API' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Mover a…' }));
+    await user.click(screen.getByRole('button', { name: 'Options for Grafana · latencia API' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Move to…' }));
 
     const names = screen.getAllByRole('menuitem').map((item) => item.textContent);
     expect(names).toEqual(expect.arrayContaining(['Trabajo · Jira / Sprint 42', 'Investigación']));
@@ -150,8 +152,8 @@ describe('Move to menu', () => {
   it('moves a folder to another group', async () => {
     const { calls, user } = await renderApp();
 
-    await user.click(screen.getByRole('button', { name: 'Opciones de la carpeta Sprint 42' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Mover a…' }));
+    await user.click(screen.getByRole('button', { name: 'Options for folder Sprint 42' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Move to…' }));
     clickSubmenuItem('Docs Rust');
 
     expect(appliedCommands(calls)).toEqual([{ type: 'moveFolder', folder: SPRINT, group: DOCS, index: 0 }]);

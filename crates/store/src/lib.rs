@@ -5,6 +5,10 @@
 //! overwrite a file another device changed since it was last read, so a
 //! sync never silently loses work.
 
+mod migrate;
+
+pub use migrate::MigratedBinding;
+
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -12,32 +16,31 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tabstage_core::{BrowserId, Workspace, WorkspaceError};
+use tabstage_core::{Workspace, WorkspaceError};
 use thiserror::Error;
 
 /// Value of the `app` field that marks a Tabstage Desktop file.
 pub const APP: &str = "tabstage-desktop";
 
 /// Version of the file format this build writes.
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 
-/// App-wide settings stored next to the workspace.
+/// App-wide settings shared by every machine. Empty for now: browser
+/// choices are machine-local since format 2.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Settings {
-    /// Browser used by groups that follow the default. `None` until the
-    /// user picks one or the system default is detected.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub default_browser: Option<BrowserId>,
-}
+pub struct Settings {}
 
 /// Everything saved in the data file.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Document {
     /// App settings.
     pub settings: Settings,
-    /// Groups, folders, tabs and statuses.
+    /// Groups, folders, tabs, statuses and profiles.
     pub workspace: Workspace,
+    /// Browsers an older file assigned, for this machine's config. Empty
+    /// unless the file was just upgraded; never written to disk.
+    pub migrated: Vec<MigratedBinding>,
 }
 
 /// Errors from reading or writing the data file.
@@ -102,11 +105,19 @@ pub fn from_json(text: &str) -> Result<Document> {
     if header.version > FORMAT_VERSION {
         return Err(StoreError::UnsupportedVersion(header.version));
     }
-    let file: FileOwned = serde_json::from_str(text).map_err(StoreError::Parse)?;
+    let mut value: serde_json::Value = serde_json::from_str(text).map_err(StoreError::Parse)?;
+    let migrated = if header.version < 2 {
+        migrate::upgrade_v1(&mut value)
+    } else {
+        Vec::new()
+    };
+    migrate::fill_profile_colors(&mut value);
+    let file: FileOwned = serde_json::from_value(value).map_err(StoreError::Parse)?;
     file.workspace.validate()?;
     Ok(Document {
         settings: file.settings,
         workspace: file.workspace,
+        migrated,
     })
 }
 
@@ -271,19 +282,14 @@ fn fingerprint(bytes: &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tabstage_core::{AccentColor, BrowserChoice, Place, TabUrl, Target};
+    use tabstage_core::{AccentColor, Place, TabUrl, Target};
 
     fn sample() -> Document {
         let mut workspace = Workspace::new();
+        let work = workspace.add_profile("Trabajo").expect("profile");
         let group = workspace
-            .add_group("Work", AccentColor::Blue)
+            .add_group(work, "Work", AccentColor::Blue)
             .expect("group");
-        workspace
-            .set_group_browser(
-                group,
-                BrowserChoice::Specific(BrowserId::parse("com.google.Chrome").expect("id")),
-            )
-            .expect("browser");
         let folder = workspace.add_folder(group, "Sprint 42").expect("folder");
         let tab = workspace
             .add_tab(
@@ -299,10 +305,9 @@ mod tests {
             )
             .expect("status");
         Document {
-            settings: Settings {
-                default_browser: Some(BrowserId::parse("org.mozilla.firefox").expect("id")),
-            },
+            settings: Settings::default(),
             workspace,
+            migrated: Vec::new(),
         }
     }
 
@@ -368,6 +373,56 @@ mod tests {
     }
 
     #[test]
+    fn version_1_files_are_upgraded_and_report_their_browsers() {
+        let v1 = r#"{"app":"tabstage-desktop","version":1,
+            "settings":{"defaultBrowser":"org.mozilla.firefox"},
+            "workspace":{"statuses":[],"groups":[
+              {"id":"00000000-0000-0000-0000-000000000001","name":"Work","color":"blue",
+               "browser":{"kind":"specific","browser":"com.google.Chrome"},"children":[]}]}}"#;
+
+        let document = from_json(v1).expect("upgrade");
+
+        let names: Vec<_> = document
+            .workspace
+            .profiles()
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
+        assert_eq!(names, ["Default", "com.google.Chrome"]);
+        let colors: Vec<_> = document
+            .workspace
+            .profiles()
+            .iter()
+            .map(|p| p.color.index())
+            .collect();
+        assert_eq!(colors, [0, 1]);
+        assert_eq!(
+            document.workspace.groups()[0].profile,
+            document.workspace.profiles()[1].id
+        );
+        assert_eq!(document.migrated.len(), 2);
+        assert!(to_json(&document).contains("\"version\": 2"));
+    }
+
+    #[test]
+    fn early_version_2_files_get_profile_colors() {
+        let early = r#"{"app":"tabstage-desktop","version":2,"settings":{},
+            "workspace":{"statuses":[],"profiles":[
+              {"id":"00000000-0000-0000-0000-0000000000c1","name":"Default"},
+              {"id":"00000000-0000-0000-0000-0000000000c2","name":"Work"}],"groups":[]}}"#;
+
+        let document = from_json(early).expect("load");
+
+        let colors: Vec<_> = document
+            .workspace
+            .profiles()
+            .iter()
+            .map(|p| p.color.index())
+            .collect();
+        assert_eq!(colors, [0, 1]);
+    }
+
+    #[test]
     fn from_json_rejects_malformed_json() {
         assert!(matches!(from_json("{not json"), Err(StoreError::Parse(_))));
     }
@@ -392,7 +447,10 @@ mod tests {
         laptop.save(&sample()).expect("first save");
         let mut desktop = store_in(&dir);
         let mut theirs = desktop.load().expect("load").expect("document");
-        theirs.settings.default_browser = None;
+        theirs
+            .workspace
+            .add_profile("Otro equipo")
+            .expect("profile");
         desktop.save(&theirs).expect("their save");
 
         assert!(laptop.has_external_change().expect("check"));
@@ -454,7 +512,9 @@ mod tests {
         match value {
             serde_json::Value::Object(map) => {
                 for (key, child) in map.iter_mut() {
-                    if key == "id" && child.as_str().is_some_and(|id| id.len() == 36) {
+                    if matches!(key.as_str(), "id" | "profile")
+                        && child.as_str().is_some_and(|id| id.len() == 36)
+                    {
                         *child = serde_json::Value::from("[uuid]");
                     } else {
                         redact_ids(child);

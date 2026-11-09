@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Workspace } from '../api/types';
 import { snapshotFixture } from '../test/ipc';
-import { dropCommand } from './dnd';
+import { dropCommand, moveDestinations } from './dnd';
 
 // Fixture: Trabajo [Sprint 42 (login, cache), Incidentes (incident 77), Grafana, Runbook],
 // Investigación [MDN], Docs Rust [].
@@ -15,6 +15,8 @@ const LOGIN = '00000000-0000-0000-0000-000000000b01';
 const CACHE = '00000000-0000-0000-0000-000000000b02';
 const GRAFANA = '00000000-0000-0000-0000-000000000b04';
 const RUNBOOK = '00000000-0000-0000-0000-000000000b05';
+const WORK_PROFILE = '00000000-0000-0000-0000-0000000000c1';
+const QA_PROFILE = '00000000-0000-0000-0000-0000000000c3';
 
 function workspace(): Workspace {
   return snapshotFixture().workspace;
@@ -23,6 +25,7 @@ function workspace(): Workspace {
 const tab = (id: string) => ({ kind: 'tab', tab: id }) as const;
 const folder = (id: string) => ({ kind: 'folder', folder: id }) as const;
 const group = (id: string) => ({ kind: 'group', group: id }) as const;
+const profile = (id: string) => ({ kind: 'profile', profile: id }) as const;
 
 describe('dropCommand', () => {
   describe('tabs in lists', () => {
@@ -137,23 +140,63 @@ describe('dropCommand', () => {
     });
   });
 
-  describe('groups', () => {
-    it('takes the place of the group it is dropped on', () => {
-      expect(dropCommand(group(DOCS), { kind: 'group', group: WORK }, workspace())).toEqual({
+  describe('groups and profiles', () => {
+    it('takes the place of a group of the same profile', () => {
+      const ws = workspace();
+      const extra = { ...ws.groups[0]!, id: 'extra', name: 'Extra', children: [] };
+      ws.groups.push(extra);
+
+      expect(dropCommand(group('extra'), { kind: 'group', group: WORK }, ws)).toEqual({
         type: 'moveGroup',
-        group: DOCS,
+        group: 'extra',
         index: 0,
-      });
-      expect(dropCommand(group(WORK), { kind: 'group', group: RESEARCH }, workspace())).toEqual({
-        type: 'moveGroup',
-        group: WORK,
-        index: 1,
       });
     });
 
-    it('ignores itself and non-sidebar targets', () => {
+    it('moves a group to the profile of the group it is dropped on', () => {
+      expect(dropCommand(group(DOCS), { kind: 'group', group: WORK }, workspace())).toEqual({
+        type: 'setGroupProfile',
+        group: DOCS,
+        profile: WORK_PROFILE,
+      });
+    });
+
+    it('moves a group to a profile dropped on its header', () => {
+      expect(dropCommand(group(WORK), { kind: 'profile', profile: QA_PROFILE }, workspace())).toEqual({
+        type: 'setGroupProfile',
+        group: WORK,
+        profile: QA_PROFILE,
+      });
+      expect(dropCommand(group(WORK), { kind: 'profile', profile: WORK_PROFILE }, workspace())).toBeNull();
+    });
+
+    it('reorders profiles', () => {
+      expect(dropCommand(profile(QA_PROFILE), { kind: 'profile', profile: WORK_PROFILE }, workspace())).toEqual({
+        type: 'moveProfile',
+        profile: QA_PROFILE,
+        index: 0,
+      });
+      expect(dropCommand(profile(WORK_PROFILE), { kind: 'profile', profile: WORK_PROFILE }, workspace())).toBeNull();
+    });
+
+    it('ignores tabs and folders on profiles and groups on other targets', () => {
+      expect(dropCommand(tab(GRAFANA), { kind: 'profile', profile: QA_PROFILE }, workspace())).toBeNull();
+      expect(dropCommand(folder(SPRINT), { kind: 'profile', profile: QA_PROFILE }, workspace())).toBeNull();
       expect(dropCommand(group(WORK), { kind: 'group', group: WORK }, workspace())).toBeNull();
       expect(dropCommand(group(WORK), { kind: 'tile', status: 'done' }, workspace())).toBeNull();
+      expect(dropCommand(profile(WORK_PROFILE), { kind: 'group', group: DOCS }, workspace())).toBeNull();
+    });
+  });
+
+  describe('move destinations', () => {
+    it('offers the other profiles for a group', () => {
+      expect(moveDestinations(group(WORK), workspace()).map((move) => move.label)).toEqual(['Personal', 'QA']);
+    });
+
+    it('offers other groups and folders for a tab', () => {
+      const labels = moveDestinations(tab(GRAFANA), workspace()).map((move) => move.label);
+      expect(labels).toEqual(expect.arrayContaining(['Investigación', 'Trabajo · Jira / Sprint 42']));
+      expect(labels).not.toContain('Trabajo · Jira');
     });
   });
 });

@@ -2,13 +2,13 @@ import { ExternalLink, FolderPlus, Plus } from 'lucide-react';
 import { useState } from 'react';
 
 import type { AppError, Command, Group, Snapshot } from '../api/types';
-import { defaultBrowser, findBrowser, groupBrowser } from '../lib/browsers';
+import { findProfile, profileBrowser, profileView } from '../lib/browsers';
 import { moveDestinations } from '../lib/dnd';
 import { AddTabForm } from './AddTabForm';
 import { Board } from './Board';
-import { BrowserPicker } from './BrowserPicker';
 import { ConfirmDelete, type PendingDelete } from './ConfirmDelete';
 import { InlineInput } from './InlineInput';
+import { ProfilePicker } from './ProfilePicker';
 import { RowMenu } from './RowMenu';
 import type { RowActions } from './Rows';
 import { Tree } from './Tree';
@@ -24,6 +24,7 @@ interface Props {
   openTab: (tab: string, browserName: string) => void;
   openFolder: (folder: string) => void;
   openGroup: (group: string) => void;
+  onOpenSettings: () => void;
 }
 
 type Adding = 'tab' | 'folder' | null;
@@ -32,12 +33,23 @@ function tabCount(group: Group): number {
   return group.children.reduce((total, node) => total + (node.type === 'folder' ? node.tabs.length : 1), 0);
 }
 
-export function GroupView({ snapshot, group, view, onViewChange, apply, openTab, openFolder, openGroup }: Props) {
+export function GroupView({
+  snapshot,
+  group,
+  view,
+  onViewChange,
+  apply,
+  openTab,
+  openFolder,
+  openGroup,
+  onOpenSettings,
+}: Props) {
   const [adding, setAdding] = useState<Adding>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
-  const resolved = groupBrowser(snapshot, group.id);
-  const browserName = findBrowser(snapshot, resolved?.browser)?.name ?? '';
+  const resolved = profileView(snapshot, group.profile);
+  const profileName = findProfile(snapshot, group.profile)?.name ?? '';
+  const browserName = profileBrowser(snapshot, group.profile)?.name ?? '';
 
   const saved = async (command: Command) => {
     const failure = await apply(command);
@@ -77,7 +89,7 @@ export function GroupView({ snapshot, group, view, onViewChange, apply, openTab,
         <span className="square" />
         {editing === group.id ? (
           <InlineInput
-            label="Nuevo nombre"
+            label="New name"
             initial={group.name}
             onCancel={() => setEditing(null)}
             onSubmit={(name) => saved({ type: 'renameGroup', group: group.id, name })}
@@ -87,14 +99,17 @@ export function GroupView({ snapshot, group, view, onViewChange, apply, openTab,
             {group.name}
           </h1>
         )}
-        <BrowserPicker
+        <ProfilePicker
           snapshot={snapshot}
           group={group}
-          onChange={(browser) => void apply({ type: 'setGroupBrowser', group: group.id, browser })}
+          onChange={(profile) => void apply({ type: 'setGroupProfile', group: group.id, profile })}
+          onManage={onOpenSettings}
         />
         <RowMenu
-          label="Opciones del grupo"
-          deleteLabel="Eliminar grupo"
+          label="Group options"
+          deleteLabel="Delete group"
+          moves={actions.moveDestinations({ kind: 'group', group: group.id })}
+          onMove={actions.onCommand}
           onRename={() => setEditing(group.id)}
           onDelete={() => {
             const remove = () => void apply({ type: 'removeGroup', group: group.id });
@@ -104,34 +119,40 @@ export function GroupView({ snapshot, group, view, onViewChange, apply, openTab,
           }}
         />
         <div className="group__actions">
-          <div className="segmented" role="group" aria-label="Vista">
+          <div className="segmented" role="group" aria-label="View">
             <button type="button" aria-pressed={view === 'list'} onClick={() => onViewChange('list')}>
-              Lista
+              List
             </button>
             <button type="button" aria-pressed={view === 'board'} onClick={() => onViewChange('board')}>
-              Por estado
+              By status
             </button>
           </div>
           <button type="button" className="button" onClick={() => setAdding('tab')}>
             <Plus className="icon" aria-hidden="true" />
-            Agregar tab
+            Add tab
           </button>
           <button type="button" className="button" onClick={() => setAdding('folder')}>
             <FolderPlus className="icon" aria-hidden="true" />
-            Agregar carpeta
+            Add folder
           </button>
           <button type="button" className="button" onClick={() => openGroup(group.id)}>
             <ExternalLink className="icon" aria-hidden="true" />
-            Abrir todo
+            Open all
           </button>
         </div>
       </header>
 
-      {resolved?.isFallback && (
-        <p className="group__note" role="note">
-          El navegador de este grupo no está instalado en este equipo. Se usa{' '}
-          {defaultBrowser(snapshot)?.name ?? 'el navegador por defecto'}.
-        </p>
+      {resolved && (!resolved.isBound || resolved.isFallback) && (
+        <div className="group__note" role="note">
+          <p className="group__note-text">
+            {resolved.isFallback
+              ? `The browser of the “${profileName}” profile is not installed on this computer. For now its tabs open in ${browserName}.`
+              : `The “${profileName}” profile is not set up on this computer. For now its tabs open in ${browserName}.`}
+          </p>
+          <button type="button" className="button" onClick={onOpenSettings}>
+            Configure profile
+          </button>
+        </div>
       )}
 
       {adding === 'tab' && (
@@ -146,8 +167,8 @@ export function GroupView({ snapshot, group, view, onViewChange, apply, openTab,
       )}
       {adding === 'folder' && (
         <InlineInput
-          label="Nombre de la carpeta"
-          placeholder="Sprint, Lecturas…"
+          label="Folder name"
+          placeholder="Sprint, Reading…"
           onCancel={() => setAdding(null)}
           onSubmit={async (name) => {
             const failure = await apply({ type: 'addFolder', group: group.id, name });
@@ -159,7 +180,7 @@ export function GroupView({ snapshot, group, view, onViewChange, apply, openTab,
 
       {group.children.length === 0 ? (
         <p className="group__empty">
-          Agrega el primer tab de este grupo con “Agregar tab”. Se abrirá en {browserName || 'su navegador'}.
+          Add the first tab of this group with “Add tab”. It will open in {browserName || 'its browser'}.
         </p>
       ) : view === 'board' ? (
         <Board group={group} actions={actions} />

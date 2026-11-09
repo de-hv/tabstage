@@ -23,6 +23,7 @@ export interface WorkspaceState {
   /** What a folder holds, or `null` when it cannot be read (error shown). */
   inspectDataFolder: (folder: string) => Promise<DataFileInfo | null>;
   relocate: (folder: string, mode: Relocate) => Promise<void>;
+  revealDataFile: () => Promise<void>;
 }
 
 /** Loads the snapshot, applies changes and follows changes from other devices. */
@@ -88,7 +89,7 @@ export function useWorkspace(): WorkspaceState {
     openTab: (tab, browserName) =>
       attempt(async () => {
         const opened: Opened = await api.openTab(tab);
-        if (opened === 'focusedExisting') show(`Ya estaba abierto en ${browserName}`);
+        if (opened === 'focusedExisting') show(`Already open in ${browserName}`);
       }),
     openFolder: (folder) => attempt(async () => void (await api.openFolder(folder))),
     openGroup: (group) => attempt(async () => void (await api.openGroup(group))),
@@ -101,5 +102,6 @@ export function useWorkspace(): WorkspaceState {
       }
     },
     relocate: async (folder, mode) => void (await run(() => api.relocate(folder, mode))),
+    revealDataFile: () => attempt(api.revealDataFile),
   };
 }

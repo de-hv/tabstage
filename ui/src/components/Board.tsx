@@ -8,7 +8,7 @@ interface Props {
   actions: RowActions;
 }
 
-/** "Por estado" view: one tile per status, like the extension's board. */
+/** "By status" view: one tile per status, like the extension's board. */
 export function Board({ group, actions }: Props) {
   const tiles = groupByStatus(group, actions.statuses);
 
@@ -24,7 +24,7 @@ export function Board({ group, actions }: Props) {
 function Tile({ tile, actions }: { tile: TileData; actions: RowActions }) {
   const status: Status | null = tile.status;
   const drop = useDrop({ kind: 'tile', status: status?.id ?? null });
-  const label = status?.label ?? 'Sin estado';
+  const label = status?.label ?? 'No status';
   const count = tile.items.reduce(
     (total, item) => total + (item.kind === 'folder' ? item.folder.tabs.length : 1),
     0,
@@ -37,7 +37,7 @@ function Tile({ tile, actions }: { tile: TileData; actions: RowActions }) {
         <span className="row__count">{count}</span>
       </header>
       {count === 0 ? (
-        <p className="tile__empty">Sin tabs</p>
+        <p className="tile__empty">No tabs</p>
       ) : (
         <ul className="tree">
           {tile.items.map((item) =>

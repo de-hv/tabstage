@@ -29,7 +29,7 @@ describe('App', () => {
     it('shows the folder status for the folder and the own status for loose tabs', async () => {
       await renderApp();
 
-      const sprint = screen.getByRole('button', { name: 'Contraer Sprint 42' }).closest('li');
+      const sprint = screen.getByRole('button', { name: 'Collapse Sprint 42' }).closest('li');
       expect(within(sprint as HTMLElement).getAllByText('In progress')).toHaveLength(1);
       const grafana = screen.getByRole('button', { name: /^Grafana/ });
       expect(within(grafana).getByText('To do')).toBeTruthy();
@@ -42,52 +42,6 @@ describe('App', () => {
 
       expect(screen.getByRole('heading', { name: 'Investigación' })).toBeTruthy();
       expect(screen.getByText('HTTP caching · MDN')).toBeTruthy();
-    });
-  });
-
-  describe('browser per group', () => {
-    it('shows the assigned browser or the default one', async () => {
-      const { user } = await renderApp();
-
-      expect(screen.getByRole('button', { name: 'Navegador del grupo: Google Chrome' })).toBeTruthy();
-      await user.click(within(sidebar()).getByRole('button', { name: /Investigación/ }));
-      expect(
-        screen.getByRole('button', { name: 'Navegador del grupo: Por defecto (Firefox)' }),
-      ).toBeTruthy();
-    });
-
-    it('warns when the group browser is not installed here', async () => {
-      const { user } = await renderApp();
-
-      await user.click(within(sidebar()).getByRole('button', { name: /Docs Rust/ }));
-
-      expect(screen.getByRole('note').textContent).toContain(
-        'El navegador de este grupo no está instalado en este equipo. Se usa Firefox.',
-      );
-    });
-
-    it('assigns a specific browser or goes back to the default', async () => {
-      const { calls, user } = await renderApp();
-
-      await user.click(screen.getByRole('button', { name: /Navegador del grupo/ }));
-      await user.click(screen.getByRole('menuitemradio', { name: 'Safari' }));
-      await user.click(screen.getByRole('button', { name: /Navegador del grupo/ }));
-      await user.click(screen.getByRole('menuitemradio', { name: 'Por defecto (Firefox)' }));
-
-      expect(appliedCommands(calls)).toEqual([
-        { type: 'setGroupBrowser', group: WORK, browser: { kind: 'specific', browser: 'com.apple.Safari' } },
-        { type: 'setGroupBrowser', group: WORK, browser: { kind: 'default' } },
-      ]);
-    });
-
-    it('marks the current choice in the picker', async () => {
-      const { user } = await renderApp();
-
-      await user.click(screen.getByRole('button', { name: /Navegador del grupo/ }));
-
-      expect(
-        screen.getByRole('menuitemradio', { name: 'Google Chrome' }).getAttribute('aria-checked'),
-      ).toBe('true');
     });
   });
 
@@ -106,31 +60,20 @@ describe('App', () => {
       await user.click(screen.getByRole('button', { name: /^PROJ-1182/ }));
 
       expect(
-        await within(screen.getByRole('status')).findByText('Ya estaba abierto en Google Chrome'),
+        await within(screen.getByRole('status')).findByText('Already open in Google Chrome'),
       ).toBeTruthy();
     });
 
     it('opens the whole group', async () => {
       const { calls, user } = await renderApp();
 
-      await user.click(screen.getByRole('button', { name: 'Abrir todo' }));
+      await user.click(screen.getByRole('button', { name: 'Open all' }));
 
       expect(calls).toContainEqual({ cmd: 'open_group', args: { group: WORK } });
     });
   });
 
   describe('editing', () => {
-    it('adds a group from the sidebar', async () => {
-      const { calls, user } = await renderApp();
-
-      await user.click(screen.getByRole('button', { name: 'Nuevo grupo' }));
-      await user.type(screen.getByRole('textbox', { name: 'Nombre del grupo' }), 'Personal{Enter}');
-
-      expect(appliedCommands(calls)).toEqual([
-        expect.objectContaining({ type: 'addGroup', name: 'Personal' }),
-      ]);
-    });
-
     it('opens the new group after adding it', async () => {
       const { user } = await renderApp({
         apply: () => {
@@ -139,15 +82,16 @@ describe('App', () => {
             id: '00000000-0000-0000-0000-0000000000a9',
             name: 'Personal',
             color: 'green',
-            browser: { kind: 'default' },
+            profile: '00000000-0000-0000-0000-0000000000c1',
             children: [],
           });
           return next;
         },
       });
 
-      await user.click(screen.getByRole('button', { name: 'Nuevo grupo' }));
-      await user.type(screen.getByRole('textbox', { name: 'Nombre del grupo' }), 'Personal{Enter}');
+      await user.click(within(sidebar()).getByRole('button', { name: 'Create in Trabajo' }));
+      await user.click(screen.getByRole('menuitem', { name: 'New group' }));
+      await user.type(screen.getByRole('textbox', { name: 'Group name' }), 'Compras{Enter}');
 
       expect(await screen.findByRole('heading', { name: 'Personal' })).toBeTruthy();
     });
@@ -155,7 +99,7 @@ describe('App', () => {
     it('adds a tab to the open group', async () => {
       const { calls, user } = await renderApp();
 
-      await user.click(screen.getByRole('button', { name: 'Agregar tab' }));
+      await user.click(screen.getByRole('button', { name: 'Add tab' }));
       await user.type(screen.getByRole('textbox', { name: 'URL' }), 'https://a.dev{Enter}');
 
       expect(appliedCommands(calls)).toEqual([
@@ -170,11 +114,11 @@ describe('App', () => {
         },
       });
 
-      await user.click(screen.getByRole('button', { name: 'Agregar tab' }));
+      await user.click(screen.getByRole('button', { name: 'Add tab' }));
       await user.type(screen.getByRole('textbox', { name: 'URL' }), 'a.dev{Enter}');
 
       expect((await screen.findByRole('alert')).textContent).toBe(
-        'Escribe una dirección web que empiece por http:// o https://',
+        'Enter a web address that starts with http:// or https://',
       );
       expect(screen.getByRole('textbox', { name: 'URL' })).toBeTruthy();
     });
@@ -182,7 +126,7 @@ describe('App', () => {
     it('collapses a folder', async () => {
       const { calls, user } = await renderApp();
 
-      const toggle = screen.getByRole('button', { name: 'Contraer Sprint 42' });
+      const toggle = screen.getByRole('button', { name: 'Collapse Sprint 42' });
       expect(toggle.getAttribute('aria-expanded')).toBe('true');
       await user.click(toggle);
 
@@ -200,11 +144,11 @@ describe('App', () => {
         },
       });
 
-      await user.click(screen.getByRole('button', { name: 'Contraer Sprint 42' }));
+      await user.click(screen.getByRole('button', { name: 'Collapse Sprint 42' }));
       const banner = await screen.findByRole('alert');
-      expect(banner.textContent).toContain('Los datos cambiaron en otro equipo');
+      expect(banner.textContent).toContain('The data changed on another computer');
 
-      await user.click(within(banner).getByRole('button', { name: 'Cargar cambios' }));
+      await user.click(within(banner).getByRole('button', { name: 'Load changes' }));
       expect(calls.map((call) => call.cmd)).toContain('reload');
     });
 
@@ -215,8 +159,8 @@ describe('App', () => {
         },
       });
 
-      await user.click(screen.getByRole('button', { name: 'Contraer Sprint 42' }));
-      await user.click(await screen.findByRole('button', { name: 'Mantener los míos' }));
+      await user.click(screen.getByRole('button', { name: 'Collapse Sprint 42' }));
+      await user.click(await screen.findByRole('button', { name: 'Keep mine' }));
 
       expect(calls.map((call) => call.cmd)).toContain('force_save');
     });

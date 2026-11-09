@@ -1,27 +1,34 @@
 //! Application service for Tabstage Desktop.
 //!
-//! [`AppService`] owns the document, saves every change and opens tabs in
-//! the right browser. It does not know about Tauri: the shell forwards IPC
-//! calls to it, and tests drive it with a fake [`System`].
+//! [`AppService`] owns the document and this machine's config, saves every
+//! change and opens tabs with the right profile. It does not know about
+//! Tauri: the shell forwards IPC calls to it, and tests drive it with a fake
+//! [`System`].
+//!
+//! Every group belongs to a Tabstage profile. Profiles and groups live in the
+//! synced data file; which browser (and which profile of that browser) a
+//! profile opens in lives in this machine's [`config::AppConfig`].
 
 pub mod config;
 pub mod tray;
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use tabstage_browsers::profiles::BrowserProfile;
 use tabstage_browsers::{
-    BrowserError, BrowserInfo, Catalog, Launcher, Opened, Platform, TabFocuser, can_focus_tabs,
-    find_installed, open_tab,
+    BrowserError, BrowserInfo, Catalog, LaunchOptions, Launcher, Opened, Platform, TabFocuser,
+    can_focus_tabs, find_installed, open_tab,
 };
 use tabstage_core::{
-    AccentColor, BrowserChoice, BrowserId, FolderId, Group, GroupId, Node, Place, Resolved,
+    AccentColor, BrowserId, FolderId, Group, GroupId, Node, Place, ProfileColor, ProfileId,
     StatusId, Tab, TabId, TabUrl, TabUrlError, Target, Workspace, WorkspaceError,
-    effective_browser,
 };
 use tabstage_store::{Document, FileStore, Settings, StoreError};
 use thiserror::Error;
+
+use crate::config::{AppConfig, ProfileBinding, load_config, save_config};
 
 /// Everything the service needs from the OS.
 pub trait System: Catalog + Launcher + TabFocuser {}
@@ -36,8 +43,10 @@ impl<T: Catalog + Launcher + TabFocuser> System for T {}
     rename_all_fields = "camelCase"
 )]
 pub enum Command {
-    /// Add a group at the end.
+    /// Add a group at the end of a profile.
     AddGroup {
+        /// Profile the group belongs to.
+        profile: ProfileId,
         /// Group name.
         name: String,
         /// Accent color.
@@ -50,18 +59,18 @@ pub enum Command {
         /// New name.
         name: String,
     },
-    /// Choose the browser a group opens in.
-    SetGroupBrowser {
-        /// Group to change.
+    /// Move a group to another profile.
+    SetGroupProfile {
+        /// Group to move.
         group: GroupId,
-        /// Default or a specific installed browser.
-        browser: BrowserChoice,
+        /// Its new profile.
+        profile: ProfileId,
     },
     /// Move a group in the sidebar.
     MoveGroup {
         /// Group to move.
         group: GroupId,
-        /// New position.
+        /// New position among all groups.
         index: usize,
     },
     /// Remove a group and everything in it.
@@ -176,45 +185,140 @@ pub enum Command {
         /// Status that takes its tabs and folders.
         replacement: Option<StatusId>,
     },
-    /// Choose the default browser.
-    SetDefaultBrowser {
+    /// Add a profile at the end.
+    AddProfile {
+        /// Profile name.
+        name: String,
+    },
+    /// Rename a profile.
+    RenameProfile {
+        /// Profile to rename.
+        profile: ProfileId,
+        /// New name.
+        name: String,
+    },
+    /// Change the color of a profile's dot.
+    SetProfileColor {
+        /// Profile to recolor.
+        profile: ProfileId,
+        /// Its new color.
+        color: ProfileColor,
+    },
+    /// Move a profile in the sidebar.
+    MoveProfile {
+        /// Profile to move.
+        profile: ProfileId,
+        /// New position.
+        index: usize,
+    },
+    /// Remove a profile, moving its groups to another one.
+    RemoveProfile {
+        /// Profile to remove.
+        profile: ProfileId,
+        /// Profile that takes its groups.
+        move_groups_to: ProfileId,
+    },
+    /// Choose, on this machine, the browser a profile opens in.
+    BindProfile {
+        /// Profile to configure.
+        profile: ProfileId,
         /// An installed browser.
         browser: BrowserId,
+        /// One of that browser's profiles, if it has any.
+        browser_profile: Option<String>,
+        /// Open several tabs at once in a new window.
+        new_window: bool,
     },
 }
 
-/// Which browser a group opens in, as shown in the UI.
+/// How a profile opens on this machine, as shown in the UI.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct GroupBrowser {
-    /// The group.
-    pub group: GroupId,
-    /// Browser that will open its tabs, if any browser is installed.
+pub struct ProfileView {
+    /// The profile.
+    pub profile: ProfileId,
+    /// What this machine's config says, if anything.
+    pub binding: Option<ProfileBinding>,
+    /// Browser that will open the profile's groups here.
     pub browser: Option<BrowserId>,
-    /// The group follows the default browser.
-    pub follows_default: bool,
-    /// The group's browser is not installed here, so the default is used.
+    /// The profile has a browser chosen on this machine.
+    pub is_bound: bool,
+    /// The chosen browser is not installed here, so the system one is used.
     pub is_fallback: bool,
     /// Open tabs can be focused instead of opened again.
     pub can_focus_tabs: bool,
+}
+
+/// Kind of place the data file lives in, as the UI describes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DataLocationKind {
+    /// The app's own folder on this machine: not shared.
+    AppData,
+    /// iCloud Drive.
+    ICloudDrive,
+    /// Dropbox.
+    Dropbox,
+    /// Microsoft OneDrive.
+    OneDrive,
+    /// Google Drive.
+    GoogleDrive,
+    /// Any other folder the user chose.
+    Folder,
+}
+
+/// Where the data file is, for the Settings card.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataLocation {
+    /// What kind of place it is.
+    pub kind: DataLocationKind,
+    /// Folder that holds the file.
+    pub folder: String,
+}
+
+/// Names the kind of place `path` is in. `is_default` means the user never
+/// moved the file, so it is in the app's own folder.
+#[must_use]
+pub fn classify_location(path: &Path, is_default: bool) -> DataLocationKind {
+    if is_default {
+        return DataLocationKind::AppData;
+    }
+    let path = path.to_string_lossy();
+    let has = |needle: &str| path.contains(needle);
+    if has("/Library/Mobile Documents/com~apple~CloudDocs/") {
+        DataLocationKind::ICloudDrive
+    } else if has("/Library/CloudStorage/Dropbox") || has("/Dropbox/") {
+        DataLocationKind::Dropbox
+    } else if has("/Library/CloudStorage/OneDrive") || has("/OneDrive/") {
+        DataLocationKind::OneDrive
+    } else if has("/Library/CloudStorage/GoogleDrive") || has("/Google Drive/") {
+        DataLocationKind::GoogleDrive
+    } else {
+        DataLocationKind::Folder
+    }
 }
 
 /// Everything the UI renders.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
-    /// Groups, folders, tabs and statuses.
+    /// Groups, folders, tabs, statuses and profiles.
     pub workspace: Workspace,
-    /// Saved settings.
+    /// Synced settings.
     pub settings: Settings,
     /// Browsers installed on this machine.
     pub browsers: Vec<BrowserInfo>,
-    /// The browser groups that follow the default actually use here.
-    pub default_browser: Option<BrowserId>,
+    /// Profiles of each installed browser that exposes them.
+    pub browser_profiles: BTreeMap<BrowserId, Vec<BrowserProfile>>,
+    /// Browser used for profiles that are not configured here.
+    pub system_browser: Option<BrowserId>,
     /// Path of the data file on this machine.
     pub data_path: String,
-    /// Resolved browser of each group, in group order.
-    pub groups: Vec<GroupBrowser>,
+    /// Where the data file is, in words the UI can show.
+    pub data_location: DataLocation,
+    /// How each profile opens here, in profile order.
+    pub profiles: Vec<ProfileView>,
 }
 
 /// What opening several tabs did.
@@ -245,9 +349,15 @@ pub enum AppError {
     /// The browser is not installed on this machine.
     #[error("browser {0} is not installed")]
     UnknownBrowser(BrowserId),
+    /// The browser has no profile with this id.
+    #[error("browser profile `{0}` not found")]
+    UnknownBrowserProfile(String),
     /// No browser is installed at all.
     #[error("no browser is installed")]
     NoBrowser,
+    /// This machine's config could not be saved.
+    #[error("could not save this machine's settings")]
+    Config(#[source] std::io::Error),
 }
 
 impl AppError {
@@ -259,15 +369,16 @@ impl AppError {
                 WorkspaceError::GroupNotFound(_)
                 | WorkspaceError::FolderNotFound(_)
                 | WorkspaceError::TabNotFound(_)
-                | WorkspaceError::StatusNotFound(_),
+                | WorkspaceError::StatusNotFound(_)
+                | WorkspaceError::ProfileNotFound(_),
             ) => "notFound",
             Self::Workspace(_) => "invalid",
             Self::Store(StoreError::Conflict) => "conflict",
-            Self::Store(StoreError::Io { .. }) => "io",
+            Self::Store(StoreError::Io { .. }) | Self::Config(_) => "io",
             Self::Store(_) => "badFile",
             Self::Browser(_) => "browser",
             Self::Url(_) => "invalidUrl",
-            Self::UnknownBrowser(_) => "unknownBrowser",
+            Self::UnknownBrowser(_) | Self::UnknownBrowserProfile(_) => "unknownBrowser",
             Self::NoBrowser => "noBrowser",
         }
     }
@@ -353,51 +464,126 @@ pub fn inspect_data_file(path: &Path) -> Result<DataFileInfo> {
     })
 }
 
-/// Owns the document and talks to the store and the browsers.
+/// The browser a profile opens in here, and how.
+struct Resolution<'a> {
+    browser: Option<&'a BrowserInfo>,
+    binding: Option<&'a ProfileBinding>,
+    is_fallback: bool,
+}
+
+impl Resolution<'_> {
+    /// Launch options; a fallback browser ignores the bound browser's profile.
+    fn options(&self, first_of_many: bool) -> LaunchOptions {
+        match self.binding {
+            Some(binding) if !self.is_fallback => LaunchOptions {
+                browser_profile: binding.browser_profile.clone(),
+                new_window: first_of_many && binding.new_window,
+            },
+            _ => LaunchOptions::default(),
+        }
+    }
+}
+
+/// Owns the document and this machine's config, and opens tabs.
 #[derive(Debug)]
 pub struct AppService<S> {
     system: S,
     store: FileStore,
+    config_path: PathBuf,
+    config: AppConfig,
     document: Document,
     browsers: Vec<BrowserInfo>,
-    system_default: Option<BrowserId>,
+    browser_profiles: BTreeMap<BrowserId, Vec<BrowserProfile>>,
+    system_browser: Option<BrowserId>,
     platform: Platform,
 }
 
 impl<S: System> AppService<S> {
-    /// Loads the data file (or starts a new one) and lists the browsers.
-    /// On first run the default browser is the system's.
+    /// Loads the data file (or starts a new one), this machine's config and
+    /// the installed browsers.
+    ///
+    /// On first run the only profile opens in the system browser. A version 1
+    /// data file is upgraded: its browsers become this machine's bindings.
     ///
     /// # Errors
     ///
-    /// When the file cannot be read or written, or browsers cannot be listed.
-    pub fn start(system: S, mut store: FileStore, platform: Platform) -> Result<Self> {
+    /// When the files cannot be read or written, or browsers cannot be listed.
+    pub fn start(
+        system: S,
+        mut store: FileStore,
+        config_path: PathBuf,
+        platform: Platform,
+    ) -> Result<Self> {
         let browsers = system.installed()?;
-        let system_default = system
+        let system_browser = system
             .system_default()?
             .and_then(|id| find_installed(&browsers, &id))
+            .or_else(|| browsers.first())
             .map(|browser| browser.id.clone());
+        let browser_profiles = profiles_of(&system, &browsers);
+        let mut config = load_config(&config_path);
+
         let loaded = store.load()?;
         let is_new = loaded.is_none();
         let mut document = loaded.unwrap_or_default();
+        let migrated = std::mem::take(&mut document.migrated);
+        let mut config_changed = false;
 
-        let mut changed = is_new;
-        if document.settings.default_browser.is_none() {
-            let detected = system_default
-                .clone()
-                .or_else(|| browsers.first().map(|browser| browser.id.clone()));
-            changed |= detected.is_some();
-            document.settings.default_browser = detected;
+        if is_new
+            && let (Some(browser), Some(profile)) =
+                (&system_browser, document.workspace.profiles().first())
+        {
+            config.profiles.insert(
+                profile.id,
+                ProfileBinding {
+                    browser: browser.clone(),
+                    browser_profile: None,
+                    new_window: false,
+                },
+            );
+            config_changed = true;
         }
-        if changed {
+        for binding in &migrated {
+            let installed = find_installed(&browsers, &binding.browser);
+            // Migrated profiles are named after the browser id; use its name.
+            let named_after_id = document
+                .workspace
+                .profile(binding.profile)
+                .is_some_and(|profile| profile.name == binding.browser.as_str());
+            if let Some(info) = installed
+                && named_after_id
+            {
+                document
+                    .workspace
+                    .rename_profile(binding.profile, &info.name)?;
+            }
+            config.profiles.insert(
+                binding.profile,
+                ProfileBinding {
+                    browser: installed
+                        .map_or_else(|| binding.browser.clone(), |info| info.id.clone()),
+                    browser_profile: None,
+                    new_window: false,
+                },
+            );
+            config_changed = true;
+        }
+
+        if is_new || !migrated.is_empty() {
             store.save(&document)?;
+        }
+        if config_changed {
+            save_config(&config_path, &config).map_err(AppError::Config)?;
         }
         Ok(Self {
             system,
             store,
+            config_path,
+            config,
             document,
             browsers,
-            system_default,
+            browser_profiles,
+            system_browser,
             platform,
         })
     }
@@ -410,26 +596,42 @@ impl<S: System> AppService<S> {
     /// Current state for the UI.
     #[must_use]
     pub fn snapshot(&self) -> Snapshot {
-        let default = self.default_browser();
-        let installed: BTreeSet<BrowserId> = self
-            .browsers
-            .iter()
-            .map(|browser| browser.id.clone())
-            .collect();
-        let groups = self
+        let profiles = self
             .document
             .workspace
-            .groups()
+            .profiles()
             .iter()
-            .map(|group| self.resolve_group(group, default, &installed))
+            .map(|profile| {
+                let resolved = self.resolve(profile.id);
+                ProfileView {
+                    profile: profile.id,
+                    binding: resolved.binding.cloned(),
+                    browser: resolved.browser.map(|browser| browser.id.clone()),
+                    is_bound: resolved.binding.is_some(),
+                    is_fallback: resolved.is_fallback,
+                    can_focus_tabs: resolved
+                        .browser
+                        .is_some_and(|browser| can_focus_tabs(browser.kind, self.platform)),
+                }
+            })
             .collect();
         Snapshot {
             workspace: self.document.workspace.clone(),
             settings: self.document.settings.clone(),
             browsers: self.browsers.clone(),
-            default_browser: default.map(|browser| browser.id.clone()),
+            browser_profiles: self.browser_profiles.clone(),
+            system_browser: self.system_browser.clone(),
             data_path: self.store.path().display().to_string(),
-            groups,
+            data_location: DataLocation {
+                kind: classify_location(self.store.path(), self.config.data_path.is_none()),
+                folder: self
+                    .store
+                    .path()
+                    .parent()
+                    .map(|folder| folder.display().to_string())
+                    .unwrap_or_default(),
+            },
+            profiles,
         }
     }
 
@@ -437,13 +639,32 @@ impl<S: System> AppService<S> {
     ///
     /// # Errors
     ///
-    /// When the change is invalid or the file cannot be saved, including
-    /// [`StoreError::Conflict`] when another device changed it.
+    /// When the change is invalid or a file cannot be saved, including
+    /// [`StoreError::Conflict`] when another device changed the data file.
     pub fn apply(&mut self, command: Command) -> Result<Snapshot> {
+        if let Command::BindProfile {
+            profile,
+            browser,
+            browser_profile,
+            new_window,
+        } = command
+        {
+            self.bind(profile, &browser, browser_profile, new_window)?;
+            return Ok(self.snapshot());
+        }
+        let removed_profile = match &command {
+            Command::RemoveProfile { profile, .. } => Some(*profile),
+            _ => None,
+        };
         let mut next = self.document.clone();
         self.execute(&mut next, command)?;
         self.store.save(&next)?;
         self.document = next;
+        if let Some(profile) = removed_profile
+            && self.config.profiles.remove(&profile).is_some()
+        {
+            self.save_config()?;
+        }
         Ok(self.snapshot())
     }
 
@@ -476,21 +697,23 @@ impl<S: System> AppService<S> {
         self.store.path()
     }
 
-    /// Moves the data file to `path`, for example into a synced folder.
-    /// When a Tabstage file is already there, `mode` decides whether to load
-    /// it or overwrite it with this machine's data. Later saves go to `path`;
-    /// the old file is left untouched.
+    /// Moves the data file to `path`, for example into a synced folder, and
+    /// remembers it in this machine's config. When a Tabstage file is
+    /// already there, `mode` decides whether to load it or overwrite it.
+    /// The old file is left untouched.
     ///
     /// # Errors
     ///
-    /// When the file at `path` cannot be read or written.
+    /// When the file at `path` or the config cannot be read or written.
     pub fn relocate(&mut self, path: PathBuf, mode: Relocate) -> Result<Snapshot> {
-        let mut store = FileStore::new(path);
+        let mut store = FileStore::new(path.clone());
         match (store.load()?, mode) {
             (Some(existing), Relocate::UseExisting) => self.document = existing,
             _ => store.force_save(&self.document)?,
         }
         self.store = store;
+        self.config.data_path = Some(path);
+        self.save_config()?;
         Ok(self.snapshot())
     }
 
@@ -503,17 +726,18 @@ impl<S: System> AppService<S> {
         Ok(self.store.has_external_change()?)
     }
 
-    /// Lists the installed browsers again.
+    /// Lists the installed browsers and their profiles again.
     ///
     /// # Errors
     ///
     /// When browsers cannot be listed.
     pub fn refresh_browsers(&mut self) -> Result<Snapshot> {
         self.browsers = self.system.installed()?;
+        self.browser_profiles = profiles_of(&self.system, &self.browsers);
         Ok(self.snapshot())
     }
 
-    /// Opens a tab in its group's browser, focusing it if already open.
+    /// Opens a tab with its group's profile, focusing it if already open.
     ///
     /// # Errors
     ///
@@ -524,10 +748,12 @@ impl<S: System> AppService<S> {
             .workspace
             .find_tab(tab)
             .ok_or(WorkspaceError::TabNotFound(tab))?;
-        let browser = self.browser_for(found.group)?;
+        let resolved = self.resolve(found.group.profile);
+        let browser = resolved.browser.ok_or(AppError::NoBrowser)?;
         Ok(open_tab(
             browser,
             &found.tab.url,
+            &resolved.options(false),
             self.platform,
             &self.system,
             &self.system,
@@ -573,15 +799,26 @@ impl<S: System> AppService<S> {
         self.open_all(group, tabs)
     }
 
+    /// Opens tabs one after another. Only the first can ask for a new window,
+    /// so the rest join it.
     fn open_all<'a>(
         &self,
         group: &Group,
         tabs: impl Iterator<Item = &'a Tab>,
     ) -> Result<OpenSummary> {
-        let browser = self.browser_for(group)?;
+        let resolved = self.resolve(group.profile);
+        let browser = resolved.browser.ok_or(AppError::NoBrowser)?;
         let mut summary = OpenSummary::default();
-        for tab in tabs {
-            match open_tab(browser, &tab.url, self.platform, &self.system, &self.system)? {
+        for (index, tab) in tabs.enumerate() {
+            let options = resolved.options(index == 0);
+            match open_tab(
+                browser,
+                &tab.url,
+                &options,
+                self.platform,
+                &self.system,
+                &self.system,
+            )? {
                 Opened::OpenedNew => summary.opened += 1,
                 Opened::FocusedExisting => summary.focused += 1,
             }
@@ -589,77 +826,88 @@ impl<S: System> AppService<S> {
         Ok(summary)
     }
 
-    /// The browser groups that follow the default use here: the saved one
-    /// when installed (it may come from another OS through sync), else the
-    /// system default, else the first installed browser.
-    fn default_browser(&self) -> Option<&BrowserInfo> {
-        let saved = self.document.settings.default_browser.as_ref();
-        saved
-            .and_then(|id| find_installed(&self.browsers, id))
-            .or_else(|| {
-                self.system_default
-                    .as_ref()
-                    .and_then(|id| find_installed(&self.browsers, id))
-            })
-            .or_else(|| self.browsers.first())
-    }
-
-    fn browser_for(&self, group: &Group) -> Result<&BrowserInfo> {
-        let default = self.default_browser().ok_or(AppError::NoBrowser)?;
-        let installed: BTreeSet<BrowserId> = self
-            .browsers
-            .iter()
-            .map(|browser| browser.id.clone())
-            .collect();
-        let resolved = effective_browser(&group.browser, &default.id, &installed);
-        find_installed(&self.browsers, resolved.browser()).ok_or(AppError::NoBrowser)
-    }
-
-    fn resolve_group(
-        &self,
-        group: &Group,
-        default: Option<&BrowserInfo>,
-        installed: &BTreeSet<BrowserId>,
-    ) -> GroupBrowser {
-        let Some(default) = default else {
-            return GroupBrowser {
-                group: group.id,
-                browser: None,
-                follows_default: group.browser == BrowserChoice::Default,
+    /// The browser a profile opens in here: its bound browser when installed,
+    /// otherwise the system browser.
+    fn resolve(&self, profile: ProfileId) -> Resolution<'_> {
+        let system = self
+            .system_browser
+            .as_ref()
+            .and_then(|id| find_installed(&self.browsers, id));
+        let binding = self.config.profiles.get(&profile);
+        match binding.map(|binding| find_installed(&self.browsers, &binding.browser)) {
+            Some(Some(browser)) => Resolution {
+                browser: Some(browser),
+                binding,
                 is_fallback: false,
-                can_focus_tabs: false,
-            };
-        };
-        let resolved = effective_browser(&group.browser, &default.id, installed);
-        let can_focus = find_installed(&self.browsers, resolved.browser())
-            .is_some_and(|browser| can_focus_tabs(browser.kind, self.platform));
-        GroupBrowser {
-            group: group.id,
-            browser: Some(resolved.browser().clone()),
-            follows_default: matches!(resolved, Resolved::Default(_)),
-            is_fallback: resolved.is_fallback(),
-            can_focus_tabs: can_focus,
+            },
+            Some(None) => Resolution {
+                browser: system,
+                binding,
+                is_fallback: true,
+            },
+            None => Resolution {
+                browser: system,
+                binding: None,
+                is_fallback: false,
+            },
         }
     }
 
-    /// The installed browser with this id, with the casing it has here.
-    fn installed(&self, id: &BrowserId) -> Result<BrowserId> {
-        find_installed(&self.browsers, id)
-            .map(|browser| browser.id.clone())
-            .ok_or_else(|| AppError::UnknownBrowser(id.clone()))
+    fn bind(
+        &mut self,
+        profile: ProfileId,
+        browser: &BrowserId,
+        browser_profile: Option<String>,
+        new_window: bool,
+    ) -> Result<()> {
+        if self.document.workspace.profile(profile).is_none() {
+            return Err(WorkspaceError::ProfileNotFound(profile).into());
+        }
+        let browser = find_installed(&self.browsers, browser)
+            .map(|info| info.id.clone())
+            .ok_or_else(|| AppError::UnknownBrowser(browser.clone()))?;
+        if let Some(wanted) = &browser_profile {
+            let known = self
+                .browser_profiles
+                .get(&browser)
+                .is_some_and(|profiles| profiles.iter().any(|p| &p.id == wanted));
+            if !known {
+                return Err(AppError::UnknownBrowserProfile(wanted.clone()));
+            }
+        }
+        let previous = self.config.profiles.insert(
+            profile,
+            ProfileBinding {
+                browser,
+                browser_profile,
+                new_window,
+            },
+        );
+        if let Err(error) = self.save_config() {
+            match previous {
+                Some(previous) => self.config.profiles.insert(profile, previous),
+                None => self.config.profiles.remove(&profile),
+            };
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn save_config(&self) -> Result<()> {
+        save_config(&self.config_path, &self.config).map_err(AppError::Config)
     }
 
     fn execute(&self, document: &mut Document, command: Command) -> Result<()> {
         let workspace = &mut document.workspace;
         match command {
-            Command::AddGroup { name, color } => workspace.add_group(&name, color).map(drop)?,
+            Command::AddGroup {
+                profile,
+                name,
+                color,
+            } => workspace.add_group(profile, &name, color).map(drop)?,
             Command::RenameGroup { group, name } => workspace.rename_group(group, &name)?,
-            Command::SetGroupBrowser { group, browser } => {
-                let browser = match browser {
-                    BrowserChoice::Default => BrowserChoice::Default,
-                    BrowserChoice::Specific(id) => BrowserChoice::Specific(self.installed(&id)?),
-                };
-                workspace.set_group_browser(group, browser)?;
+            Command::SetGroupProfile { group, profile } => {
+                workspace.set_group_profile(group, profile)?;
             }
             Command::MoveGroup { group, index } => workspace.move_group(group, index)?,
             Command::RemoveGroup { group } => workspace.remove_group(group).map(drop)?,
@@ -694,615 +942,46 @@ impl<S: System> AppService<S> {
             } => workspace
                 .remove_status(&status, replacement.as_ref())
                 .map(drop)?,
-            Command::SetDefaultBrowser { browser } => {
-                document.settings.default_browser = Some(self.installed(&browser)?);
+            Command::AddProfile { name } => workspace.add_profile(&name).map(drop)?,
+            Command::RenameProfile { profile, name } => workspace.rename_profile(profile, &name)?,
+            Command::SetProfileColor { profile, color } => {
+                workspace.set_profile_color(profile, color)?;
             }
+            Command::MoveProfile { profile, index } => workspace.move_profile(profile, index)?,
+            Command::RemoveProfile {
+                profile,
+                move_groups_to,
+            } => workspace
+                .remove_profile(profile, move_groups_to)
+                .map(drop)?,
+            // Machine-local: handled in `apply` without touching the document.
+            Command::BindProfile { .. } => {}
         }
         Ok(())
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::cell::RefCell;
-    use std::fs;
-
-    use tabstage_browsers::{BrowserKind, Focus, Launch};
-
-    use super::*;
-
-    fn id(raw: &str) -> BrowserId {
-        BrowserId::parse(raw).expect("id")
-    }
-
-    fn browser(raw: &str, name: &str) -> BrowserInfo {
-        let id = id(raw);
-        BrowserInfo {
-            kind: BrowserKind::from_id(&id),
-            id,
-            name: name.to_owned(),
-            launch: Launch::MacBundle,
-        }
-    }
-
-    struct FakeSystem {
-        installed: Vec<BrowserInfo>,
-        default: Option<BrowserId>,
-        focus: Focus,
-        opened: RefCell<Vec<String>>,
-    }
-
-    impl FakeSystem {
-        fn new(default: Option<&str>) -> Self {
-            Self {
-                installed: vec![
-                    browser("com.google.Chrome", "Google Chrome"),
-                    browser("org.mozilla.firefox", "Firefox"),
-                    browser("com.apple.Safari", "Safari"),
-                ],
-                default: default.map(id),
-                focus: Focus::NotFound,
-                opened: RefCell::default(),
+/// Profiles of every installed browser that has some.
+fn profiles_of(
+    system: &impl Catalog,
+    browsers: &[BrowserInfo],
+) -> BTreeMap<BrowserId, Vec<BrowserProfile>> {
+    browsers
+        .iter()
+        .filter_map(|browser| match system.profiles(browser) {
+            Ok(profiles) if !profiles.is_empty() => Some((browser.id.clone(), profiles)),
+            Ok(_) => None,
+            Err(error) => {
+                tracing::warn!(
+                    browser = %browser.id,
+                    error = &error as &dyn std::error::Error,
+                    "could not list browser profiles"
+                );
+                None
             }
-        }
-
-        fn without(mut self, raw: &str) -> Self {
-            self.installed.retain(|browser| browser.id.as_str() != raw);
-            self
-        }
-    }
-
-    impl Catalog for FakeSystem {
-        fn installed(&self) -> tabstage_browsers::Result<Vec<BrowserInfo>> {
-            Ok(self.installed.clone())
-        }
-
-        fn system_default(&self) -> tabstage_browsers::Result<Option<BrowserId>> {
-            Ok(self.default.clone())
-        }
-    }
-
-    impl Launcher for FakeSystem {
-        fn open(&self, browser: &BrowserInfo, url: &TabUrl) -> tabstage_browsers::Result<()> {
-            self.opened
-                .borrow_mut()
-                .push(format!("{} {url}", browser.id));
-            Ok(())
-        }
-    }
-
-    impl TabFocuser for FakeSystem {
-        fn focus(&self, _: &BrowserInfo, _: &TabUrl) -> tabstage_browsers::Result<Focus> {
-            Ok(self.focus)
-        }
-    }
-
-    struct Fixture {
-        dir: tempfile::TempDir,
-    }
-
-    impl Fixture {
-        fn new() -> Self {
-            Self {
-                dir: tempfile::tempdir().expect("tempdir"),
-            }
-        }
-
-        fn path(&self) -> std::path::PathBuf {
-            self.dir.path().join("workspace.json")
-        }
-
-        fn start(&self, system: FakeSystem) -> AppService<FakeSystem> {
-            self.start_on(system, Platform::Linux)
-        }
-
-        fn start_on(&self, system: FakeSystem, platform: Platform) -> AppService<FakeSystem> {
-            AppService::start(system, FileStore::new(self.path()), platform).expect("start")
-        }
-    }
-
-    fn add_group(service: &mut AppService<FakeSystem>, name: &str) -> GroupId {
-        let snapshot = service
-            .apply(Command::AddGroup {
-                name: name.to_owned(),
-                color: AccentColor::Blue,
-            })
-            .expect("add group");
-        snapshot
-            .workspace
-            .groups()
-            .iter()
-            .find(|group| group.name == name)
-            .expect("group")
-            .id
-    }
-
-    fn add_tab(service: &mut AppService<FakeSystem>, place: Place, url: &str) -> TabId {
-        service
-            .apply(Command::AddTab {
-                place,
-                url: url.to_owned(),
-                title: String::new(),
-            })
-            .expect("add tab");
-        let found = service
-            .document
-            .workspace
-            .groups()
-            .iter()
-            .find_map(|group| {
-                group.children.iter().find_map(|node| match node {
-                    Node::Tab(tab) if tab.url.as_str() == url => Some(tab.id),
-                    Node::Folder(folder) => folder
-                        .tabs
-                        .iter()
-                        .find(|tab| tab.url.as_str() == url)
-                        .map(|tab| tab.id),
-                    Node::Tab(_) => None,
-                })
-            });
-        found.expect("tab")
-    }
-
-    #[test]
-    fn first_start_saves_the_system_default_with_installed_casing() {
-        let fixture = Fixture::new();
-
-        let service = fixture.start(FakeSystem::new(Some("com.google.chrome")));
-
-        assert_eq!(
-            service.snapshot().settings.default_browser,
-            Some(id("com.google.Chrome"))
-        );
-        assert!(fixture.path().exists());
-    }
-
-    #[test]
-    fn unknown_system_default_falls_back_to_first_installed() {
-        let fixture = Fixture::new();
-
-        let service = fixture.start(FakeSystem::new(Some("org.gnome.Epiphany")));
-
-        assert_eq!(
-            service.snapshot().default_browser,
-            Some(id("com.google.Chrome"))
-        );
-    }
-
-    #[test]
-    fn changes_are_saved_and_survive_a_restart() {
-        let fixture = Fixture::new();
-        let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
-
-        add_group(&mut service, "Work");
-        drop(service);
-        let restarted = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
-
-        assert_eq!(restarted.snapshot().workspace.groups()[0].name, "Work");
-    }
-
-    #[test]
-    fn invalid_url_is_rejected_and_nothing_changes() {
-        let fixture = Fixture::new();
-        let mut service = fixture.start(FakeSystem::new(None));
-        let group = add_group(&mut service, "Work");
-        let before = fs::read_to_string(fixture.path()).expect("file");
-
-        let result = service.apply(Command::AddTab {
-            place: Place::Group(group),
-            url: "not a url".into(),
-            title: String::new(),
-        });
-
-        assert_eq!(result.map(drop).map_err(|e| e.code()), Err("invalidUrl"));
-        assert_eq!(fs::read_to_string(fixture.path()).expect("file"), before);
-    }
-
-    #[test]
-    fn group_browser_must_be_installed() {
-        let fixture = Fixture::new();
-        let mut service = fixture.start(FakeSystem::new(None));
-        let group = add_group(&mut service, "Work");
-
-        let result = service.apply(Command::SetGroupBrowser {
-            group,
-            browser: BrowserChoice::Specific(id("com.brave.Browser")),
-        });
-
-        assert_eq!(
-            result.map(drop).map_err(|e| e.code()),
-            Err("unknownBrowser")
-        );
-    }
-
-    #[test]
-    fn tab_opens_in_the_default_browser_when_group_follows_it() {
-        let fixture = Fixture::new();
-        let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
-        let group = add_group(&mut service, "Work");
-        let tab = add_tab(&mut service, Place::Group(group), "https://a.dev/");
-
-        let opened = service.open_tab(tab).expect("open");
-
-        assert_eq!(opened, Opened::OpenedNew);
-        assert_eq!(
-            *service.system().opened.borrow(),
-            ["org.mozilla.firefox https://a.dev/"]
-        );
-    }
-
-    #[test]
-    fn tab_opens_in_the_groups_own_browser() {
-        let fixture = Fixture::new();
-        let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
-        let group = add_group(&mut service, "Work");
-        service
-            .apply(Command::SetGroupBrowser {
-                group,
-                browser: BrowserChoice::Specific(id("com.google.Chrome")),
-            })
-            .expect("set browser");
-        let tab = add_tab(&mut service, Place::Group(group), "https://a.dev/");
-
-        service.open_tab(tab).expect("open");
-
-        assert_eq!(
-            *service.system().opened.borrow(),
-            ["com.google.Chrome https://a.dev/"]
-        );
-    }
-
-    #[test]
-    fn missing_group_browser_falls_back_and_is_flagged() {
-        let fixture = Fixture::new();
-        let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
-        let group = add_group(&mut service, "Work");
-        service
-            .apply(Command::SetGroupBrowser {
-                group,
-                browser: BrowserChoice::Specific(id("com.google.Chrome")),
-            })
-            .expect("set browser");
-        let tab = add_tab(&mut service, Place::Group(group), "https://a.dev/");
-        drop(service);
-
-        let service = fixture
-            .start(FakeSystem::new(Some("org.mozilla.firefox")).without("com.google.Chrome"));
-        service.open_tab(tab).expect("open");
-
-        assert_eq!(
-            *service.system().opened.borrow(),
-            ["org.mozilla.firefox https://a.dev/"]
-        );
-        let resolved = &service.snapshot().groups[0];
-        assert!(resolved.is_fallback);
-        assert!(!resolved.follows_default);
-    }
-
-    #[test]
-    fn open_tab_focuses_an_existing_tab_on_macos() {
-        let fixture = Fixture::new();
-        let mut system = FakeSystem::new(Some("com.google.Chrome"));
-        system.focus = Focus::Focused;
-        let mut service = fixture.start_on(system, Platform::MacOs);
-        let group = add_group(&mut service, "Work");
-        let tab = add_tab(&mut service, Place::Group(group), "https://a.dev/");
-
-        let opened = service.open_tab(tab).expect("open");
-
-        assert_eq!(opened, Opened::FocusedExisting);
-        assert!(service.system().opened.borrow().is_empty());
-        assert!(service.snapshot().groups[0].can_focus_tabs);
-    }
-
-    #[test]
-    fn open_group_opens_loose_tabs_and_folder_tabs_in_order() {
-        let fixture = Fixture::new();
-        let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
-        let group = add_group(&mut service, "Work");
-        add_tab(&mut service, Place::Group(group), "https://a.dev/");
-        let snapshot = service
-            .apply(Command::AddFolder {
-                group,
-                name: "Sprint".into(),
-            })
-            .expect("folder");
-        let folder = match &snapshot.workspace.groups()[0].children[1] {
-            Node::Folder(folder) => folder.id,
-            Node::Tab(_) => panic!("expected folder"),
-        };
-        add_tab(&mut service, Place::Folder(folder), "https://b.dev/");
-        add_tab(&mut service, Place::Folder(folder), "https://c.dev/");
-
-        let all = service.open_group(group).expect("open group");
-        let only_folder = service.open_folder(folder).expect("open folder");
-
-        assert_eq!(
-            all,
-            OpenSummary {
-                opened: 3,
-                focused: 0
-            }
-        );
-        assert_eq!(only_folder.opened, 2);
-        assert_eq!(
-            *service.system().opened.borrow(),
-            [
-                "org.mozilla.firefox https://a.dev/",
-                "org.mozilla.firefox https://b.dev/",
-                "org.mozilla.firefox https://c.dev/",
-                "org.mozilla.firefox https://b.dev/",
-                "org.mozilla.firefox https://c.dev/",
-            ]
-        );
-    }
-
-    #[test]
-    fn change_from_another_device_is_a_conflict_until_reload_or_force() {
-        let fixture = Fixture::new();
-        let mut laptop = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
-        add_group(&mut laptop, "Mine");
-        let mut other = Document::default();
-        other
-            .workspace
-            .add_group("Theirs", AccentColor::Green)
-            .expect("group");
-        fs::write(fixture.path(), tabstage_store::to_json(&other)).expect("external write");
-
-        assert!(laptop.has_external_change().expect("check"));
-        let conflict = laptop.apply(Command::AddGroup {
-            name: "Another".into(),
-            color: AccentColor::Red,
-        });
-        assert_eq!(conflict.map(drop).map_err(|e| e.code()), Err("conflict"));
-        assert_eq!(laptop.snapshot().workspace.groups().len(), 1);
-
-        let reloaded = laptop.reload().expect("reload");
-        assert_eq!(reloaded.workspace.groups()[0].name, "Theirs");
-
-        add_group(&mut laptop, "After reload");
-        fs::write(fixture.path(), tabstage_store::to_json(&other)).expect("external write");
-        let forced = laptop.force_save().expect("force");
-        assert_eq!(forced.workspace.groups().len(), 2);
-        assert!(!laptop.has_external_change().expect("check"));
-    }
-
-    #[test]
-    fn default_synced_from_another_os_falls_back_to_this_systems_default() {
-        let fixture = Fixture::new();
-        let mut linux_doc = Document::default();
-        linux_doc.settings.default_browser = Some(id("firefox.desktop"));
-        fs::write(fixture.path(), tabstage_store::to_json(&linux_doc)).expect("write");
-
-        let service = fixture.start(FakeSystem::new(Some("com.apple.Safari")));
-
-        let snapshot = service.snapshot();
-        assert_eq!(
-            snapshot.settings.default_browser,
-            Some(id("firefox.desktop"))
-        );
-        assert_eq!(snapshot.default_browser, Some(id("com.apple.Safari")));
-    }
-
-    #[test]
-    fn commands_deserialize_from_ui_json() {
-        let nil = "00000000-0000-0000-0000-000000000000";
-        let json = format!(
-            r#"{{"type":"addTab","place":{{"group":"{nil}"}},"url":"https://a.dev","title":"A"}}"#
-        );
-
-        let command: Command = serde_json::from_str(&json).expect("command");
-
-        assert!(matches!(
-            command,
-            Command::AddTab {
-                place: Place::Group(_),
-                ..
-            }
-        ));
-        let json = r#"{"type":"setGroupBrowser","group":"00000000-0000-0000-0000-000000000000","browser":{"kind":"default"}}"#;
-        assert!(serde_json::from_str::<Command>(json).is_ok());
-    }
-
-    /// Contract with the UI: `ui/src/test/fixtures/snapshot.json` must be
-    /// exactly what Rust sends for its own `settings` and `workspace`. The UI
-    /// tests use that file as mock data, so a change in the JSON shape fails
-    /// here instead of silently in the UI. Regenerate with
-    /// `UPDATE_UI_FIXTURE=1 cargo test -p tabstage-app ui_fixture`.
-    #[test]
-    fn ui_fixture_matches_the_rust_snapshot() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../ui/src/test/fixtures/snapshot.json");
-        let fixture: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(&path).expect("fixture")).expect("json");
-        let file = serde_json::json!({
-            "app": tabstage_store::APP,
-            "version": tabstage_store::FORMAT_VERSION,
-            "settings": fixture["settings"],
-            "workspace": fixture["workspace"],
-        });
-        let dir = Fixture::new();
-        fs::write(dir.path(), file.to_string()).expect("write");
-        let service = dir.start_on(
-            FakeSystem::new(Some("org.mozilla.firefox")),
-            Platform::MacOs,
-        );
-
-        let mut actual = serde_json::to_value(service.snapshot()).expect("snapshot json");
-        // The real path is a temp folder; the fixture keeps a stable one.
-        actual["dataPath"] = serde_json::Value::from(
-            "/Users/me/Library/Application Support/io.github.de-hv.tabstage/workspace.json",
-        );
-
-        if std::env::var_os("UPDATE_UI_FIXTURE").is_some() {
-            let text = serde_json::to_string_pretty(&actual).expect("json") + "\n";
-            fs::write(&path, text).expect("update fixture");
-        } else {
-            assert_eq!(
-                actual, fixture,
-                "UI fixture is out of date; run with UPDATE_UI_FIXTURE=1"
-            );
-        }
-    }
-
-    #[test]
-    fn status_commands_edit_the_status_list() {
-        let fixture = Fixture::new();
-        let mut service = fixture.start(FakeSystem::new(None));
-        let group = add_group(&mut service, "Work");
-        let tab = add_tab(&mut service, Place::Group(group), "https://a.dev/");
-        let in_dev = StatusId::parse("in-dev").expect("id");
-        service
-            .apply(Command::SetStatus {
-                target: Target::Tab(tab),
-                status: Some(in_dev.clone()),
-            })
-            .expect("status");
-
-        service
-            .apply(Command::AddStatus {
-                label: "Blocked".into(),
-                color: AccentColor::Red,
-            })
-            .expect("add");
-        let snapshot = service
-            .apply(Command::RemoveStatus {
-                status: in_dev,
-                replacement: StatusId::parse("blocked").ok(),
-            })
-            .expect("remove");
-
-        let ids: Vec<_> = snapshot
-            .workspace
-            .statuses()
-            .iter()
-            .map(|s| s.id.as_str().to_owned())
-            .collect();
-        assert_eq!(ids, ["todo", "in-progress", "in-review", "done", "blocked"]);
-        assert_eq!(
-            snapshot
-                .workspace
-                .effective_status(tab)
-                .expect("tab")
-                .map(StatusId::as_str),
-            Some("blocked")
-        );
-    }
-
-    #[test]
-    fn snapshot_reports_the_data_path() {
-        let fixture = Fixture::new();
-
-        let service = fixture.start(FakeSystem::new(None));
-
-        assert_eq!(
-            service.snapshot().data_path,
-            fixture.path().display().to_string()
-        );
-    }
-
-    #[test]
-    fn relocate_to_an_empty_folder_moves_my_data_there() {
-        let fixture = Fixture::new();
-        let mut service = fixture.start(FakeSystem::new(None));
-        add_group(&mut service, "Mine");
-        let synced = tempfile::tempdir().expect("tempdir");
-        let new_path = config::data_file_in(&synced.path().join("Tabstage"));
-
-        let snapshot = service
-            .relocate(new_path.clone(), Relocate::UseExisting)
-            .expect("relocate");
-        add_group(&mut service, "After move");
-
-        assert_eq!(snapshot.data_path, new_path.display().to_string());
-        let moved = inspect_data_file(&new_path).expect("inspect");
-        assert_eq!((moved.exists, moved.groups), (true, 2));
-        let old = inspect_data_file(&fixture.path()).expect("inspect");
-        assert_eq!(old.groups, 1, "old file is left as it was");
-    }
-
-    #[test]
-    fn relocate_can_use_the_data_already_there() {
-        let fixture = Fixture::new();
-        let mut service = fixture.start(FakeSystem::new(None));
-        add_group(&mut service, "Mine");
-        let synced = tempfile::tempdir().expect("tempdir");
-        let new_path = config::data_file_in(synced.path());
-        let mut theirs = Document::default();
-        theirs
-            .workspace
-            .add_group("Theirs", AccentColor::Green)
-            .expect("group");
-        fs::write(&new_path, tabstage_store::to_json(&theirs)).expect("write");
-
-        let snapshot = service
-            .relocate(new_path, Relocate::UseExisting)
-            .expect("relocate");
-
-        let names: Vec<_> = snapshot
-            .workspace
-            .groups()
-            .iter()
-            .map(|g| g.name.as_str())
-            .collect();
-        assert_eq!(names, ["Theirs"]);
-    }
-
-    #[test]
-    fn relocate_can_replace_the_data_already_there() {
-        let fixture = Fixture::new();
-        let mut service = fixture.start(FakeSystem::new(None));
-        add_group(&mut service, "Mine");
-        let synced = tempfile::tempdir().expect("tempdir");
-        let new_path = config::data_file_in(synced.path());
-        fs::write(&new_path, tabstage_store::to_json(&Document::default())).expect("write");
-
-        service
-            .relocate(new_path.clone(), Relocate::ReplaceWithMine)
-            .expect("relocate");
-
-        assert_eq!(inspect_data_file(&new_path).expect("inspect").groups, 1);
-    }
-
-    #[test]
-    fn inspect_counts_groups_and_tabs_or_reports_missing() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = config::data_file_in(dir.path());
-
-        let missing = inspect_data_file(&path).expect("inspect");
-        assert_eq!(
-            (missing.exists, missing.groups, missing.tabs),
-            (false, 0, 0)
-        );
-
-        let mut document = Document::default();
-        let group = document
-            .workspace
-            .add_group("G", AccentColor::Blue)
-            .expect("group");
-        let folder = document.workspace.add_folder(group, "F").expect("folder");
-        for (place, url) in [
-            (Place::Group(group), "https://a.dev/"),
-            (Place::Folder(folder), "https://b.dev/"),
-        ] {
-            document
-                .workspace
-                .add_tab(place, TabUrl::parse(url).expect("url"), "")
-                .expect("tab");
-        }
-        fs::write(&path, tabstage_store::to_json(&document)).expect("write");
-
-        let found = inspect_data_file(&path).expect("inspect");
-        assert_eq!((found.exists, found.groups, found.tabs), (true, 1, 2));
-    }
-
-    #[test]
-    fn error_payload_has_code_and_full_message() {
-        let error = AppError::from(WorkspaceError::EmptyName);
-
-        let payload = ErrorPayload::from(&error);
-
-        assert_eq!(payload.code, "invalid");
-        assert_eq!(payload.message, "name is empty");
-    }
+        })
+        .collect()
 }
+
+#[cfg(test)]
+mod tests;

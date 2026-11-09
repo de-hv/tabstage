@@ -8,7 +8,7 @@ interface Props {
 }
 
 const MESSAGES: Partial<Record<AppError['code'], string>> = {
-  invalidUrl: 'Escribe una dirección web que empiece por http:// o https://',
+  invalidUrl: 'Enter a web address that starts with http:// or https://',
 };
 
 /** URL plus optional title. Stays open on errors so the text is not lost. */
@@ -45,13 +45,13 @@ export function AddTabForm({ onSubmit, onCancel }: Props) {
       />
       <input
         className="input"
-        aria-label="Título (opcional)"
-        placeholder="Título (opcional)"
+        aria-label="Title (optional)"
+        placeholder="Title (optional)"
         value={title}
         onChange={(event) => setTitle(event.target.value)}
       />
       <button type="submit" className="button">
-        Guardar
+        Save
       </button>
       {error && (
         <p className="add-form__error" role="alert">

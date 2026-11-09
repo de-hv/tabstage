@@ -1,10 +1,10 @@
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { open } from '@tauri-apps/plugin-dialog';
-import { FolderOpen } from 'lucide-react';
+import { Cloud, Folder, FolderInput, HardDrive } from 'lucide-react';
 import { useState } from 'react';
 
-import type { Command, DataFileInfo, Relocate, Snapshot } from '../api/types';
-import { BrowserBadge } from './BrowserBadge';
+import type { Command, DataFileInfo, DataLocationKind, Relocate, Snapshot } from '../api/types';
+import { ProfilesEditor } from './ProfilesEditor';
 import { StatusEditor } from './StatusEditor';
 
 interface Props {
@@ -12,6 +12,7 @@ interface Props {
   apply: (command: Command) => void;
   inspectDataFolder: (folder: string) => Promise<DataFileInfo | null>;
   relocate: (folder: string, mode: Relocate) => Promise<void>;
+  onRevealDataFile: () => void;
 }
 
 interface Pending {
@@ -19,11 +20,11 @@ interface Pending {
   info: DataFileInfo;
 }
 
-export function Settings({ snapshot, apply, inspectDataFolder, relocate }: Props) {
+export function Settings({ snapshot, apply, inspectDataFolder, relocate, onRevealDataFile }: Props) {
   const [pending, setPending] = useState<Pending | null>(null);
 
   const chooseFolder = async () => {
-    const folder = await open({ directory: true, title: 'Carpeta para los datos de Tabstage' });
+    const folder = await open({ directory: true, title: 'Folder for Tabstage data' });
     if (typeof folder !== 'string') return;
     const info = await inspectDataFolder(folder);
     if (!info) return;
@@ -34,50 +35,25 @@ export function Settings({ snapshot, apply, inspectDataFolder, relocate }: Props
   return (
     <main className="settings" aria-labelledby="settings-title">
       <h1 id="settings-title" className="group__name">
-        Ajustes
+        Settings
       </h1>
 
-      <section className="settings__section" aria-labelledby="default-browser">
-        <h2 id="default-browser" className="settings__heading">
-          Navegador por defecto
+      <section className="settings__section" aria-labelledby="profiles">
+        <h2 id="profiles" className="settings__heading">
+          Profiles
         </h2>
-        <p className="settings__help">Lo usan los grupos que no tienen un navegador asignado.</p>
-        <div className="choices" role="radiogroup" aria-labelledby="default-browser">
-          {snapshot.browsers.map((browser) => (
-            <label key={browser.id} className="choice">
-              <input
-                type="radio"
-                name="default-browser"
-                checked={snapshot.defaultBrowser === browser.id}
-                onChange={() => apply({ type: 'setDefaultBrowser', browser: browser.id })}
-              />
-              <BrowserBadge name={browser.name} kind={browser.kind} />
-              {browser.name}
-            </label>
-          ))}
-        </div>
+        <p className="settings__help">
+          Each group opens with its profile. Profile names are shared between your computers; the browser and its
+          profile are chosen on each computer.
+        </p>
+        <ProfilesEditor snapshot={snapshot} apply={apply} />
       </section>
 
-      <section className="settings__section" aria-labelledby="data-file">
-        <h2 id="data-file" className="settings__heading">
-          Archivo de datos
-        </h2>
-        <div className="settings__path">
-          <code className="path">{snapshot.dataPath}</code>
-          <button type="button" className="button" onClick={() => void chooseFolder()}>
-            <FolderOpen className="icon" aria-hidden="true" />
-            Cambiar ubicación…
-          </button>
-        </div>
-        <p className="settings__help">
-          Si eliges una carpeta sincronizada (iCloud Drive, Dropbox, Syncthing o un repo git), tus otros equipos verán
-          los mismos grupos. Cada cambio se guarda al momento.
-        </p>
-      </section>
+      <DataLocationCard snapshot={snapshot} onReveal={onRevealDataFile} onMove={() => void chooseFolder()} />
 
       <section className="settings__section" aria-labelledby="statuses">
         <h2 id="statuses" className="settings__heading">
-          Estados
+          Statuses
         </h2>
         <StatusEditor statuses={snapshot.workspace.statuses} apply={apply} />
       </section>
@@ -86,24 +62,24 @@ export function Settings({ snapshot, apply, inspectDataFolder, relocate }: Props
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="dialog__overlay" />
           <AlertDialog.Content className="dialog">
-            <AlertDialog.Title className="dialog__title">Ya hay datos de Tabstage en esa carpeta</AlertDialog.Title>
+            <AlertDialog.Title className="dialog__title">That folder already has Tabstage data</AlertDialog.Title>
             <AlertDialog.Description className="dialog__text">
-              Tienen {pending?.info.groups} grupos y {pending?.info.tabs} tabs. Puedes usarlos en este equipo o
-              reemplazarlos con los de aquí.
+              It has {pending?.info.groups} groups and {pending?.info.tabs} tabs. Use them on this computer, or
+              replace them with the data from here.
             </AlertDialog.Description>
             <div className="dialog__actions">
-              <AlertDialog.Cancel className="button">Cancelar</AlertDialog.Cancel>
+              <AlertDialog.Cancel className="button">Cancel</AlertDialog.Cancel>
               <AlertDialog.Action
                 className="button"
                 onClick={() => pending && void relocate(pending.folder, 'replaceWithMine')}
               >
-                Reemplazar con los de este equipo
+                Replace with this computer's data
               </AlertDialog.Action>
               <AlertDialog.Action
                 className="button button--accent"
                 onClick={() => pending && void relocate(pending.folder, 'useExisting')}
               >
-                Usar esos datos
+                Use that data
               </AlertDialog.Action>
             </div>
           </AlertDialog.Content>
@@ -111,4 +87,77 @@ export function Settings({ snapshot, apply, inspectDataFolder, relocate }: Props
       </AlertDialog.Root>
     </main>
   );
+}
+
+const SERVICE: Partial<Record<DataLocationKind, string>> = {
+  iCloudDrive: 'iCloud Drive',
+  dropbox: 'Dropbox',
+  oneDrive: 'OneDrive',
+  googleDrive: 'Google Drive',
+};
+
+const isMac = () => typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent);
+
+/** "Where your data lives": plain words first, the path as a detail. */
+function DataLocationCard({
+  snapshot,
+  onReveal,
+  onMove,
+}: {
+  snapshot: Snapshot;
+  onReveal: () => void;
+  onMove: () => void;
+}) {
+  const { kind } = snapshot.dataLocation;
+  const service = SERVICE[kind];
+  const title =
+    kind === 'appData'
+      ? `On this ${isMac() ? 'Mac' : 'computer'} only`
+      : service
+        ? `Synced through ${service}`
+        : 'In a folder you chose';
+  const detail =
+    kind === 'appData'
+      ? 'Not shared with other computers. Changes save instantly.'
+      : service
+        ? 'Your other computers with the same folder see the same groups. Changes save instantly.'
+        : 'Shared with any computer that syncs this folder. Changes save instantly.';
+  const Icon = kind === 'appData' ? HardDrive : service ? Cloud : Folder;
+
+  return (
+    <section className="settings__section" aria-labelledby="data-location">
+      <h2 id="data-location" className="settings__heading">
+        Where your data lives
+      </h2>
+      <div className="data-card">
+        <span className="data-card__icon">
+          <Icon className="icon" aria-hidden="true" />
+        </span>
+        <div className="data-card__text">
+          <p className="data-card__title">{title}</p>
+          <p className="data-card__detail">{detail}</p>
+          <p className="data-card__path" title={snapshot.dataPath}>
+            {middleEllipsis(snapshot.dataPath, 64)}
+          </p>
+        </div>
+        <div className="data-card__actions">
+          <button type="button" className="button" onClick={onReveal}>
+            {isMac() ? 'Show in Finder' : 'Show in folder'}
+          </button>
+          <button type="button" className="button" onClick={onMove}>
+            <FolderInput className="icon" aria-hidden="true" />
+            {kind === 'appData' ? 'Move to a synced folder…' : 'Move to another folder…'}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** Keeps both ends of a long path, which carry the meaning. */
+function middleEllipsis(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const keep = max - 1;
+  const head = Math.ceil(keep / 2);
+  return `${text.slice(0, head)}…${text.slice(text.length - (keep - head))}`;
 }

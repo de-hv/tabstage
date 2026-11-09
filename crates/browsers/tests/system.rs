@@ -18,13 +18,18 @@ fn lists_installed_browsers_and_the_default() {
 
     for browser in &installed {
         println!("{:<28} {:<40} {:?}", browser.name, browser.id, browser.kind);
+        let profiles = system.profiles(browser).expect("profiles");
+        for profile in profiles {
+            println!("    profile {:<24} id={}", profile.name, profile.id);
+        }
     }
     println!("default: {default:?}");
     assert!(!installed.is_empty(), "no browser found");
-    if let Some(default) = default {
-        assert!(
-            find_installed(&installed, &default).is_some(),
-            "default {default} is not in the installed list"
-        );
+    // macOS keeps pointing at a default browser after it is uninstalled; the
+    // app then uses the first installed browser, so this is only reported.
+    if let Some(default) = default
+        && find_installed(&installed, &default).is_none()
+    {
+        println!("note: system default {default} is not installed");
     }
 }

@@ -11,7 +11,7 @@ async function openWithEvent() {
   await act(async () => {
     await emit('open-palette');
   });
-  return { ...rendered, input: await screen.findByRole('combobox', { name: 'Buscar tabs' }) };
+  return { ...rendered, input: await screen.findByRole('combobox', { name: 'Search tabs' }) };
 }
 
 describe('quick search', () => {
@@ -26,7 +26,7 @@ describe('quick search', () => {
 
     await user.keyboard('{Control>}k{/Control}');
 
-    expect(await screen.findByRole('combobox', { name: 'Buscar tabs' })).toBeTruthy();
+    expect(await screen.findByRole('combobox', { name: 'Search tabs' })).toBeTruthy();
   });
 
   it('finds tabs from every group and opens the chosen one', async () => {
@@ -38,7 +38,7 @@ describe('quick search', () => {
     await user.click(screen.getByRole('option', { name: /PROJ-1190/ }));
 
     expect(calls).toContainEqual({ cmd: 'open_tab', args: { tab: CACHE_TAB } });
-    expect(screen.queryByRole('combobox', { name: 'Buscar tabs' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Search tabs' })).toBeNull();
   });
 
   it('shows the group and the browser each result opens in', async () => {
@@ -47,6 +47,7 @@ describe('quick search', () => {
     await user.type(input, 'MDN');
 
     const option = screen.getByRole('option', { name: /HTTP caching/ });
+    expect(option.textContent).toContain('Personal');
     expect(option.textContent).toContain('Investigación');
     expect(option.textContent).toContain('Firefox');
   });
@@ -55,7 +56,7 @@ describe('quick search', () => {
     const { calls, input, user } = await openWithEvent();
 
     await user.type(input, 'Sprint');
-    await user.click(screen.getByRole('option', { name: /Carpeta Sprint 42/ }));
+    await user.click(screen.getByRole('option', { name: /Folder Sprint 42/ }));
 
     expect(calls).toContainEqual({ cmd: 'open_folder', args: { folder: SPRINT } });
   });
@@ -65,6 +66,6 @@ describe('quick search', () => {
 
     await user.keyboard('{Escape}');
 
-    expect(screen.queryByRole('combobox', { name: 'Buscar tabs' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Search tabs' })).toBeNull();
   });
 });

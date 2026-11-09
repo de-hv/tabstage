@@ -1,19 +1,23 @@
 # Tabstage Desktop
 
-Groups of tabs, and folders of tabs, that open in the browser you choose, for macOS and Linux.
+Groups of tabs, and folders of tabs, sorted into profiles that open in the browser (and browser
+profile) you choose, for macOS and Linux.
 It is the desktop version of the [Tabstage extension](https://github.com/de-hv/tabstage), for
 machines where browser extensions are not allowed.
 
-- **A browser per group:** each group follows the default browser or has its own. If that
-  browser is not installed on this machine (say, a group synced from another OS), the default
-  is used and the group says so.
+- **Profiles:** every group belongs to a profile such as *Work* or *Personal*. Each profile
+  opens in a browser and, for Chromium and Firefox browsers, one of that browser's profiles, so
+  links land where you are signed in. The sidebar groups the groups by profile; each profile
+  folds away, has a **+** to create groups, folders and tabs inside it, and a **⋯** menu to
+  rename, recolor, configure or delete it. Every profile has its own color dot: new profiles get
+  one no other profile uses, from 20 evenly spaced hues.
 - **No duplicate tabs:** clicking a tab focuses it when it is already open. This works on
   macOS for Safari and Chromium browsers (Chrome, Edge, Brave, Vivaldi, Arc) through
   AppleScript. Firefox and Linux browsers do not expose their tabs, so a new tab is opened.
-- **Statuses and a board view:** your own statuses, shown as chips in the list or as tiles
-  ("Por estado"), as in the extension.
+- **Statuses and a board view:** a new workspace starts with only *To do*; add the statuses
+  you need. They show as chips in the list or as tiles ("By status"), as in the extension.
 - **Drag and drop:** move tabs, folders and groups, or drop on a tile to change the status.
-  Every row menu also has "Mover a…" for the keyboard.
+  Every row menu also has "Move to…" for the keyboard.
 - **Quick search:** <kbd>⌥ Option</kbd> <kbd>⇧ Shift</kbd> <kbd>K</kbd> from any app, or
   <kbd>⌘K</kbd> / <kbd>Ctrl K</kbd> in the window.
 - **Tray menu:** open a whole group without showing the window. Closing the window keeps
@@ -21,6 +25,33 @@ machines where browser extensions are not allowed.
 - **One JSON file:** put it in iCloud Drive, Dropbox, Syncthing or a git repo to share your
   groups across machines. Writes are atomic, and a change made on another machine is never
   silently overwritten.
+
+## Profiles
+
+Profile names and their groups live in the synced data file. **Which browser a profile opens
+in is chosen on each machine** and kept in that machine's `config.json`, because browsers and
+their profile ids differ between machines and operating systems. A profile that is not set up on
+a machine opens in the system browser, and the app says so until you pick one in Settings.
+
+| Browser | Profiles read from | Opens with |
+|---|---|---|
+| Chrome, Edge, Brave, Vivaldi, Chromium | `Local State` | `--profile-directory=<folder>`, `--new-window` |
+| Firefox, Zen, LibreWolf | `profiles.ini` | `-P <name>`, `-new-window` |
+| Safari, Arc and others | not exposed to other apps | the browser's active profile |
+
+Limits worth knowing:
+
+- Chrome's AppleScript does not say which profile a window belongs to, so "go to the open tab"
+  may focus the same URL in another profile's window.
+- Chromium installed as a Flatpak or Snap keeps its profiles elsewhere and may show none.
+- Firefox's newer profile manager does not use `profiles.ini`; such profiles may not be listed.
+- On recent macOS versions the system may ask to let Tabstage read other apps' data the first
+  time it lists a browser's profiles.
+
+**Data format 2.** Version 0.2 adds profiles to the data file. Files from 0.1 are upgraded
+automatically: groups that followed the default browser go to a *Default* profile, and
+each browser a group used becomes a profile bound to that browser. Version 0.1 cannot read the
+new format, so update every machine that shares the file.
 
 ## Install
 
@@ -61,9 +92,9 @@ runs formatting, Clippy with warnings as errors, and all tests on macOS and Ubun
 ### Layout
 
 ```
-crates/core      domain model, no IO: groups, folders, tabs, statuses, browser choice
+crates/core      domain model, no IO: profiles, groups, folders, tabs, statuses
 crates/store     JSON data file: atomic writes, versioned format, conflict detection
-crates/browsers  find installed browsers, open URLs, focus open tabs (macOS, Linux)
+crates/browsers  find installed browsers and their profiles, open URLs, focus open tabs
 crates/app       application service the UI talks to; tested with a fake system
 src-tauri        thin Tauri shell: IPC commands, tray, global shortcut
 ui               React + TypeScript interface

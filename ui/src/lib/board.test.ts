@@ -13,7 +13,7 @@ function tab(id: string, status?: string) {
 }
 
 function group(children: Group['children']): Group {
-  return { id: 'g', name: 'G', color: 'blue', browser: { kind: 'default' }, children };
+  return { id: 'g', name: 'G', color: 'blue', profile: 'p', children };
 }
 
 function summary(tiles: ReturnType<typeof groupByStatus>) {

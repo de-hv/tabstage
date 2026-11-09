@@ -11,11 +11,16 @@ use crate::Snapshot;
 pub enum TrayEntry {
     /// Opens the quick search.
     Search,
+    /// A profile name above its groups; not clickable.
+    Header {
+        /// Profile name.
+        label: String,
+    },
     /// Opens every tab of a group.
     Group {
         /// The group.
         id: GroupId,
-        /// Text shown, e.g. "Abrir Trabajo".
+        /// Text shown, e.g. "Open Work".
         label: String,
     },
     /// Shows the main window.
@@ -48,7 +53,7 @@ impl TrayEntry {
             Self::Group { id, .. } => Some(format!("{GROUP_PREFIX}{id}")),
             Self::Show => Some(SHOW.to_owned()),
             Self::Quit => Some(QUIT.to_owned()),
-            Self::Separator => None,
+            Self::Separator | Self::Header { .. } => None,
         }
     }
 }
@@ -75,19 +80,32 @@ impl TrayAction {
     }
 }
 
-/// The tray menu for the current state: search, one item per group, then
-/// show and quit.
+/// The tray menu for the current state: search, the groups under the name
+/// of their profile, then show and quit.
 #[must_use]
 pub fn tray_entries(snapshot: &Snapshot) -> Vec<TrayEntry> {
-    let groups = snapshot.workspace.groups();
-    let mut entries = Vec::with_capacity(groups.len() + 5);
-    entries.push(TrayEntry::Search);
-    entries.push(TrayEntry::Separator);
-    if !groups.is_empty() {
-        entries.extend(groups.iter().map(|group| TrayEntry::Group {
+    let workspace = &snapshot.workspace;
+    let mut entries = vec![TrayEntry::Search, TrayEntry::Separator];
+    let mut any_group = false;
+    for profile in workspace.profiles() {
+        let mut groups = workspace
+            .groups()
+            .iter()
+            .filter(|group| group.profile == profile.id)
+            .peekable();
+        if groups.peek().is_none() {
+            continue;
+        }
+        any_group = true;
+        entries.push(TrayEntry::Header {
+            label: profile.name.clone(),
+        });
+        entries.extend(groups.map(|group| TrayEntry::Group {
             id: group.id,
-            label: format!("Abrir {}", group.name),
+            label: format!("Open {}", group.name),
         }));
+    }
+    if any_group {
         entries.push(TrayEntry::Separator);
     }
     entries.push(TrayEntry::Show);
@@ -102,24 +120,46 @@ mod tests {
 
     use super::*;
 
-    fn snapshot(groups: &[&str]) -> Snapshot {
+    /// `layout` is (profile name, its group names); profiles are created in
+    /// order, and groups are added in the order given.
+    fn snapshot(layout: &[(&str, &[&str])]) -> Snapshot {
         let mut workspace = Workspace::new();
-        for name in groups {
-            workspace.add_group(name, AccentColor::Blue).expect("group");
+        let first = workspace.profiles()[0].id;
+        for (index, (profile, groups)) in layout.iter().enumerate() {
+            let id = if index == 0 {
+                workspace.rename_profile(first, profile).expect("rename");
+                first
+            } else {
+                workspace.add_profile(profile).expect("profile")
+            };
+            for name in *groups {
+                workspace
+                    .add_group(id, name, AccentColor::Blue)
+                    .expect("group");
+            }
         }
         Snapshot {
             workspace,
             settings: Settings::default(),
             browsers: Vec::new(),
-            default_browser: None,
-            groups: Vec::new(),
+            browser_profiles: std::collections::BTreeMap::new(),
+            system_browser: None,
             data_path: String::new(),
+            data_location: crate::DataLocation {
+                kind: crate::DataLocationKind::AppData,
+                folder: String::new(),
+            },
+            profiles: Vec::new(),
         }
     }
 
     #[test]
-    fn lists_search_groups_show_and_quit() {
-        let snapshot = snapshot(&["Trabajo", "Personal"]);
+    fn lists_groups_under_their_profile_and_skips_empty_profiles() {
+        let snapshot = snapshot(&[
+            ("Trabajo", &["Jira", "Clientes"]),
+            ("Vacío", &[]),
+            ("Personal", &["Lecturas"]),
+        ]);
         let ids: Vec<_> = snapshot.workspace.groups().iter().map(|g| g.id).collect();
 
         let entries = tray_entries(&snapshot);
@@ -129,13 +169,23 @@ mod tests {
             [
                 TrayEntry::Search,
                 TrayEntry::Separator,
+                TrayEntry::Header {
+                    label: "Trabajo".into()
+                },
                 TrayEntry::Group {
                     id: ids[0],
-                    label: "Abrir Trabajo".into()
+                    label: "Open Jira".into()
                 },
                 TrayEntry::Group {
                     id: ids[1],
-                    label: "Abrir Personal".into()
+                    label: "Open Clientes".into()
+                },
+                TrayEntry::Header {
+                    label: "Personal".into()
+                },
+                TrayEntry::Group {
+                    id: ids[2],
+                    label: "Open Lecturas".into()
                 },
                 TrayEntry::Separator,
                 TrayEntry::Show,
@@ -147,7 +197,7 @@ mod tests {
     #[test]
     fn no_group_section_without_groups() {
         assert_eq!(
-            tray_entries(&snapshot(&[])),
+            tray_entries(&snapshot(&[("Trabajo", &[])])),
             [
                 TrayEntry::Search,
                 TrayEntry::Separator,
@@ -174,6 +224,7 @@ mod tests {
         assert_eq!(parse(TrayEntry::Show), Some(TrayAction::Show));
         assert_eq!(parse(TrayEntry::Quit), Some(TrayAction::Quit));
         assert_eq!(TrayEntry::Separator.menu_id(), None);
+        assert_eq!(TrayEntry::Header { label: "P".into() }.menu_id(), None);
     }
 
     #[test]

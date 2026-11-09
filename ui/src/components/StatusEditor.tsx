@@ -29,7 +29,7 @@ export function StatusEditor({ statuses, apply }: Props) {
             <button
               type="button"
               className="icon-button"
-              aria-label={`Subir ${status.label}`}
+              aria-label={`Move up ${status.label}`}
               disabled={index === 0}
               onClick={() => apply({ type: 'moveStatus', status: status.id, index: index - 1 })}
             >
@@ -38,7 +38,7 @@ export function StatusEditor({ statuses, apply }: Props) {
             <button
               type="button"
               className="icon-button"
-              aria-label={`Bajar ${status.label}`}
+              aria-label={`Move down ${status.label}`}
               disabled={index === statuses.length - 1}
               onClick={() => apply({ type: 'moveStatus', status: status.id, index: index + 1 })}
             >
@@ -47,7 +47,7 @@ export function StatusEditor({ statuses, apply }: Props) {
             <button
               type="button"
               className="icon-button"
-              aria-label={`Eliminar ${status.label}`}
+              aria-label={`Delete ${status.label}`}
               onClick={() => setRemoving(status)}
             >
               <Trash2 className="icon" aria-hidden="true" />
@@ -57,8 +57,8 @@ export function StatusEditor({ statuses, apply }: Props) {
       </ul>
       <div className="status-list__add">
         <InlineInput
-          label="Nuevo estado"
-          placeholder="Nuevo estado, por ejemplo Bloqueado"
+          label="New status"
+          placeholder="New status, for example Blocked"
           onCancel={() => undefined}
           onSubmit={async (label) => {
             apply({ type: 'addStatus', label, color: nextAccent(statuses.map((s) => s.color)) });
@@ -83,7 +83,7 @@ function ColorMenu({ status, onChange }: { status: Status; onChange: (color: Sta
   return (
     <Menu.Root modal={false}>
       <Menu.Trigger asChild>
-        <button type="button" className="icon-button" aria-label={`Color de ${status.label}`}>
+        <button type="button" className="icon-button" aria-label={`Color of ${status.label}`}>
           <span className="square square--large" data-color={status.color} aria-hidden="true" />
         </button>
       </Menu.Trigger>
@@ -117,7 +117,7 @@ function LabelInput({ status, onRename }: { status: Status; onRename: (label: st
   return (
     <input
       className="input status-list__name"
-      aria-label={`Nombre de ${status.label}`}
+      aria-label={`Name of ${status.label}`}
       value={value}
       onChange={(event) => setValue(event.target.value)}
       onBlur={commit}
@@ -152,13 +152,13 @@ function RemoveStatusDialog({ status, others, onClose, onRemove }: RemoveProps) 
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="dialog__overlay" />
         <AlertDialog.Content className="dialog">
-          <AlertDialog.Title className="dialog__title">¿Eliminar el estado «{status?.label}»?</AlertDialog.Title>
+          <AlertDialog.Title className="dialog__title">Delete the “{status?.label}” status?</AlertDialog.Title>
           <AlertDialog.Description className="dialog__text">
-            Elige a qué estado pasan sus tabs y carpetas.
+            Choose the status its tabs and folders move to.
           </AlertDialog.Description>
           <fieldset className="dialog__choices">
-            <legend className="visually-hidden">Mover sus tabs a</legend>
-            {[{ id: '', label: 'Sin estado' }, ...others].map((option) => (
+            <legend className="visually-hidden">Move its tabs to</legend>
+            {[{ id: '', label: 'No status' }, ...others].map((option) => (
               <label key={option.id} className="choice">
                 <input
                   type="radio"
@@ -172,7 +172,7 @@ function RemoveStatusDialog({ status, others, onClose, onRemove }: RemoveProps) 
             ))}
           </fieldset>
           <div className="dialog__actions">
-            <AlertDialog.Cancel className="button">Cancelar</AlertDialog.Cancel>
+            <AlertDialog.Cancel className="button">Cancel</AlertDialog.Cancel>
             <AlertDialog.Action
               className="button button--danger"
               onClick={() => {
@@ -180,7 +180,7 @@ function RemoveStatusDialog({ status, others, onClose, onRemove }: RemoveProps) 
                 setReplacement('');
               }}
             >
-              Eliminar
+              Delete
             </AlertDialog.Action>
           </div>
         </AlertDialog.Content>

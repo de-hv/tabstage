@@ -112,13 +112,14 @@ where
 /// # Errors
 ///
 /// [`BrowserError::BadExec`] for an empty line or an unclosed quote.
-pub fn exec_args(exec: &str, url: &str) -> Result<Vec<String>> {
+pub fn exec_args(exec: &str, url: &str, flags: &[String]) -> Result<Vec<String>> {
     let bad = || BrowserError::BadExec(exec.to_owned());
     let mut args = Vec::new();
     let mut used_url = false;
     for token in split_exec(exec).ok_or_else(bad)? {
         match token.as_str() {
             "%u" | "%U" | "%f" | "%F" => {
+                args.extend(flags.iter().cloned());
                 args.push(url.to_owned());
                 used_url = true;
             }
@@ -135,6 +136,7 @@ pub fn exec_args(exec: &str, url: &str) -> Result<Vec<String>> {
         return Err(bad());
     }
     if !used_url {
+        args.extend(flags.iter().cloned());
         args.push(url.to_owned());
     }
     Ok(args)
@@ -281,11 +283,11 @@ Exec=firefox --new-window %u
     #[test]
     fn exec_replaces_url_field_codes() {
         assert_eq!(
-            exec_args("firefox %u", "https://a.dev").expect("args"),
+            exec_args("firefox %u", "https://a.dev", &[]).expect("args"),
             ["firefox", "https://a.dev"]
         );
         assert_eq!(
-            exec_args("/usr/bin/google-chrome-stable %U", "https://a.dev").expect("args"),
+            exec_args("/usr/bin/google-chrome-stable %U", "https://a.dev", &[]).expect("args"),
             ["/usr/bin/google-chrome-stable", "https://a.dev"]
         );
     }
@@ -295,7 +297,8 @@ Exec=firefox --new-window %u
         assert_eq!(
             exec_args(
                 "flatpak run --command=brave com.brave.Browser @@u %U @@ %i %c",
-                "https://a.dev"
+                "https://a.dev",
+                &[]
             )
             .expect("args"),
             [
@@ -315,7 +318,8 @@ Exec=firefox --new-window %u
         assert_eq!(
             exec_args(
                 r#""/opt/My Browser/browser" --title=100%% %u"#,
-                "https://a.dev"
+                "https://a.dev",
+                &[]
             )
             .expect("args"),
             ["/opt/My Browser/browser", "--title=100%", "https://a.dev"]
@@ -323,9 +327,23 @@ Exec=firefox --new-window %u
     }
 
     #[test]
+    fn exec_puts_profile_flags_right_before_the_url() {
+        let flags = ["-P".to_owned(), "Trabajo".to_owned()];
+
+        assert_eq!(
+            exec_args("firefox %u", "https://a.dev", &flags).expect("args"),
+            ["firefox", "-P", "Trabajo", "https://a.dev"]
+        );
+        assert_eq!(
+            exec_args("epiphany", "https://a.dev", &flags).expect("args"),
+            ["epiphany", "-P", "Trabajo", "https://a.dev"]
+        );
+    }
+
+    #[test]
     fn exec_appends_url_without_field_code() {
         assert_eq!(
-            exec_args("epiphany", "https://a.dev").expect("args"),
+            exec_args("epiphany", "https://a.dev", &[]).expect("args"),
             ["epiphany", "https://a.dev"]
         );
     }
@@ -333,11 +351,11 @@ Exec=firefox --new-window %u
     #[test]
     fn exec_rejects_empty_or_unclosed_quote() {
         assert!(matches!(
-            exec_args("  ", "u"),
+            exec_args("  ", "u", &[]),
             Err(BrowserError::BadExec(_))
         ));
         assert!(matches!(
-            exec_args(r#""/opt/x %u"#, "u"),
+            exec_args(r#""/opt/x %u"#, "u", &[]),
             Err(BrowserError::BadExec(_))
         ));
     }
