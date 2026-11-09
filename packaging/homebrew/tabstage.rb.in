@@ -1,22 +1,23 @@
-# Template for de-hv/homebrew-tap, filled in by .github/workflows/release.yml.
 cask "tabstage" do
   version "@VERSION@"
   sha256 "@SHA256@"
 
-  url "https://github.com/de-hv/tabstage-desktop/releases/download/@TAG@/Tabstage_#{version}_universal.dmg"
+  url "https://github.com/de-hv/tabstage-desktop/releases/download/v#{version}/Tabstage_#{version}_universal.dmg"
   name "Tabstage"
   desc "Groups of tabs that open in the browser you choose"
   homepage "https://de-hv.github.io/tabstage-desktop/"
 
-  depends_on macos: ">= :catalina"
+  depends_on :macos
 
   app "Tabstage.app"
 
   # Not notarized yet: drop the quarantine flag so Gatekeeper lets it open.
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{appdir}/Tabstage.app"]
+  # Steps only take literal arguments, so this assumes the default appdir.
+  postflight_steps do
+    run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "/Applications/Tabstage.app"]
   end
+
+  uninstall quit: "io.github.de-hv.tabstage"
 
   zap trash: [
     "~/Library/Application Support/io.github.de-hv.tabstage",
