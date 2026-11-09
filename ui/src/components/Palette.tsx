@@ -4,7 +4,7 @@ import { Folder as FolderIcon, Globe } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import type { Snapshot } from '../api/types';
-import { findBrowser, groupBrowser } from '../lib/browsers';
+import { findProfile, profileBrowser } from '../lib/browsers';
 import { BrowserBadge } from './BrowserBadge';
 
 /** Emitted by the shell for the global shortcut and the tray item. */
@@ -44,20 +44,20 @@ export function Palette({ snapshot, openTab, openFolder }: Props) {
     <Command.Dialog
       open={isOpen}
       onOpenChange={setIsOpen}
-      label="Buscar tabs"
+      label="Search tabs"
       className="palette"
       overlayClassName="dialog__overlay"
       contentClassName="palette__content"
     >
-      <Command.Input className="palette__input" placeholder="Buscar tabs y carpetas" aria-label="Buscar tabs" />
+      <Command.Input className="palette__input" placeholder="Search tabs and folders" aria-label="Search tabs" />
       <Command.List className="palette__list">
-        <Command.Empty className="palette__empty">Ningún tab coincide.</Command.Empty>
+        <Command.Empty className="palette__empty">No tab matches.</Command.Empty>
         {snapshot.workspace.groups.map((group) => {
-          const browser = findBrowser(snapshot, groupBrowser(snapshot, group.id)?.browser);
+          const browser = profileBrowser(snapshot, group.profile);
           const browserName = browser?.name ?? '';
           const meta = (
             <span className="palette__meta">
-              {group.name}
+              {findProfile(snapshot, group.profile)?.name} · {group.name}
               {browser && (
                 <>
                   <BrowserBadge name={browser.name} kind={browser.kind} />
@@ -72,13 +72,13 @@ export function Palette({ snapshot, openTab, openFolder }: Props) {
               node.type === 'folder' ? (
                 <Command.Item
                   key={node.id}
-                  value={`carpeta ${node.name} ${group.name} ${node.id}`}
+                  value={`folder ${node.name} ${group.name} ${node.id}`}
                   className="palette__item"
                   onSelect={() => run(() => openFolder(node.id))}
                 >
                   <FolderIcon className="icon" aria-hidden="true" />
                   <span className="palette__title">
-                    Carpeta {node.name} · {node.tabs.length} tabs
+                    Folder {node.name} · {node.tabs.length} tabs
                   </span>
                   {meta}
                 </Command.Item>
@@ -88,7 +88,7 @@ export function Palette({ snapshot, openTab, openFolder }: Props) {
               ...tabs.map((tab) => (
                 <Command.Item
                   key={tab.id}
-                  value={`${tab.title} ${tab.url} ${group.name} ${tab.id}`}
+                  value={`${tab.title} ${tab.url} ${group.name} ${findProfile(snapshot, group.profile)?.name ?? ''} ${tab.id}`}
                   className="palette__item"
                   onSelect={() => run(() => openTab(tab.id, browserName))}
                 >

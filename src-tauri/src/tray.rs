@@ -48,10 +48,14 @@ fn build_menu(app: &AppHandle, snapshot: &Snapshot) -> tauri::Result<Menu<Wry>> 
                 menu.append(&PredefinedMenuItem::separator(app)?)?;
                 continue;
             }
-            TrayEntry::Search => "Buscar tabs…",
+            TrayEntry::Header { label } => {
+                menu.append(&MenuItem::new(app, label, false, None::<&str>)?)?;
+                continue;
+            }
+            TrayEntry::Search => "Search tabs…",
             TrayEntry::Group { label, .. } => label.as_str(),
-            TrayEntry::Show => "Mostrar Tabstage",
-            TrayEntry::Quit => "Salir",
+            TrayEntry::Show => "Show Tabstage",
+            TrayEntry::Quit => "Quit",
         };
         if let Some(id) = entry.menu_id() {
             menu.append(&MenuItem::with_id(app, id, label, true, None::<&str>)?)?;

@@ -19,6 +19,7 @@ use thiserror::Error;
 pub mod linux;
 pub mod listing;
 pub mod macos;
+pub mod profiles;
 pub mod system;
 
 /// Browser family, which decides what the app can do with it.
@@ -122,6 +123,15 @@ pub enum Launch {
     DesktopExec(String),
 }
 
+/// How to open a URL beyond picking the browser.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LaunchOptions {
+    /// Browser profile to open in (see [`profiles::BrowserProfile::id`]).
+    pub browser_profile: Option<String>,
+    /// Open in a new window instead of the last one used.
+    pub new_window: bool,
+}
+
 /// An installed browser.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -188,16 +198,23 @@ pub trait Catalog {
     ///
     /// When the system cannot be queried.
     fn system_default(&self) -> Result<Option<BrowserId>>;
+
+    /// Profiles of `browser`, empty when it has none or does not expose them.
+    ///
+    /// # Errors
+    ///
+    /// When the profile list exists but cannot be read.
+    fn profiles(&self, browser: &BrowserInfo) -> Result<Vec<profiles::BrowserProfile>>;
 }
 
 /// Opens a URL in a new tab of a browser.
 pub trait Launcher {
-    /// Opens `url` in `browser`.
+    /// Opens `url` in `browser`, in the profile and window `options` ask for.
     ///
     /// # Errors
     ///
     /// When the browser cannot be started.
-    fn open(&self, browser: &BrowserInfo, url: &TabUrl) -> Result<()>;
+    fn open(&self, browser: &BrowserInfo, url: &TabUrl, options: &LaunchOptions) -> Result<()>;
 }
 
 /// Result of looking for an open tab.
@@ -240,6 +257,7 @@ pub enum Opened {
 pub fn open_tab(
     browser: &BrowserInfo,
     url: &TabUrl,
+    options: &LaunchOptions,
     platform: Platform,
     focuser: &impl TabFocuser,
     launcher: &impl Launcher,
@@ -255,7 +273,7 @@ pub fn open_tab(
             ),
         }
     }
-    launcher.open(browser, url)?;
+    launcher.open(browser, url, options)?;
     Ok(Opened::OpenedNew)
 }
 
@@ -286,11 +304,13 @@ mod tests {
     #[derive(Default)]
     struct RecordingLauncher {
         opened: RefCell<Vec<String>>,
+        options: RefCell<Vec<LaunchOptions>>,
         fail: bool,
     }
 
     impl Launcher for RecordingLauncher {
-        fn open(&self, browser: &BrowserInfo, url: &TabUrl) -> Result<()> {
+        fn open(&self, browser: &BrowserInfo, url: &TabUrl, options: &LaunchOptions) -> Result<()> {
+            self.options.borrow_mut().push(options.clone());
             if self.fail {
                 return Err(BrowserError::Failed {
                     program: "open".into(),
@@ -378,6 +398,7 @@ mod tests {
         let opened = open_tab(
             &browser("com.google.Chrome"),
             &url(),
+            &LaunchOptions::default(),
             Platform::MacOs,
             &focuser,
             &launcher,
@@ -396,6 +417,7 @@ mod tests {
         let opened = open_tab(
             &browser("com.apple.Safari"),
             &url(),
+            &LaunchOptions::default(),
             Platform::MacOs,
             &focuser,
             &launcher,
@@ -422,6 +444,7 @@ mod tests {
         let opened = open_tab(
             &browser("com.google.Chrome"),
             &url(),
+            &LaunchOptions::default(),
             Platform::MacOs,
             &focuser,
             &launcher,
@@ -440,6 +463,7 @@ mod tests {
         open_tab(
             &browser("org.mozilla.firefox"),
             &url(),
+            &LaunchOptions::default(),
             Platform::MacOs,
             &focuser,
             &launcher,
@@ -448,6 +472,7 @@ mod tests {
         open_tab(
             &browser("google-chrome.desktop"),
             &url(),
+            &LaunchOptions::default(),
             Platform::Linux,
             &focuser,
             &launcher,
@@ -456,6 +481,40 @@ mod tests {
 
         assert_eq!(focuser.calls.get(), 0);
         assert_eq!(launcher.opened.borrow().len(), 2);
+    }
+
+    #[test]
+    fn passes_profile_and_window_to_the_launcher_and_still_focuses_first() {
+        let launcher = RecordingLauncher::default();
+        let options = LaunchOptions {
+            browser_profile: Some("Profile 1".into()),
+            new_window: true,
+        };
+
+        let focused = open_tab(
+            &browser("com.google.Chrome"),
+            &url(),
+            &options,
+            Platform::MacOs,
+            &FakeFocuser::new(|| Ok(Focus::Focused)),
+            &launcher,
+        )
+        .expect("open");
+        let opened = open_tab(
+            &browser("com.google.Chrome"),
+            &url(),
+            &options,
+            Platform::MacOs,
+            &FakeFocuser::new(|| Ok(Focus::NotFound)),
+            &launcher,
+        )
+        .expect("open");
+
+        assert_eq!(
+            (focused, opened),
+            (Opened::FocusedExisting, Opened::OpenedNew)
+        );
+        assert_eq!(*launcher.options.borrow(), [options]);
     }
 
     #[test]
@@ -469,6 +528,7 @@ mod tests {
         let result = open_tab(
             &browser("org.mozilla.firefox"),
             &url(),
+            &LaunchOptions::default(),
             Platform::MacOs,
             &focuser,
             &launcher,

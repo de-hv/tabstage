@@ -1,4 +1,16 @@
 {
+  "browserProfiles": {
+    "com.google.Chrome": [
+      {
+        "id": "Default",
+        "name": "Personal"
+      },
+      {
+        "id": "Profile 1",
+        "name": "Trabajo"
+      }
+    ]
+  },
   "browsers": [
     {
       "id": "com.google.Chrome",
@@ -25,41 +37,49 @@
       "name": "Safari"
     }
   ],
+  "dataLocation": {
+    "folder": "/Users/me/Library/Application Support/io.github.de-hv.tabstage",
+    "kind": "appData"
+  },
   "dataPath": "/Users/me/Library/Application Support/io.github.de-hv.tabstage/workspace.json",
-  "defaultBrowser": "org.mozilla.firefox",
-  "groups": [
+  "profiles": [
     {
+      "binding": {
+        "browser": "com.google.Chrome",
+        "browserProfile": "Profile 1",
+        "newWindow": true
+      },
       "browser": "com.google.Chrome",
       "canFocusTabs": true,
-      "followsDefault": false,
-      "group": "00000000-0000-0000-0000-0000000000a1",
-      "isFallback": false
+      "isBound": true,
+      "isFallback": false,
+      "profile": "00000000-0000-0000-0000-0000000000c1"
     },
     {
+      "binding": {
+        "browser": "org.mozilla.firefox",
+        "newWindow": false
+      },
       "browser": "org.mozilla.firefox",
       "canFocusTabs": false,
-      "followsDefault": true,
-      "group": "00000000-0000-0000-0000-0000000000a2",
-      "isFallback": false
+      "isBound": true,
+      "isFallback": false,
+      "profile": "00000000-0000-0000-0000-0000000000c2"
     },
     {
+      "binding": null,
       "browser": "org.mozilla.firefox",
       "canFocusTabs": false,
-      "followsDefault": false,
-      "group": "00000000-0000-0000-0000-0000000000a3",
-      "isFallback": true
+      "isBound": false,
+      "isFallback": false,
+      "profile": "00000000-0000-0000-0000-0000000000c3"
     }
   ],
-  "settings": {
-    "defaultBrowser": "org.mozilla.firefox"
-  },
+  "settings": {},
+  "systemBrowser": "org.mozilla.firefox",
   "workspace": {
     "groups": [
       {
-        "browser": {
-          "browser": "com.google.Chrome",
-          "kind": "specific"
-        },
         "children": [
           {
             "collapsed": false,
@@ -111,12 +131,10 @@
         ],
         "color": "blue",
         "id": "00000000-0000-0000-0000-0000000000a1",
-        "name": "Trabajo · Jira"
+        "name": "Trabajo · Jira",
+        "profile": "00000000-0000-0000-0000-0000000000c1"
       },
       {
-        "browser": {
-          "kind": "default"
-        },
         "children": [
           {
             "id": "00000000-0000-0000-0000-000000000b06",
@@ -127,17 +145,32 @@
         ],
         "color": "mauve",
         "id": "00000000-0000-0000-0000-0000000000a2",
-        "name": "Investigación"
+        "name": "Investigación",
+        "profile": "00000000-0000-0000-0000-0000000000c2"
       },
       {
-        "browser": {
-          "browser": "com.brave.Browser",
-          "kind": "specific"
-        },
         "children": [],
         "color": "peach",
         "id": "00000000-0000-0000-0000-0000000000a3",
-        "name": "Docs Rust"
+        "name": "Docs Rust",
+        "profile": "00000000-0000-0000-0000-0000000000c3"
+      }
+    ],
+    "profiles": [
+      {
+        "color": 0,
+        "id": "00000000-0000-0000-0000-0000000000c1",
+        "name": "Trabajo"
+      },
+      {
+        "color": 1,
+        "id": "00000000-0000-0000-0000-0000000000c2",
+        "name": "Personal"
+      },
+      {
+        "color": 2,
+        "id": "00000000-0000-0000-0000-0000000000c3",
+        "name": "QA"
       }
     ],
     "statuses": [

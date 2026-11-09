@@ -3,14 +3,30 @@
 //! The data file may live in a synced folder, so the pointer to it cannot
 //! live inside it. It is a small JSON file in the app config folder.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use tabstage_core::{BrowserId, ProfileId};
 
 /// Name of the data file inside the folder the user picks.
 pub const DATA_FILE_NAME: &str = "workspace.json";
+
+/// Which browser a Tabstage profile opens in on this machine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileBinding {
+    /// Installed browser.
+    pub browser: BrowserId,
+    /// Profile of that browser, when it exposes profiles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_profile: Option<String>,
+    /// Open several tabs at once in a new window.
+    #[serde(default)]
+    pub new_window: bool,
+}
 
 /// Settings that belong to this machine only.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -19,6 +35,11 @@ pub struct AppConfig {
     /// Data file chosen by the user; `None` means the default location.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_path: Option<PathBuf>,
+    /// Browser of each Tabstage profile on this machine. Profile names and
+    /// groups are synced; these choices are not, because browsers differ
+    /// between machines and operating systems.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub profiles: BTreeMap<ProfileId, ProfileBinding>,
 }
 
 /// The data file inside `folder`.
@@ -91,9 +112,18 @@ mod tests {
     fn saved_config_loads_back() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("nested/config.json");
-        let config = AppConfig {
+        let mut config = AppConfig {
             data_path: Some(PathBuf::from("/Users/me/Dropbox/Tabstage/workspace.json")),
+            ..AppConfig::default()
         };
+        config.profiles.insert(
+            ProfileId::new(),
+            ProfileBinding {
+                browser: BrowserId::parse("com.google.Chrome").expect("id"),
+                browser_profile: Some("Profile 1".into()),
+                new_window: true,
+            },
+        );
 
         save_config(&path, &config).expect("save");
 

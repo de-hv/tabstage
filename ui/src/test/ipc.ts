@@ -32,6 +32,7 @@ export function installIpc(handlers: Record<string, Handler> = {}): IpcCall[] {
       if (cmd === 'open_tab') return 'openedNew';
       if (cmd === 'open_folder' || cmd === 'open_group') return { opened: 1, focused: 0 };
       if (cmd === 'plugin:dialog|open') return null;
+      if (cmd === 'reveal_data_file') return null;
       if (cmd === 'inspect_data_folder') {
         return { path: `${String(args.folder)}/workspace.json`, exists: false, groups: 0, tabs: 0 };
       }

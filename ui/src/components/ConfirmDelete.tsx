@@ -18,12 +18,12 @@ export function ConfirmDelete({ pending, onClose }: Props) {
       <AlertDialog.Portal>
         <AlertDialog.Overlay className="dialog__overlay" />
         <AlertDialog.Content className="dialog">
-          <AlertDialog.Title className="dialog__title">¿Eliminar «{pending?.name}»?</AlertDialog.Title>
+          <AlertDialog.Title className="dialog__title">Delete “{pending?.name}”?</AlertDialog.Title>
           <AlertDialog.Description className="dialog__text">
-            Se eliminarán sus {pending?.tabCount} tabs. No se puede deshacer.
+            This deletes its {pending?.tabCount} tabs. You can't undo this.
           </AlertDialog.Description>
           <div className="dialog__actions">
-            <AlertDialog.Cancel className="button">Cancelar</AlertDialog.Cancel>
+            <AlertDialog.Cancel className="button">Cancel</AlertDialog.Cancel>
             <AlertDialog.Action
               className="button button--danger"
               onClick={() => {
@@ -31,7 +31,7 @@ export function ConfirmDelete({ pending, onClose }: Props) {
                 onClose();
               }}
             >
-              Eliminar
+              Delete
             </AlertDialog.Action>
           </div>
         </AlertDialog.Content>

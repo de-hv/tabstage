@@ -97,23 +97,15 @@ pub struct Status {
     pub color: AccentColor,
 }
 
-/// The statuses a new workspace starts with, in display order.
+/// The statuses a new workspace starts with: only "To do". Users add the
+/// ones they actually need.
 #[must_use]
 pub fn default_statuses() -> Vec<Status> {
-    [
-        ("todo", "To do", AccentColor::Lavender),
-        ("in-progress", "In progress", AccentColor::Blue),
-        ("in-review", "In review", AccentColor::Mauve),
-        ("in-dev", "In dev", AccentColor::Peach),
-        ("done", "Done", AccentColor::Green),
-    ]
-    .into_iter()
-    .map(|(id, label, color)| Status {
-        id: StatusId(id.to_owned()),
-        label: label.to_owned(),
-        color,
-    })
-    .collect()
+    vec![Status {
+        id: StatusId("todo".to_owned()),
+        label: "To do".to_owned(),
+        color: AccentColor::Lavender,
+    }]
 }
 
 #[cfg(test)]
@@ -130,29 +122,22 @@ mod tests {
     }
 
     #[test]
-    fn default_statuses_match_the_extension() {
+    fn new_workspaces_start_with_only_to_do() {
         let ids: Vec<_> = default_statuses()
             .into_iter()
             .map(|status| status.id.as_str().to_owned())
             .collect();
-        assert_eq!(ids, ["todo", "in-progress", "in-review", "in-dev", "done"]);
+        assert_eq!(ids, ["todo"]);
     }
 
     #[test]
-    fn default_status_colors_match_the_extension() {
-        let colors: Vec<_> = default_statuses()
-            .into_iter()
-            .map(|status| status.color)
-            .collect();
+    fn default_status_is_lavender_to_do() {
+        let statuses = default_statuses();
+
+        assert_eq!(statuses.len(), 1);
         assert_eq!(
-            colors,
-            [
-                AccentColor::Lavender,
-                AccentColor::Blue,
-                AccentColor::Mauve,
-                AccentColor::Peach,
-                AccentColor::Green,
-            ]
+            (statuses[0].label.as_str(), statuses[0].color),
+            ("To do", AccentColor::Lavender)
         );
     }
 

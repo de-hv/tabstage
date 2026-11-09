@@ -8,7 +8,7 @@ import type { MoveDestination } from '../lib/dnd';
 const NO_STATUS = '';
 
 interface Props {
-  /** Accessible name of the trigger, e.g. "Opciones de Grafana". */
+  /** Accessible name of the trigger, e.g. "Options for Grafana". */
   label: string;
   /** Status section; omitted for groups. */
   status?: {
@@ -25,7 +25,7 @@ interface Props {
 }
 
 /** "⋯" menu of a row: status, rename and delete. */
-export function RowMenu({ label, status, deleteLabel = 'Eliminar', moves = [], onMove, onRename, onDelete }: Props) {
+export function RowMenu({ label, status, deleteLabel = 'Delete', moves = [], onMove, onRename, onDelete }: Props) {
   // Renaming swaps the row for an input; returning focus to the trigger
   // would pull focus out of that input.
   const keepFocus = useRef(false);
@@ -49,14 +49,14 @@ export function RowMenu({ label, status, deleteLabel = 'Eliminar', moves = [], o
         >
           {status && (
             <>
-              <Menu.Label className="menu__label">Estado</Menu.Label>
+              <Menu.Label className="menu__label">Status</Menu.Label>
               <Menu.RadioGroup
                 value={status.current ?? NO_STATUS}
                 onValueChange={(value) => status.onChange(value === NO_STATUS ? null : value)}
               >
                 <Menu.RadioItem className="menu__item" value={NO_STATUS}>
                   <span className="square" aria-hidden="true" />
-                  Sin estado
+                  No status
                 </Menu.RadioItem>
                 {status.statuses.map((option) => (
                   <Menu.RadioItem key={option.id} className="menu__item" value={option.id}>
@@ -72,7 +72,7 @@ export function RowMenu({ label, status, deleteLabel = 'Eliminar', moves = [], o
             <Menu.Sub>
               <Menu.SubTrigger className="menu__item">
                 <FolderInput className="icon" aria-hidden="true" />
-                Mover a…
+                Move to…
                 <ChevronRight className="icon menu__chevron" aria-hidden="true" />
               </Menu.SubTrigger>
               <Menu.Portal>
@@ -94,7 +94,7 @@ export function RowMenu({ label, status, deleteLabel = 'Eliminar', moves = [], o
             }}
           >
             <Pencil className="icon" aria-hidden="true" />
-            Renombrar
+            Rename
           </Menu.Item>
           <Menu.Item className="menu__item menu__item--danger" onSelect={onDelete}>
             <Trash2 className="icon" aria-hidden="true" />

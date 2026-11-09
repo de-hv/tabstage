@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::sync::MutexGuard;
 
-use tabstage_app::config::{AppConfig, data_file_in, save_config};
+use tabstage_app::config::data_file_in;
 use tabstage_app::{
     AppError, AppService, Command, DataFileInfo, ErrorPayload, OpenSummary, Relocate, Snapshot,
     inspect_data_file,
@@ -14,8 +14,9 @@ use tabstage_browsers::Opened;
 use tabstage_browsers::system::System;
 use tabstage_core::{FolderId, GroupId, TabId};
 use tauri::{AppHandle, State};
+use tauri_plugin_opener::OpenerExt;
 
-use crate::{ConfigPath, Service, tray};
+use crate::{Service, tray};
 
 type Reply<T> = Result<T, ErrorPayload>;
 
@@ -105,33 +106,27 @@ pub fn inspect_data_folder(folder: String) -> Reply<DataFileInfo> {
     inspect_data_file(&data_file_in(Path::new(&folder))).map_err(|e| payload(&e))
 }
 
-/// Moves the data file into `folder` and remembers it for next launch.
+/// Moves the data file into `folder`; the service remembers it for next launch.
 #[tauri::command]
 pub fn relocate(
     app: AppHandle,
     service: State<'_, Service>,
-    config: State<'_, ConfigPath>,
     folder: String,
     mode: Relocate,
 ) -> Reply<Snapshot> {
     let path = data_file_in(Path::new(&folder));
-    let result = lock(&service)?.relocate(path.clone(), mode);
-    let snapshot = changed(&app, result)?;
-    let saved = save_config(
-        &config.0,
-        &AppConfig {
-            data_path: Some(path),
-        },
-    );
-    if let Err(error) = saved {
-        tracing::warn!(
-            error = &error as &dyn std::error::Error,
-            "could not save the config"
-        );
-        return Err(ErrorPayload {
+    let result = lock(&service)?.relocate(path, mode);
+    changed(&app, result)
+}
+
+/// Shows the data file in Finder (or the file manager on Linux).
+#[tauri::command]
+pub fn reveal_data_file(app: AppHandle, service: State<'_, Service>) -> Reply<()> {
+    let path = lock(&service)?.data_path().to_path_buf();
+    app.opener()
+        .reveal_item_in_dir(&path)
+        .map_err(|error| ErrorPayload {
             code: "io",
-            message: format!("the data file moved, but its location could not be saved: {error}"),
-        });
-    }
-    Ok(snapshot)
+            message: format!("could not show {}: {error}", path.display()),
+        })
 }

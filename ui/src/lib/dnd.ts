@@ -4,7 +4,8 @@ import type { Command, Folder, Group, Place, Tab, Workspace } from '../api/types
 export type DragItem =
   | { kind: 'tab'; tab: string }
   | { kind: 'folder'; folder: string }
-  | { kind: 'group'; group: string };
+  | { kind: 'group'; group: string }
+  | { kind: 'profile'; profile: string };
 
 /** Where it is dropped. */
 export type DropTarget =
@@ -17,7 +18,9 @@ export type DropTarget =
   /** On a group in the sidebar. */
   | { kind: 'group'; group: string }
   /** On a status tile of the board. */
-  | { kind: 'tile'; status: string | null };
+  | { kind: 'tile'; status: string | null }
+  /** On a profile header in the sidebar. */
+  | { kind: 'profile'; profile: string };
 
 /** Where a tab or folder sits: its list and its index in that list. */
 interface Location {
@@ -101,6 +104,8 @@ export function dropCommand(item: DragItem, target: DropTarget, workspace: Works
       return dropFolder(item.folder, target, workspace);
     case 'group':
       return dropGroup(item.group, target, workspace);
+    case 'profile':
+      return dropProfile(item.profile, target, workspace);
   }
 }
 
@@ -125,6 +130,8 @@ function dropTab(tab: string, target: DropTarget, workspace: Workspace): Command
       const length = listLength(workspace, { group: target.group });
       return length === null ? null : moveTab(workspace, tab, { group: target.group }, length);
     }
+    case 'profile':
+      return null;
     case 'tile': {
       const at = locate(workspace, tab);
       // A folder status decides the tile of every tab in it.
@@ -155,6 +162,8 @@ function dropFolder(folder: string, target: DropTarget, workspace: Workspace): C
       const length = listLength(workspace, { group: target.group });
       return length === null ? null : moveFolder(workspace, folder, target.group, length);
     }
+    case 'profile':
+      return null;
     case 'tile': {
       const current = findFolder(workspace, folder)?.status ?? null;
       return current === target.status
@@ -165,9 +174,28 @@ function dropFolder(folder: string, target: DropTarget, workspace: Workspace): C
 }
 
 function dropGroup(group: string, target: DropTarget, workspace: Workspace): Command | null {
+  const dragged = workspace.groups.find((candidate) => candidate.id === group);
+  if (!dragged) return null;
+  if (target.kind === 'profile') {
+    const exists = workspace.profiles.some((profile) => profile.id === target.profile);
+    return exists && target.profile !== dragged.profile
+      ? { type: 'setGroupProfile', group, profile: target.profile }
+      : null;
+  }
   if (target.kind !== 'group' || target.group === group) return null;
   const index = workspace.groups.findIndex((candidate) => candidate.id === target.group);
-  return index === -1 ? null : { type: 'moveGroup', group, index };
+  const onto = workspace.groups[index];
+  if (!onto) return null;
+  // Across profiles the group joins the other profile; within one it takes the place.
+  return onto.profile === dragged.profile
+    ? { type: 'moveGroup', group, index }
+    : { type: 'setGroupProfile', group, profile: onto.profile };
+}
+
+function dropProfile(profile: string, target: DropTarget, workspace: Workspace): Command | null {
+  if (target.kind !== 'profile' || target.profile === profile) return null;
+  const index = workspace.profiles.findIndex((candidate) => candidate.id === target.profile);
+  return index === -1 ? null : { type: 'moveProfile', profile, index };
 }
 
 /** A "Move to…" menu entry: a keyboard way to do what dragging does. */
@@ -181,7 +209,13 @@ export interface MoveDestination {
  * end) and, for tabs, every folder. The current container is left out.
  */
 export function moveDestinations(item: DragItem, workspace: Workspace): MoveDestination[] {
-  if (item.kind === 'group') return [];
+  if (item.kind === 'profile') return [];
+  if (item.kind === 'group') {
+    return workspace.profiles.flatMap((profile) => {
+      const command = dropCommand(item, { kind: 'profile', profile: profile.id }, workspace);
+      return command ? [{ label: profile.name, command }] : [];
+    });
+  }
   const id = item.kind === 'tab' ? item.tab : item.folder;
   const at = locate(workspace, id);
   const destinations: MoveDestination[] = [];

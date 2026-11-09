@@ -15,6 +15,7 @@ export const api = {
   openGroup: (group: Uuid) => invoke<OpenSummary>('open_group', { group }),
   inspectDataFolder: (folder: string) => invoke<DataFileInfo>('inspect_data_folder', { folder }),
   relocate: (folder: string, mode: Relocate) => invoke<Snapshot>('relocate', { folder, mode }),
+  revealDataFile: () => invoke<void>('reveal_data_file'),
 };
 
 /** Narrows an unknown rejection to the error payload Rust sends. */

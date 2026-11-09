@@ -41,18 +41,25 @@ export interface Folder {
 
 export type Node = ({ type: 'tab' } & Tab) | ({ type: 'folder' } & Folder);
 
-export type BrowserChoice = { kind: 'default' } | { kind: 'specific'; browser: BrowserId };
+export interface Profile {
+  id: Uuid;
+  name: string;
+  /** Index into the 20 profile colors (see lib/profileColors.ts). */
+  color: number;
+}
 
 export interface Group {
   id: Uuid;
   name: string;
   color: AccentColor;
-  browser: BrowserChoice;
+  /** Every group belongs to one profile and opens with it. */
+  profile: Uuid;
   children: Node[];
 }
 
 export interface Workspace {
   statuses: Status[];
+  profiles: Profile[];
   groups: Group[];
 }
 
@@ -65,21 +72,47 @@ export interface BrowserInfo {
   launch: { type: 'macBundle' } | { type: 'desktopExec'; exec: string };
 }
 
-export interface GroupBrowser {
-  group: Uuid;
+export interface BrowserProfile {
+  /** What the browser needs to open it (`Profile 1`, or a Firefox profile name). */
+  id: string;
+  name: string;
+}
+
+/** Machine-local: which browser a Tabstage profile opens in here. */
+export interface ProfileBinding {
+  browser: BrowserId;
+  browserProfile?: string;
+  newWindow: boolean;
+}
+
+export interface ProfileView {
+  profile: Uuid;
+  binding: ProfileBinding | null;
+  /** Browser that opens the profile's groups here. */
   browser: BrowserId | null;
-  followsDefault: boolean;
+  isBound: boolean;
+  /** The bound browser is not installed here, so the system one is used. */
   isFallback: boolean;
   canFocusTabs: boolean;
 }
 
 export interface Snapshot {
   workspace: Workspace;
-  settings: { defaultBrowser?: BrowserId };
+  settings: Record<string, never>;
   browsers: BrowserInfo[];
-  defaultBrowser: BrowserId | null;
+  browserProfiles: Record<BrowserId, BrowserProfile[]>;
+  systemBrowser: BrowserId | null;
   dataPath: string;
-  groups: GroupBrowser[];
+  dataLocation: DataLocation;
+  profiles: ProfileView[];
+}
+
+export type DataLocationKind = 'appData' | 'iCloudDrive' | 'dropbox' | 'oneDrive' | 'googleDrive' | 'folder';
+
+export interface DataLocation {
+  kind: DataLocationKind;
+  /** Folder that holds the data file. */
+  folder: string;
 }
 
 export type Relocate = 'useExisting' | 'replaceWithMine';
@@ -95,9 +128,9 @@ export type Place = { group: Uuid } | { folder: Uuid };
 export type Target = { tab: Uuid } | { folder: Uuid };
 
 export type Command =
-  | { type: 'addGroup'; name: string; color: AccentColor }
+  | { type: 'addGroup'; profile: Uuid; name: string; color: AccentColor }
   | { type: 'renameGroup'; group: Uuid; name: string }
-  | { type: 'setGroupBrowser'; group: Uuid; browser: BrowserChoice }
+  | { type: 'setGroupProfile'; group: Uuid; profile: Uuid }
   | { type: 'moveGroup'; group: Uuid; index: number }
   | { type: 'removeGroup'; group: Uuid }
   | { type: 'addFolder'; group: Uuid; name: string }
@@ -115,7 +148,18 @@ export type Command =
   | { type: 'setStatusColor'; status: StatusId; color: AccentColor }
   | { type: 'moveStatus'; status: StatusId; index: number }
   | { type: 'removeStatus'; status: StatusId; replacement: StatusId | null }
-  | { type: 'setDefaultBrowser'; browser: BrowserId };
+  | { type: 'addProfile'; name: string }
+  | { type: 'renameProfile'; profile: Uuid; name: string }
+  | { type: 'setProfileColor'; profile: Uuid; color: number }
+  | { type: 'moveProfile'; profile: Uuid; index: number }
+  | { type: 'removeProfile'; profile: Uuid; moveGroupsTo: Uuid }
+  | {
+      type: 'bindProfile';
+      profile: Uuid;
+      browser: BrowserId;
+      browserProfile: string | null;
+      newWindow: boolean;
+    };
 
 export type ErrorCode =
   | 'notFound'

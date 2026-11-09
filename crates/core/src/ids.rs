@@ -61,6 +61,10 @@ uuid_id!(
     /// Identifies a tab.
     TabId
 );
+uuid_id!(
+    /// Identifies a Tabstage profile.
+    ProfileId
+);
 
 #[cfg(test)]
 mod tests {

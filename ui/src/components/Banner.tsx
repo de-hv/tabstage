@@ -13,13 +13,13 @@ export function Banner({ error, onReload, onKeepMine, onDismiss }: Props) {
     return (
       <div className="banner" role="alert">
         <p className="banner__text">
-          Los datos cambiaron en otro equipo. Carga esos cambios o guarda los de esta ventana encima.
+          The data changed on another computer. Load those changes, or save this window's over them.
         </p>
         <button type="button" className="button" onClick={onReload}>
-          Cargar cambios
+          Load changes
         </button>
         <button type="button" className="button" onClick={onKeepMine}>
-          Mantener los míos
+          Keep mine
         </button>
       </div>
     );
@@ -28,7 +28,7 @@ export function Banner({ error, onReload, onKeepMine, onDismiss }: Props) {
     <div className="banner" data-tone="error" role="alert">
       <p className="banner__text">{error.message}</p>
       <button type="button" className="button" onClick={onDismiss}>
-        Cerrar
+        Close
       </button>
     </div>
   );

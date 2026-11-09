@@ -8,7 +8,6 @@ mod commands;
 mod tray;
 mod window;
 
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 use tabstage_app::AppService;
@@ -22,9 +21,6 @@ use tracing_subscriber::EnvFilter;
 
 /// The service shared by every command.
 pub(crate) type Service = Mutex<AppService<System>>;
-
-/// Where this machine's [`tabstage_app::config::AppConfig`] lives.
-pub(crate) struct ConfigPath(pub PathBuf);
 
 /// Opens the quick search from any app; the extension used the same keys.
 const PALETTE_SHORTCUT: &str = "Alt+Shift+KeyK";
@@ -43,6 +39,7 @@ pub fn run() {
             window::show_main(app);
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _: &Shortcut, event| {
@@ -60,11 +57,14 @@ pub fn run() {
                 None => data_file_in(&app.path().app_data_dir()?),
             };
             tracing::info!(path = %data_path.display(), "loading workspace");
-            let service =
-                AppService::start(System, FileStore::new(data_path), Platform::current())?;
+            let service = AppService::start(
+                System,
+                FileStore::new(data_path),
+                config_path,
+                Platform::current(),
+            )?;
             tray::create(app.handle(), &service.snapshot())?;
             app.manage::<Service>(Mutex::new(service));
-            app.manage(ConfigPath(config_path));
 
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
             if let Err(error) = app.global_shortcut().register(PALETTE_SHORTCUT) {
@@ -102,6 +102,7 @@ pub fn run() {
             commands::open_group,
             commands::inspect_data_folder,
             commands::relocate,
+            commands::reveal_data_file,
         ])
         .run(tauri::generate_context!());
 
