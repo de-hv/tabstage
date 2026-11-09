@@ -1,0 +1,22 @@
+---
+source: crates/browsers/src/macos.rs
+expression: "script.expect(\"script\")"
+---
+if application id "com.apple.Safari" is running then
+	tell application id "com.apple.Safari"
+		set output to ""
+		set windowIndex to 0
+		repeat with w in windows
+			set windowIndex to windowIndex + 1
+			try
+				set tabIndex to 0
+				repeat with t in tabs of w
+					set tabIndex to tabIndex + 1
+					set output to output & windowIndex & tab & tabIndex & tab & (URL of t) & linefeed
+				end repeat
+			end try
+		end repeat
+		return output
+	end tell
+end if
+return ""

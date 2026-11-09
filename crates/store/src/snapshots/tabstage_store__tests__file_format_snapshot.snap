@@ -1,0 +1,67 @@
+---
+source: crates/store/src/lib.rs
+expression: to_json_redacted(&sample())
+---
+{
+  "app": "tabstage-desktop",
+  "settings": {
+    "defaultBrowser": "org.mozilla.firefox"
+  },
+  "version": 1,
+  "workspace": {
+    "groups": [
+      {
+        "browser": {
+          "browser": "com.google.Chrome",
+          "kind": "specific"
+        },
+        "children": [
+          {
+            "collapsed": false,
+            "id": "[uuid]",
+            "name": "Sprint 42",
+            "tabs": [
+              {
+                "id": "[uuid]",
+                "status": "todo",
+                "title": "Issue 1",
+                "url": "https://a.dev/issue/1"
+              }
+            ],
+            "type": "folder"
+          }
+        ],
+        "color": "blue",
+        "id": "[uuid]",
+        "name": "Work"
+      }
+    ],
+    "statuses": [
+      {
+        "color": "lavender",
+        "id": "todo",
+        "label": "To do"
+      },
+      {
+        "color": "blue",
+        "id": "in-progress",
+        "label": "In progress"
+      },
+      {
+        "color": "mauve",
+        "id": "in-review",
+        "label": "In review"
+      },
+      {
+        "color": "peach",
+        "id": "in-dev",
+        "label": "In dev"
+      },
+      {
+        "color": "green",
+        "id": "done",
+        "label": "Done"
+      }
+    ]
+  }
+}

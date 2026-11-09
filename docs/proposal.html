@@ -1,0 +1,542 @@
+<title>Tabstage Desktop</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one reading column (~72ch) that widens to full width for the app mockups. Catppuccin Latte/Mocha, same tokens as the extension. */
+:root{
+  --base:#eff1f5;--mantle:#e6e9ef;--crust:#dce0e8;
+  --s0:#ccd0da;--s1:#bcc0cc;--s2:#acb0be;--ov0:#9ca0b0;--ov1:#6c6f85;--sub:#5c5f77;--text:#4c4f69;
+  --blue:#1e66f5;--green:#40a02b;--peach:#fe640b;--mauve:#8839ef;--yellow:#df8e1d;--teal:#179299;--red:#d20f39;--lav:#7287fd;
+  --win-shadow:0 18px 40px -18px rgb(76 79 105 / .35),0 2px 6px rgb(76 79 105 / .08);
+  --font:'IBM Plex Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+  --font-cond:'IBM Plex Sans Condensed','IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --base:#1e1e2e;--mantle:#181825;--crust:#11111b;
+  --s0:#313244;--s1:#45475a;--s2:#585b70;--ov0:#6c7086;--ov1:#7f849c;--sub:#bac2de;--text:#cdd6f4;
+  --blue:#89b4fa;--green:#a6e3a1;--peach:#fab387;--mauve:#cba6f7;--yellow:#f9e2af;--teal:#94e2d5;--red:#f38ba8;--lav:#b4befe;
+  --win-shadow:0 18px 40px -18px rgb(0 0 0 / .7),0 2px 6px rgb(0 0 0 / .3);color-scheme:dark}}
+:root[data-theme="dark"]{
+  --base:#1e1e2e;--mantle:#181825;--crust:#11111b;
+  --s0:#313244;--s1:#45475a;--s2:#585b70;--ov0:#6c7086;--ov1:#7f849c;--sub:#bac2de;--text:#cdd6f4;
+  --blue:#89b4fa;--green:#a6e3a1;--peach:#fab387;--mauve:#cba6f7;--yellow:#f9e2af;--teal:#94e2d5;--red:#f38ba8;--lav:#b4befe;
+  --win-shadow:0 18px 40px -18px rgb(0 0 0 / .7),0 2px 6px rgb(0 0 0 / .3);color-scheme:dark}
+
+body{background:var(--base);color:var(--text);font:400 16px/1.6 var(--font);-webkit-font-smoothing:antialiased}
+::selection{background:color-mix(in srgb,var(--mauve) 30%,transparent)}
+a{color:var(--blue);text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--mauve);outline-offset:2px}
+.page{max-width:1040px;margin:0 auto;padding-block:56px 96px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:72px}
+.prose{max-width:72ch;display:flex;flex-direction:column;gap:14px}
+h1,h2,h3{font-family:var(--font-cond);font-weight:600;text-wrap:balance;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(2.4rem,6vw,3.6rem);line-height:1.02}
+h2{font-size:1.75rem;line-height:1.15;margin-top:6px}
+h3{font-size:1.15rem;line-height:1.25}
+p{margin:0}
+.lede{font-size:1.15rem;color:var(--sub);max-width:60ch}
+.muted{color:var(--sub)}
+code,.mono{font-family:var(--font-mono);font-size:.88em}
+:not(pre)>code{background:var(--mantle);border:1px solid var(--s0);padding:1px 5px;border-radius:4px}
+pre{margin:0;background:var(--mantle);border:1px solid var(--s0);border-radius:10px;padding:16px 18px;overflow-x:auto;font:400 13.5px/1.55 var(--font-mono);color:var(--text)}
+pre .c{color:var(--ov1)} pre .k{color:var(--mauve)} pre .t{color:var(--peach)} pre .s{color:var(--green)}
+section{display:flex;flex-direction:column;gap:24px}
+.decisions{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1px;background:var(--s0);border:1px solid var(--s0);border-radius:10px;overflow:hidden}
+.decisions>div{background:var(--base);padding:14px 16px;display:flex;flex-direction:column;gap:4px}
+.decisions dt{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ov1);font-weight:500}
+.decisions dd{margin:0;font-size:15px}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--s0);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:560px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--s0);vertical-align:top}
+th{font-weight:500;color:var(--sub);background:var(--mantle);font-size:13px}
+tr:last-child td{border-bottom:0}
+td .mono{white-space:nowrap}
+.yes,.no{font-weight:500;white-space:nowrap}.yes::before,.no::before{content:'';display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:7px;vertical-align:1px;background:var(--green)}.no::before{background:var(--peach)}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:24px;align-items:start}
+.two>*{min-width:0}
+ol.steps{margin:0;padding:0;list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:12px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:28px 1fr;gap:10px}
+ol.steps li::before{content:counter(s);font:500 13px/26px var(--font-mono);text-align:center;width:26px;height:26px;border-radius:6px;background:var(--mantle);border:1px solid var(--s0);color:var(--sub)}
+.callout{border:1px solid var(--s0);background:var(--mantle);border-radius:10px;padding:14px 16px;font-size:15px}
+.rec{display:inline-block;font-size:12px;font-weight:500;padding:1px 7px;border-radius:4px;background:color-mix(in srgb,var(--green) 18%,transparent);color:var(--text);border:1px solid color-mix(in srgb,var(--green) 45%,transparent)}
+.milestones{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:16px}
+.milestones>div{border-top:2px solid var(--s1);padding-top:10px;display:flex;flex-direction:column;gap:6px}
+.milestones .tag{font:500 12px var(--font-mono);color:var(--ov1)}
+.milestones ul{margin:0;padding-left:18px;font-size:14.5px;color:var(--sub)}
+
+/* ---------- App mockups ---------- */
+.shot{display:flex;flex-direction:column;gap:12px}
+.shot figcaption{font-size:14px;color:var(--sub);max-width:72ch}
+.stage{overflow-x:auto;padding:6px 2px 24px}
+.win{min-width:760px;background:var(--base);border:1px solid var(--s1);border-radius:12px;overflow:hidden;box-shadow:var(--win-shadow);font:400 13px/1.4 var(--font);color:var(--text);position:relative}
+.bar{display:flex;align-items:center;gap:7px;height:38px;padding:0 12px;background:var(--mantle);border-bottom:1px solid var(--s0)}
+.dot{width:12px;height:12px;border-radius:50%;background:var(--s1)}
+.dot.r{background:#ee6a5f}.dot.y{background:#f5bd4f}.dot.g{background:#61c454}
+.bar .ttl{font:500 13px var(--font-cond);color:var(--sub);margin-left:10px}
+.search{margin-left:auto;display:flex;align-items:center;gap:6px;width:230px;height:24px;padding:0 8px;border:1px solid var(--s0);border-radius:6px;background:var(--base);color:var(--ov1);font-size:12px}
+.search kbd,.kbd{margin-left:auto;font:500 11px var(--font-mono);color:var(--ov1)}
+.cols{display:grid;grid-template-columns:200px minmax(0,1fr);min-height:440px}
+.side{background:var(--mantle);border-right:1px solid var(--s0);padding:12px 8px;display:flex;flex-direction:column;gap:1px}
+.side .h{font:500 11px var(--font);letter-spacing:.06em;text-transform:uppercase;color:var(--ov1);padding:0 8px 6px}
+.r{display:flex;align-items:center;gap:8px;min-height:28px;padding:0 8px;border-radius:6px}
+.r.sel{background:var(--s0)}
+.r.hover{background:var(--crust)}
+.sq{width:9px;height:9px;border-radius:2px;flex:none;background:var(--c,var(--s2))}
+.grow{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.n{font:400 12px var(--font-mono);color:var(--ov1)}
+.bw{width:16px;height:16px;border-radius:50%;flex:none;display:grid;place-items:center;font:600 9px/1 var(--font);color:var(--base);background:var(--bc,var(--ov1))}
+.bw.dim{opacity:.45}
+.bw.ch{--bc:var(--blue)}.bw.ff{--bc:var(--peach)}.bw.sf{--bc:var(--teal)}.bw.ed{--bc:var(--green)}.bw.br{--bc:var(--red)}
+.side .foot{margin-top:auto;border-top:1px solid var(--s0);padding-top:8px;color:var(--sub);font-size:12px}
+.main{padding:14px 16px;display:flex;flex-direction:column;gap:2px;position:relative;min-width:0}
+.head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.head .name{font:600 19px var(--font-cond)}
+.btn{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;border:1px solid var(--s0);border-radius:6px;background:var(--base);color:var(--text);font-size:12px;white-space:nowrap}
+.btn.on{border-color:var(--blue)}
+.seg{display:inline-flex;border:1px solid var(--s0);border-radius:6px;overflow:hidden;font-size:12px}
+.seg span{padding:3px 10px;color:var(--sub)}
+.seg .on{background:var(--s0);color:var(--text)}
+.tools{margin-left:auto;display:flex;gap:6px;align-items:center}
+.chip{font-size:11px;line-height:18px;padding:0 7px;border-radius:4px;border:1px solid color-mix(in srgb,var(--c,var(--s2)) 60%,transparent);color:var(--text);background:color-mix(in srgb,var(--c,var(--s2)) 14%,transparent);white-space:nowrap}
+.ico{width:15px;height:15px;flex:none;color:var(--ov1)}
+.ico.s{color:var(--sub)}
+.nest{margin-left:23px;border-left:1px solid var(--s0);padding-left:6px;display:flex;flex-direction:column;gap:1px}
+.open{width:6px;height:6px;border-radius:50%;background:var(--green);flex:none}
+.hint{font-size:11px;color:var(--text);white-space:nowrap;display:flex;align-items:center;gap:4px}
+.sep{height:1px;background:var(--s0);margin:10px 0}
+.pop{position:absolute;background:var(--base);border:1px solid var(--s1);border-radius:8px;padding:6px;box-shadow:var(--win-shadow);display:flex;flex-direction:column;gap:1px;z-index:2}
+.pop .h{font-size:11px;color:var(--ov1);padding:4px 8px}
+.filter{display:flex;align-items:center;gap:6px;height:26px;padding:0 8px;border:1px solid var(--s0);border-radius:6px;color:var(--ov1);font-size:12px;width:200px}
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.tile{border:1px solid var(--s0);border-radius:10px;padding:7px 8px 8px;background:var(--mantle);display:flex;flex-direction:column;gap:1px}
+.tile .th{display:flex;align-items:center;gap:7px;padding:0 4px 5px;font:600 13px var(--font-cond)}
+.tile.half{grid-column:span 1}
+.desk{min-width:760px;border-radius:12px;padding:28px;background:color-mix(in srgb,var(--mauve) 9%,var(--crust));display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:28px;align-items:start;border:1px solid var(--s0)}
+.pal{background:var(--base);border:1px solid var(--s1);border-radius:12px;box-shadow:var(--win-shadow);overflow:hidden;font:400 13px/1.4 var(--font)}
+.pal .q{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border-bottom:1px solid var(--s0);font-size:15px}
+.caret{width:1.5px;height:18px;background:var(--text)}
+.pal .res{padding:6px;display:flex;flex-direction:column;gap:1px}
+.pal .res .r{min-height:34px}
+.pal .ft{display:flex;gap:14px;padding:7px 14px;border-top:1px solid var(--s0);font-size:11px;color:var(--ov1)}
+.pal mark{background:none;color:inherit;font-weight:600}
+.menubar{display:flex;justify-content:flex-end;align-items:center;gap:14px;height:24px;padding:0 10px;border-radius:6px;background:var(--base);border:1px solid var(--s0);font-size:12px;color:var(--sub);margin-bottom:6px}
+.menubar .tray{width:20px;height:18px;border-radius:4px;display:grid;place-items:center;background:var(--s0);color:var(--text)}
+.traymenu{background:var(--base);border:1px solid var(--s1);border-radius:8px;box-shadow:var(--win-shadow);padding:5px;font-size:12.5px;display:flex;flex-direction:column;gap:1px}
+.traymenu .r{min-height:26px}
+.set{display:grid;grid-template-columns:180px minmax(0,1fr);min-height:400px}
+.set .nav{background:var(--mantle);border-right:1px solid var(--s0);padding:12px 8px;display:flex;flex-direction:column;gap:1px}
+.set .body{padding:18px 22px;display:flex;flex-direction:column;gap:18px}
+.field{display:grid;grid-template-columns:170px minmax(0,1fr);gap:16px;align-items:start}
+.field .lbl{font-weight:500;padding-top:4px}
+.field .help{font-size:12px;color:var(--sub);margin-top:4px}
+.select{display:inline-flex;align-items:center;gap:8px;height:28px;padding:0 10px;border:1px solid var(--s0);border-radius:6px;min-width:220px}
+.path{display:flex;gap:8px;align-items:center}
+.path .v{font:400 12px var(--font-mono);padding:5px 8px;border:1px solid var(--s0);border-radius:6px;background:var(--mantle);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.statuslist{border:1px solid var(--s0);border-radius:8px;overflow:hidden}
+.statuslist .r{border-bottom:1px solid var(--s0);border-radius:0;min-height:34px}
+.statuslist .r:last-child{border-bottom:0}
+.grip{color:var(--s2)}
+.ok{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--sub)}.ok svg{color:var(--green)}
+@media (prefers-reduced-motion:no-preference){.caret{animation:blink 1.1s steps(1) infinite}}
+@keyframes blink{50%{opacity:0}}
+</style>
+
+<div class="page">
+
+<header class="prose" style="gap:18px">
+  <h1>Tabstage Desktop</h1>
+  <p class="lede">Una app de escritorio para macOS y Linux donde organizas tus tabs en grupos y carpetas, y cada grupo decide en qué navegador se abren. Sin extensiones y sin permisos especiales en el navegador.</p>
+  <p class="muted" style="font-size:14px">Propuesta técnica y de diseño · repo <code>tabstage-desktop</code> · noviembre 2026</p>
+</header>
+
+<section>
+  <h2>Lo que ya está decidido</h2>
+  <dl class="decisions" style="margin:0">
+    <div><dt>Stack</dt><dd>Tauri 2: núcleo en Rust, interfaz en React + TypeScript</dd></div>
+    <div><dt>Navegador</dt><dd>Uno por defecto; cada grupo lo hereda o asigna el suyo</dd></div>
+    <div><dt>Tab ya abierto</dt><dd>Se enfoca si el navegador lo permite; si no, se abre uno nuevo</dd></div>
+    <div><dt>Diseño</dt><dd>Barra lateral + lista, con vista “Por estado” por grupo</dd></div>
+    <div><dt>v1 incluye</dt><dd>Estados propios, bandeja + atajo global, sync por archivo</dd></div>
+    <div><dt>Plataformas</dt><dd>macOS (Apple Silicon e Intel) y Linux x86_64</dd></div>
+  </dl>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>Así se vería</h2>
+    <p>El diseño continúa el de la extensión: la misma paleta Catppuccin (Latte en claro, Mocha en oscuro), IBM Plex Sans para el texto y Plex Sans Condensed para títulos, cuadros de estado de 9&nbsp;px y radios de 6–10&nbsp;px. Es una herramienta que se usa decenas de veces al día, así que la prioridad es leer rápido y abrir con un clic. Los mockups siguen el tema de tu sistema.</p>
+  </div>
+
+  <figure class="shot" style="margin:0">
+    <div class="stage">
+      <div class="win" role="img" aria-label="Ventana principal con la lista de un grupo y el selector de navegador abierto">
+        <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="ttl">Tabstage</span>
+          <div class="search"><i data-lucide="search" class="ico"></i>Buscar tabs<kbd>⌘K</kbd></div></div>
+        <div class="cols">
+          <aside class="side">
+            <div class="h">Grupos</div>
+            <div class="r sel"><span class="sq" style="--c:var(--blue)"></span><span class="grow">Trabajo · Jira</span><span class="bw ch" title="Chrome">C</span></div>
+            <div class="r"><span class="sq" style="--c:var(--mauve)"></span><span class="grow">Investigación</span><span class="bw ff dim" title="Por defecto: Firefox">F</span></div>
+            <div class="r"><span class="sq" style="--c:var(--green)"></span><span class="grow">Personal</span><span class="bw sf" title="Safari">S</span></div>
+            <div class="r"><span class="sq" style="--c:var(--peach)"></span><span class="grow">Docs Rust</span><span class="bw ff dim" title="Por defecto: Firefox">F</span></div>
+            <div class="r"><span class="sq" style="--c:var(--teal)"></span><span class="grow">Clientes</span><span class="bw ed" title="Edge">E</span></div>
+            <div class="r" style="color:var(--ov1)"><i data-lucide="plus" class="ico"></i>Nuevo grupo</div>
+            <div class="foot">
+              <div class="r"><span class="bw ff">F</span><span class="grow">Por defecto: Firefox</span></div>
+              <div class="r"><i data-lucide="settings" class="ico s"></i>Ajustes</div>
+            </div>
+          </aside>
+          <main class="main">
+            <div class="head">
+              <span class="sq" style="--c:var(--blue);width:11px;height:11px"></span><span class="name">Trabajo · Jira</span>
+              <span class="btn on"><span class="bw ch">C</span>Chrome<i data-lucide="chevron-down" class="ico"></i></span>
+              <div class="tools">
+                <span class="seg"><span class="on">Lista</span><span>Por estado</span></span>
+                <span class="btn"><i data-lucide="plus" class="ico"></i>Tab</span>
+                <span class="btn"><i data-lucide="external-link" class="ico"></i>Abrir todo</span>
+              </div>
+            </div>
+            <div class="r"><i data-lucide="chevron-down" class="ico"></i><i data-lucide="folder" class="ico s"></i><span style="font-weight:500">Sprint 42</span><span class="n">4</span><span class="grow"></span><span class="chip" style="--c:var(--peach)">In progress</span></div>
+            <div class="nest">
+              <div class="r"><i data-lucide="globe" class="ico"></i><span class="grow">PROJ-1182 · Refactor del login</span><span class="open" title="Abierto en Chrome"></span></div>
+              <div class="r hover"><i data-lucide="globe" class="ico"></i><span class="grow">PROJ-1190 · Cache de sesiones</span><span class="open"></span><span class="hint"><i data-lucide="corner-down-left" style="width:12px;height:12px"></i>Ir al tab</span></div>
+              <div class="r"><i data-lucide="globe" class="ico"></i><span class="grow">PR #418 · tabstage-core</span></div>
+              <div class="r"><i data-lucide="globe" class="ico"></i><span class="grow">Tablero del sprint</span></div>
+            </div>
+            <div class="r"><i data-lucide="chevron-right" class="ico"></i><i data-lucide="folder" class="ico s"></i><span style="font-weight:500">Incidentes</span><span class="n">7</span><span class="grow"></span><span class="chip" style="--c:var(--yellow)">In review</span></div>
+            <div class="sep"></div>
+            <div class="r"><i data-lucide="globe" class="ico"></i><span class="grow">Grafana · latencia API</span><span class="chip">To do</span></div>
+            <div class="r"><i data-lucide="globe" class="ico"></i><span class="grow">Runbook de despliegue</span><span class="chip" style="--c:var(--green)">Done</span></div>
+            <div class="r"><i data-lucide="globe" class="ico"></i><span class="grow">Spec de permisos SSO</span><span class="chip">To do</span></div>
+
+            <div class="pop" style="top:46px;left:168px;width:250px">
+              <div class="h">Abrir los tabs de este grupo en</div>
+              <div class="r"><span class="bw ff dim">F</span><span class="grow">Por defecto <span class="muted">(Firefox)</span></span></div>
+              <div class="sep" style="margin:4px 0"></div>
+              <div class="r sel"><span class="bw ch">C</span><span class="grow">Google Chrome</span><i data-lucide="check" class="ico" style="color:var(--blue)"></i></div>
+              <div class="r"><span class="bw ff">F</span><span class="grow">Firefox</span></div>
+              <div class="r"><span class="bw sf">S</span><span class="grow">Safari</span></div>
+              <div class="r"><span class="bw ed">E</span><span class="grow">Microsoft Edge</span></div>
+              <div class="r"><span class="bw br">B</span><span class="grow">Brave</span></div>
+              <div class="h">Navegadores detectados en este equipo</div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+    <figcaption>Ventana principal, vista Lista. El grupo “Trabajo · Jira” tiene Chrome asignado. “Investigación” y “Docs Rust” usan el navegador por defecto, por eso su icono se ve atenuado. El punto verde indica que el tab ya está abierto en Chrome: al hacer clic, la app va a ese tab en vez de abrir otro.</figcaption>
+  </figure>
+
+  <figure class="shot" style="margin:0">
+    <div class="stage">
+      <div class="win" role="img" aria-label="Vista por estado del grupo, con tiles de estado">
+        <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="ttl">Tabstage</span>
+          <div class="search"><i data-lucide="search" class="ico"></i>Buscar tabs<kbd>⌘K</kbd></div></div>
+        <div class="cols" style="min-height:360px">
+          <aside class="side">
+            <div class="h">Grupos</div>
+            <div class="r sel"><span class="sq" style="--c:var(--blue)"></span><span class="grow">Trabajo · Jira</span><span class="bw ch">C</span></div>
+            <div class="r"><span class="sq" style="--c:var(--mauve)"></span><span class="grow">Investigación</span><span class="bw ff dim">F</span></div>
+            <div class="r"><span class="sq" style="--c:var(--green)"></span><span class="grow">Personal</span><span class="bw sf">S</span></div>
+            <div class="r"><span class="sq" style="--c:var(--peach)"></span><span class="grow">Docs Rust</span><span class="bw ff dim">F</span></div>
+            <div class="r"><span class="sq" style="--c:var(--teal)"></span><span class="grow">Clientes</span><span class="bw ed">E</span></div>
+          </aside>
+          <main class="main">
+            <div class="head">
+              <span class="sq" style="--c:var(--blue);width:11px;height:11px"></span><span class="name">Trabajo · Jira</span>
+              <span class="btn on"><span class="bw ch">C</span>Chrome<i data-lucide="chevron-down" class="ico"></i></span>
+              <div class="tools"><div class="filter"><i data-lucide="filter" class="ico"></i>Filtrar</div><span class="seg"><span>Lista</span><span class="on">Por estado</span></span></div>
+            </div>
+            <div class="tiles">
+              <div class="tile"><div class="th"><span class="sq" style="--c:var(--peach)"></span>In progress<span class="grow"></span><span class="n">5</span></div>
+                <div class="r"><i data-lucide="folder" class="ico s"></i><span style="font-weight:500">Sprint 42</span><span class="n">4</span></div>
+                <div class="r"><i data-lucide="globe" class="ico"></i><span class="grow">Grafana · latencia API</span><span class="open"></span></div></div>
+              <div class="tile"><div class="th"><span class="sq" style="--c:var(--yellow)"></span>In review<span class="grow"></span><span class="n">7</span></div>
+                <div class="r"><i data-lucide="folder" class="ico s"></i><span style="font-weight:500">Incidentes</span><span class="n">7</span></div></div>
+              <div class="tile"><div class="th"><span class="sq"></span>To do<span class="grow"></span><span class="n">2</span></div>
+                <div class="r"><i data-lucide="globe" class="ico"></i><span class="grow">Spec de permisos SSO</span></div>
+                <div class="r"><i data-lucide="globe" class="ico"></i><span class="grow">Notas de la retro</span></div></div>
+              <div class="tile"><div class="th"><span class="sq" style="--c:var(--green)"></span>Done<span class="grow"></span><span class="n">1</span></div>
+                <div class="r"><i data-lucide="globe" class="ico"></i><span class="grow">Runbook de despliegue</span></div></div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+    <figcaption>El mismo grupo en la vista Por estado, con los tiles del board v2 de la extensión. El estado de una carpeta aplica a todos sus tabs. Se arrastran tabs y carpetas entre tiles para cambiarles el estado.</figcaption>
+  </figure>
+
+  <figure class="shot" style="margin:0">
+    <div class="stage">
+      <div class="desk" role="img" aria-label="Buscador rápido global y menú de la bandeja sobre el escritorio">
+        <div class="pal">
+          <div class="q"><i data-lucide="search" class="ico"></i>cache<span class="caret"></span></div>
+          <div class="res">
+            <div class="r sel"><span class="bw ch">C</span><span class="grow">PROJ-1190 · <mark>Cache</mark> de sesiones</span><span class="hint">Ir al tab</span></div>
+            <div class="r"><span class="bw ff">F</span><span class="grow">HTTP <mark>cach</mark>ing · MDN</span><span class="n">Investigación</span></div>
+            <div class="r"><i data-lucide="folder" class="ico s"></i><span class="grow">Carpeta <mark>Cache</mark> layer · 6 tabs</span><span class="n">Docs Rust</span></div>
+            <div class="r"><span class="bw ff">F</span><span class="grow">moka · <mark>cache</mark> crate docs</span><span class="n">Docs Rust</span></div>
+          </div>
+          <div class="ft"><span>↵ abrir</span><span>⌘↵ abrir carpeta completa</span><span>esc cerrar</span></div>
+        </div>
+        <div>
+          <div class="menubar"><span>Wi-Fi</span><span class="tray"><i data-lucide="layers" style="width:13px;height:13px"></i></span><span>lun 9 nov 10:42</span></div>
+          <div class="traymenu">
+            <div class="r"><i data-lucide="search" class="ico s"></i><span class="grow">Buscar tabs…</span><span class="kbd">⌥⇧K</span></div>
+            <div class="sep" style="margin:3px 0"></div>
+            <div class="r"><span class="sq" style="--c:var(--blue)"></span><span class="grow">Abrir Trabajo · Jira</span></div>
+            <div class="r"><span class="sq" style="--c:var(--mauve)"></span><span class="grow">Abrir Investigación</span></div>
+            <div class="r"><span class="sq" style="--c:var(--green)"></span><span class="grow">Abrir Personal</span></div>
+            <div class="sep" style="margin:3px 0"></div>
+            <div class="r"><span class="grow">Mostrar Tabstage</span></div>
+            <div class="r"><span class="grow">Salir</span><span class="kbd">⌘Q</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>El buscador rápido se abre con un atajo global desde cualquier app y busca en todos los grupos. Cada resultado muestra el navegador donde se abrirá. La bandeja da acceso a los grupos sin abrir la ventana.</figcaption>
+  </figure>
+
+  <figure class="shot" style="margin:0">
+    <div class="stage">
+      <div class="win" role="img" aria-label="Pantalla de ajustes con navegador por defecto, archivo de datos y estados">
+        <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="ttl">Ajustes</span></div>
+        <div class="set">
+          <nav class="nav">
+            <div class="r sel"><i data-lucide="sliders-horizontal" class="ico s"></i>General</div>
+            <div class="r"><i data-lucide="tag" class="ico s"></i>Estados</div>
+            <div class="r"><i data-lucide="keyboard" class="ico s"></i>Atajos</div>
+          </nav>
+          <div class="body">
+            <div class="field"><div class="lbl">Navegador por defecto</div>
+              <div><span class="select"><span class="bw ff">F</span>Firefox<span class="grow"></span><i data-lucide="chevron-down" class="ico"></i></span>
+              <div class="help">Lo usan todos los grupos que no tienen un navegador asignado.</div></div></div>
+            <div class="field"><div class="lbl">Archivo de datos</div>
+              <div><div class="path"><span class="v">~/Library/Mobile Documents/com~apple~CloudDocs/Tabstage/workspace.json</span><span class="btn">Cambiar…</span></div>
+              <div class="help">Si lo guardas en una carpeta sincronizada (iCloud, Dropbox, Syncthing o un repo git), tendrás los mismos grupos en tus otros equipos.</div>
+              <div class="ok" style="margin-top:6px"><i data-lucide="check" style="width:13px;height:13px"></i>Guardado hace 2 min · recarga automática si cambia desde otro equipo</div></div></div>
+            <div class="field"><div class="lbl">Estados</div>
+              <div class="statuslist">
+                <div class="r"><i data-lucide="grip-vertical" class="ico grip"></i><span class="sq"></span><span class="grow">To do</span></div>
+                <div class="r"><i data-lucide="grip-vertical" class="ico grip"></i><span class="sq" style="--c:var(--peach)"></span><span class="grow">In progress</span></div>
+                <div class="r"><i data-lucide="grip-vertical" class="ico grip"></i><span class="sq" style="--c:var(--yellow)"></span><span class="grow">In review</span></div>
+                <div class="r"><i data-lucide="grip-vertical" class="ico grip"></i><span class="sq" style="--c:var(--green)"></span><span class="grow">Done</span></div>
+              </div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <figcaption>En Ajustes eliges el navegador por defecto, el archivo donde se guardan los datos (que también sirve para sincronizar) y tus estados.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>Qué pasa al hacer clic en un tab</h2>
+    <ol class="steps">
+      <li><span>Se toma el navegador del grupo: el que tenga asignado o, si no tiene, el navegador por defecto. Si el asignado ya no está instalado, se usa el por defecto y se muestra un aviso en el grupo.</span></li>
+      <li><span>Si ese navegador permite consultar sus tabs, se busca uno con la misma URL (sin <code>#fragmento</code> ni barra final).</span></li>
+      <li><span>Si lo encuentra, trae esa ventana al frente y activa el tab. Si no, abre la URL en un tab nuevo de ese navegador.</span></li>
+    </ol>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Navegador</th><th>macOS</th><th>Linux</th><th>Cómo</th></tr></thead>
+      <tbody>
+        <tr><td>Chrome, Edge, Brave, Vivaldi, Arc</td><td class="yes">Enfoca el existente</td><td class="no">Abre uno nuevo</td><td>macOS: AppleScript (<code>tabs of windows</code>, <code>active tab index</code>). Linux no ofrece una API equivalente sin extensión.</td></tr>
+        <tr><td>Safari</td><td class="yes">Enfoca el existente</td><td class="muted">—</td><td>AppleScript (<code>current tab</code>)</td></tr>
+        <tr><td>Firefox, Zen, LibreWolf</td><td class="no">Abre uno nuevo</td><td class="no">Abre uno nuevo</td><td>Firefox no expone sus tabs a otras apps</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="callout prose">En macOS, la primera vez que la app consulta los tabs de un navegador, el sistema pide permiso de Automatización. Si tu Mac es administrado (MDM) y ese permiso está bloqueado, la app lo detecta y abre el tab en uno nuevo, sin errores.</p>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>Por qué Tauri 2 y no Rust puro</h2>
+    <p>Con Tauri 2, todo lo que importa vive en Rust: el modelo de datos, la persistencia, la detección de navegadores y la apertura de tabs. La interfaz se hace en React + TypeScript, que es lo que más usas. Es la forma más común hoy de hacer apps de escritorio con Rust.</p>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th></th><th>Tauri 2 <span class="rec">elegido</span></th><th>Rust puro (Iced / Slint)</th><th>Electron</th></tr></thead>
+      <tbody>
+        <tr><td>Tamaño del instalador</td><td>~8–12 MB</td><td>~5–15 MB</td><td>~90–120 MB</td></tr>
+        <tr><td>Memoria en reposo</td><td>Baja (WebView del sistema)</td><td>Muy baja</td><td>Alta (Chromium propio)</td></tr>
+        <tr><td>Velocidad para iterar el diseño</td><td>Alta: CSS, React, Vitest</td><td>Media-baja</td><td>Alta</td></tr>
+        <tr><td>Reutiliza la extensión</td><td>Tokens, componentes y tests</td><td>Nada</td><td>Tokens y componentes</td></tr>
+        <tr><td>Bandeja, atajos y updater</td><td>Plugins oficiales</td><td>Se integran a mano</td><td>Incluidos</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>Arquitectura</h2>
+    <p>Es un workspace de Cargo con la lógica separada de la interfaz. El dominio no hace IO, así que se prueba con tests rápidos y deterministas. Todo lo que habla con el sistema (archivos, navegadores) se define con traits, y los tests usan dobles de esos traits.</p>
+  </div>
+  <div class="two">
+<pre><span class="c"># tabstage-desktop/</span>
+Cargo.toml            <span class="c"># workspace, lints y deps compartidas</span>
+crates/
+  core/               <span class="c"># dominio puro, sin IO</span>
+    src/ids.rs        <span class="c"># GroupId, TabId, FolderId, BrowserId</span>
+    src/workspace.rs  <span class="c"># Workspace, Group, Node, Status</span>
+    src/commands.rs   <span class="c"># add/move/reorder/rename… → Result</span>
+    src/browser.rs    <span class="c"># BrowserChoice, effective_browser()</span>
+    src/url.rs        <span class="c"># TabUrl (validada) + normalización</span>
+  store/              <span class="c"># JSON atómico, migraciones, watcher</span>
+  browsers/           <span class="c"># traits + impl macOS / Linux</span>
+    src/macos/        <span class="c"># LaunchServices, open -b, AppleScript</span>
+    src/linux/        <span class="c"># .desktop XDG, xdg-settings, Exec</span>
+src-tauri/            <span class="c"># capa fina: comandos IPC, bandeja, atajos</span>
+ui/                   <span class="c"># React 19 + Vite + TypeScript</span>
+  src/bindings.ts     <span class="c"># generado por tauri-specta</span>
+.github/workflows/    <span class="c"># ci.yml, release.yml, pages.yml</span>
+site/                 <span class="c"># GitHub Pages + install.sh</span></pre>
+<pre><span class="k">pub enum</span> <span class="t">BrowserChoice</span> {
+    Default,
+    Specific(<span class="t">BrowserId</span>),
+}
+
+<span class="k">pub struct</span> <span class="t">Group</span> {
+    id: <span class="t">GroupId</span>,
+    name: <span class="t">String</span>,
+    color: <span class="t">AccentColor</span>,
+    browser: <span class="t">BrowserChoice</span>,
+    children: <span class="t">Vec</span>&lt;<span class="t">Node</span>&gt;,
+}
+
+<span class="k">pub enum</span> <span class="t">Node</span> {
+    Tab(<span class="t">Tab</span>),       <span class="c">// url, title, status</span>
+    Folder(<span class="t">Folder</span>), <span class="c">// name, status, tabs</span>
+}
+
+<span class="c">/// Navegador con el que se abre un grupo.</span>
+<span class="k">pub fn</span> effective_browser&lt;'a&gt;(
+    group: &amp;'a <span class="t">Group</span>,
+    settings: &amp;'a <span class="t">Settings</span>,
+    installed: &amp;<span class="t">BrowserSet</span>,
+) -&gt; <span class="t">Resolved</span>&lt;'a&gt;</pre>
+  </div>
+  <div class="prose">
+    <h3>Reglas de código (rust-skills)</h3>
+    <ul style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px">
+      <li>Errores con <code>thiserror</code> en los crates y <code>anyhow</code> solo en <code>src-tauri</code>. Sin <code>unwrap()</code> fuera de los tests; lo vigila clippy.</li>
+      <li>Newtypes para los IDs y para la URL validada: se valida al entrar y el resto del código recibe datos que ya son correctos.</li>
+      <li>Enums en vez de strings para el navegador elegido, los colores y los estados de foco.</li>
+      <li>Serde con versión de esquema, <code>#[serde(default)]</code> para compatibilidad y migraciones con tests de snapshot.</li>
+      <li>Lints a nivel de workspace (<code>clippy::pedantic</code> selectivo), <code>rustfmt</code> en CI, <code>rust-version</code> declarado, <code>tracing</code> para logs y perfil release con LTO.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="prose"><h2>Librerías</h2></div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Área</th><th>Librería</th><th>Para qué</th></tr></thead>
+      <tbody>
+        <tr><td>Shell</td><td><span class="mono">tauri 2</span>, <span class="mono">tauri-plugin-global-shortcut</span>, <span class="mono">-single-instance</span>, <span class="mono">-autostart</span>, <span class="mono">-dialog</span>, <span class="mono">-updater</span></td><td>Ventana, bandeja, atajo global, una sola instancia, abrir al iniciar sesión, elegir archivo y actualizaciones</td></tr>
+        <tr><td>Tipos Rust → TS</td><td><span class="mono">tauri-specta</span>, <span class="mono">specta</span></td><td>Generar <code>bindings.ts</code> tipado desde los comandos de Rust</td></tr>
+        <tr><td>Datos</td><td><span class="mono">serde</span>, <span class="mono">serde_json</span>, <span class="mono">uuid</span>, <span class="mono">url</span></td><td>Modelo, IDs y URLs validadas</td></tr>
+        <tr><td>Persistencia</td><td><span class="mono">tempfile</span>, <span class="mono">notify</span>, <span class="mono">directories</span></td><td>Escritura atómica, detectar cambios del archivo sincronizado, rutas por SO</td></tr>
+        <tr><td>Navegadores</td><td><span class="mono">freedesktop-desktop-entry</span> (Linux), <span class="mono">osascript</span> / <span class="mono">open -b</span> (macOS)</td><td>Detectar, abrir y enfocar</td></tr>
+        <tr><td>Errores y logs</td><td><span class="mono">thiserror</span>, <span class="mono">anyhow</span>, <span class="mono">tracing</span>, <span class="mono">tracing-subscriber</span></td><td>Errores tipados y logs estructurados</td></tr>
+        <tr><td>Interfaz</td><td><span class="mono">react 19</span>, <span class="mono">vite</span>, <span class="mono">typescript</span></td><td>Base de la UI</td></tr>
+        <tr><td>Componentes</td><td><span class="mono">@radix-ui/react-*</span> (popover, dialog, context-menu), <span class="mono">cmdk</span>, <span class="mono">@dnd-kit/core</span></td><td>Accesibilidad de teclado, buscador rápido, arrastrar y soltar</td></tr>
+        <tr><td>Estilo</td><td>CSS propio con los tokens de la extensión, <span class="mono">@fontsource/ibm-plex-sans</span>, <span class="mono">lucide-react</span></td><td>Mismo look que Tabstage, sin framework CSS</td></tr>
+        <tr><td>Tests Rust</td><td><span class="mono">cargo-nextest</span>, <span class="mono">insta</span>, <span class="mono">proptest</span>, <span class="mono">mockall</span></td><td>Runner, snapshots, propiedades e invariantes, dobles de traits</td></tr>
+        <tr><td>Tests UI</td><td><span class="mono">vitest</span>, <span class="mono">@testing-library/react</span>, <span class="mono">@tauri-apps/api/mocks</span></td><td>Componentes y llamadas IPC simuladas</td></tr>
+        <tr><td>E2E</td><td><span class="mono">tauri-driver</span> + WebDriver</td><td>Flujos completos (solo en Linux; macOS no tiene driver)</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>Desarrollo con TDD</h2>
+    <p>Cada cambio empieza con un test que falla, luego el código mínimo que lo hace pasar y después el refactor. Se construye de adentro hacia afuera para que cada capa nueva se apoye en una que ya está probada.</p>
+  </div>
+  <div class="two">
+    <ol class="steps">
+      <li><span><b>core:</b> invariantes del modelo (orden sin huecos, carpetas sin anidar, estados válidos), comandos y <code>effective_browser</code>. Proptest para las operaciones de mover y reordenar.</span></li>
+      <li><span><b>store:</b> ida y vuelta JSON con snapshots de insta, migración v1→v2, escritura atómica y recarga ante cambios externos.</span></li>
+      <li><span><b>browsers:</b> la lógica (normalizar la URL, buscar el tab, decidir entre enfocar o abrir) se prueba con mocks. Los adaptadores reales se cubren con tests de integración marcados <code>#[ignore]</code> que se corren a mano.</span></li>
+      <li><span><b>src-tauri:</b> comandos IPC probados contra el estado con dobles.</span></li>
+      <li><span><b>ui:</b> componentes con Testing Library e IPC simulado. Los flujos E2E corren en Linux en CI.</span></li>
+    </ol>
+<pre><span class="c">// core/src/browser.rs — primer test (rojo)</span>
+<span class="k">#[test]</span>
+<span class="k">fn</span> group_without_browser_uses_default() {
+    <span class="c">// Arrange</span>
+    <span class="k">let</span> settings = Settings::with_default(firefox());
+    <span class="k">let</span> group = GroupBuilder::new().build();
+    <span class="c">// Act</span>
+    <span class="k">let</span> r = effective_browser(&amp;group, &amp;settings, &amp;all());
+    <span class="c">// Assert</span>
+    assert_eq!(r.browser(), &amp;firefox());
+    assert!(!r.is_fallback());
+}
+
+<span class="k">#[test]</span>
+<span class="k">fn</span> missing_assigned_browser_falls_back() { … }</pre>
+  </div>
+  <p class="callout prose"><b>CI</b> (GitHub Actions con macOS y Ubuntu): <code>cargo fmt --check</code>, <code>cargo clippy -D warnings</code>, <code>cargo nextest run</code>, <code>vitest run</code>, <code>tsc --noEmit</code> y build de Tauri. Un PR solo se puede fusionar si todo pasa.</p>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>Cómo se comparte</h2>
+    <p>Lo más común para apps de Tauri open source es combinar tres canales: GitHub Releases como fuente única de los binarios, una página en GitHub Pages con un script de instalación y un tap de Homebrew. Compartir solo el repo obligaría a cada persona a instalar Rust y Node para compilar, así que no basta.</p>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>Canal</th><th>Qué recibe la persona</th><th>Recomendación</th></tr></thead>
+      <tbody>
+        <tr><td>GitHub Releases</td><td><code>.dmg</code> universal (Apple Silicon + Intel), <code>.AppImage</code>, <code>.deb</code>, <code>.rpm</code> y <code>latest.json</code> firmado</td><td><span class="rec">base</span> Se generan solos con <span class="mono">tauri-apps/tauri-action</span> al crear un tag <code>v*</code></td></tr>
+        <tr><td>GitHub Pages + <code>install.sh</code></td><td>Una página de descarga y un comando que detecta SO y arquitectura, baja el último release e instala</td><td><span class="rec">sí</span> Es la forma más simple de instalar, sobre todo en macOS sin notarizar</td></tr>
+        <tr><td>Homebrew tap propio</td><td><code>brew install --cask &lt;usuario&gt;/tap/tabstage</code></td><td><span class="rec">sí</span> Lo esperan los usuarios de macOS. El tap oficial exige apps firmadas, uno propio no</td></tr>
+        <tr><td>Auto-update</td><td>La app avisa y se actualiza sola</td><td><span class="rec">sí</span> <span class="mono">tauri-plugin-updater</span> lee <code>latest.json</code> del release</td></tr>
+        <tr><td>Flathub</td><td>Instalación desde la tienda de GNOME/KDE</td><td>Más adelante, cuando la app esté estable</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="two">
+    <div class="prose">
+      <h3>Instalación en una línea</h3>
+<pre>curl -fsSL https://&lt;usuario&gt;.github.io/tabstage-desktop/install.sh | sh</pre>
+      <p class="muted" style="font-size:15px">En macOS copia la app a <code>/Applications</code>. Como el archivo llega por <code>curl</code>, no lleva el atributo de cuarentena y Gatekeeper no la bloquea aunque la app no esté notarizada. En Linux instala el AppImage en <code>~/.local/bin</code> con su <code>.desktop</code> e icono, o usa <code>.deb</code>/<code>.rpm</code> si se pasa <code>--system</code>. El script verifica el SHA-256 publicado en el release.</p>
+    </div>
+    <div class="prose">
+      <h3>Flujo de release</h3>
+      <ol class="steps">
+        <li><span>Commits con Conventional Commits (como en la extensión).</span></li>
+        <li><span><span class="mono">release-please</span> abre un PR con la versión nueva y el CHANGELOG.</span></li>
+        <li><span>Al fusionarlo se crea el tag y <span class="mono">tauri-action</span> compila en macOS y Ubuntu, firma la actualización y publica el release.</span></li>
+        <li><span>Un workflow actualiza el cask del tap y la página de Pages.</span></li>
+      </ol>
+      <p class="callout" style="font-size:14px">Notarizar con Apple cuesta 99 USD al año y quita las advertencias en todos los canales. No hace falta para empezar: con el script de instalación es suficiente.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="prose"><h2>Hitos de la v1</h2></div>
+  <div class="milestones">
+    <div><span class="tag">M1 · core</span><h3>Modelo y reglas</h3><ul><li>Workspace, grupos, carpetas, tabs</li><li>Estados y orden</li><li>Navegador efectivo por grupo</li></ul></div>
+    <div><span class="tag">M2 · store</span><h3>Persistencia y sync</h3><ul><li>JSON versionado y atómico</li><li>Archivo en una ubicación elegida</li><li>Recarga ante cambios externos</li></ul></div>
+    <div><span class="tag">M3 · browsers</span><h3>Abrir y enfocar</h3><ul><li>Detección en macOS y Linux</li><li>Abrir en el navegador del grupo</li><li>Enfocar en Safari y Chromium (macOS)</li></ul></div>
+    <div><span class="tag">M4 · app</span><h3>Interfaz</h3><ul><li>Lista y Por estado</li><li>Arrastrar y soltar, editar en línea</li><li>Ajustes</li></ul></div>
+    <div><span class="tag">M5 · escritorio</span><h3>Integración</h3><ul><li>Bandeja y atajo global</li><li>Buscador rápido</li><li>Abrir al iniciar sesión</li></ul></div>
+    <div><span class="tag">M6 · release</span><h3>Distribución</h3><ul><li>CI y releases</li><li>Pages + install.sh</li><li>Tap de Homebrew y updater</li></ul></div>
+  </div>
+</section>
+
+</div>
+
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script>try{lucide.createIcons({attrs:{'stroke-width':1.75}})}catch(e){}</script>

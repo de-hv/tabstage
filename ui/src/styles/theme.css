@@ -1,0 +1,125 @@
+/* Tokens shared with the Tabstage extension (assets/theme.css): Catppuccin
+   Latte in light mode, Mocha in dark, IBM Plex Sans bundled locally. */
+
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+@import '@fontsource/ibm-plex-sans-condensed/latin-500.css';
+@import '@fontsource/ibm-plex-sans-condensed/latin-600.css';
+
+:root {
+  color-scheme: light dark;
+  font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  --font-condensed: 'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
+
+  /* Latte */
+  --crust: #dce0e8;
+  --mantle: #e6e9ef;
+  --base: #eff1f5;
+  --surface0: #ccd0da;
+  --surface1: #bcc0cc;
+  --surface2: #acb0be;
+  --overlay0: #9ca0b0;
+  --overlay1: #8c8fa1;
+  --subtext0: #6c6f85;
+  --text: #4c4f69;
+  --shadow: 0 8px 24px rgb(76 79 105 / 0.18);
+
+  --c-lavender: #7287fd;
+  --c-blue: #1e66f5;
+  --c-sky: #04a5e5;
+  --c-teal: #179299;
+  --c-green: #40a02b;
+  --c-yellow: #df8e1d;
+  --c-peach: #fe640b;
+  --c-red: #d20f39;
+  --c-pink: #ea76cb;
+  --c-mauve: #8839ef;
+
+  --focus: var(--c-mauve);
+  --danger: var(--c-red);
+  --motion: 120ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Mocha */
+    --crust: #11111b;
+    --mantle: #181825;
+    --base: #1e1e2e;
+    --surface0: #313244;
+    --surface1: #45475a;
+    --surface2: #585b70;
+    --overlay0: #6c7086;
+    --overlay1: #7f849c;
+    --subtext0: #a6adc8;
+    --text: #cdd6f4;
+    --shadow: 0 8px 24px rgb(0 0 0 / 0.5);
+
+    --c-lavender: #b4befe;
+    --c-blue: #89b4fa;
+    --c-sky: #89dceb;
+    --c-teal: #94e2d5;
+    --c-green: #a6e3a1;
+    --c-yellow: #f9e2af;
+    --c-peach: #fab387;
+    --c-red: #f38ba8;
+    --c-pink: #f5c2e7;
+    --c-mauve: #cba6f7;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--base);
+  color: var(--text);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--c-mauve) 28%, transparent);
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}
+
+[data-color='lavender'] { --color: var(--c-lavender); }
+[data-color='blue'] { --color: var(--c-blue); }
+[data-color='sky'] { --color: var(--c-sky); }
+[data-color='teal'] { --color: var(--c-teal); }
+[data-color='green'] { --color: var(--c-green); }
+[data-color='yellow'] { --color: var(--c-yellow); }
+[data-color='peach'] { --color: var(--c-peach); }
+[data-color='red'] { --color: var(--c-red); }
+[data-color='pink'] { --color: var(--c-pink); }
+[data-color='mauve'] { --color: var(--c-mauve); }

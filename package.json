@@ -1,0 +1,19 @@
+{
+  "name": "tabstage-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "ui"
+  ],
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "test": "npm test -w ui",
+    "typecheck": "npm run typecheck -w ui"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4"
+  }
+}
