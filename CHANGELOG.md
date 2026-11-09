@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/de-hv/tabstage-desktop/compare/v0.1.0...v0.2.0) (2026-11-09)
+
+
+### Features
+
+* Add profiles that open in a browser and browser profile ([6efa247](https://github.com/de-hv/tabstage-desktop/commit/6efa247a988b192edefd7d26c3ade14d31ec03c2))
+
 ## 0.1.0 (2026-11-09)
 
 
