@@ -1,0 +1,9 @@
+---
+source: crates/browsers/src/macos.rs
+expression: "script.expect(\"script\")"
+---
+tell application id "com.apple.Safari"
+	set current tab of window 1 to tab 3 of window 1
+	set index of window 1 to 1
+	activate
+end tell

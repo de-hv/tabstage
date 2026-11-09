@@ -1,0 +1,20 @@
+[package]
+name = "tabstage-app"
+description = "Application service for Tabstage Desktop: commands, persistence and opening tabs, independent of the UI shell."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tabstage-browsers.workspace = true
+tabstage-core.workspace = true
+tabstage-store.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

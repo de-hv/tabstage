@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Tabstage: three status lanes, each with a coloured tab group. -->
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="#1f2328"/>
+  <rect x="72" y="104" width="368" height="80" rx="28" fill="#1a73e8"/>
+  <rect x="72" y="216" width="272" height="80" rx="28" fill="#e8710a"/>
+  <rect x="72" y="328" width="192" height="80" rx="28" fill="#188038"/>
+</svg>

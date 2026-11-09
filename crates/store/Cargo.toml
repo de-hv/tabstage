@@ -1,0 +1,20 @@
+[package]
+name = "tabstage-store"
+description = "Saves and loads the Tabstage Desktop workspace as a JSON file, safe for synced folders."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tabstage-core.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+
+[lints]
+workspace = true

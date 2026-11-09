@@ -1,0 +1,31 @@
+[package]
+name = "tabstage-desktop"
+description = "Tabstage Desktop: groups of tabs that open in the browser you choose."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "tabstage_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow = "1"
+serde.workspace = true
+tabstage-app.workspace = true
+tabstage-browsers.workspace = true
+tabstage-core.workspace = true
+tabstage-store.workspace = true
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,9 @@
+---
+source: crates/browsers/src/macos.rs
+expression: "script.expect(\"script\")"
+---
+tell application id "com.brave.Browser"
+	set active tab index of window 2 to 5
+	set index of window 2 to 1
+	activate
+end tell

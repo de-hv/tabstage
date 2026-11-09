@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabstage para escritorio</title>
+<meta name="description" content="Organiza tus tabs en grupos y carpetas, y abre cada grupo en el navegador que elijas. Para macOS y Linux.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+:root {
+  color-scheme: light dark;
+  --base: #eff1f5; --mantle: #e6e9ef; --crust: #dce0e8;
+  --s0: #ccd0da; --s1: #bcc0cc; --sub: #5c5f77; --text: #4c4f69;
+  --blue: #1e66f5; --peach: #fe640b; --teal: #179299; --mauve: #8839ef; --green: #40a02b;
+  --shadow: 0 24px 48px -24px rgb(76 79 105 / .35);
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --cond: 'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --base: #1e1e2e; --mantle: #181825; --crust: #11111b;
+    --s0: #313244; --s1: #45475a; --sub: #bac2de; --text: #cdd6f4;
+    --blue: #89b4fa; --peach: #fab387; --teal: #94e2d5; --mauve: #cba6f7; --green: #a6e3a1;
+    --shadow: 0 24px 48px -24px rgb(0 0 0 / .8);
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--base); color: var(--text); font: 400 17px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+::selection { background: color-mix(in srgb, var(--mauve) 30%, transparent); }
+a { color: var(--blue); text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--mauve); outline-offset: 2px; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-inline: max(20px, env(safe-area-inset-left, 0px)) max(20px, env(safe-area-inset-right, 0px)); }
+header.top { display: flex; align-items: center; gap: 10px; padding-block: 20px; }
+header.top img { width: 28px; height: 28px; }
+header.top b { font: 600 18px var(--cond); }
+header.top a { margin-left: auto; font-size: 15px; }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; padding-block: 48px 72px; }
+h1 { margin: 0; font: 600 clamp(2.6rem, 7vw, 4.4rem)/1 var(--cond); letter-spacing: -.02em; text-wrap: balance; max-width: 14ch; }
+.lede { margin: 18px 0 0; max-width: 54ch; color: var(--sub); font-size: 1.15rem; text-wrap: pretty; }
+.install { display: flex; flex-direction: column; gap: 12px; margin-top: 28px; max-width: 640px; }
+.cmd { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; border: 1px solid var(--s1); border-radius: 10px; background: var(--mantle); }
+.cmd code { flex: 1; min-width: 0; overflow-x: auto; font: 400 14px/1.5 var(--mono); white-space: nowrap; }
+.cmd button { flex: none; height: 32px; padding: 0 12px; border: 1px solid var(--s1); border-radius: 7px; background: var(--base); color: var(--text); font: 500 13px var(--sans); cursor: pointer; }
+.cmd button:hover { border-color: var(--blue); }
+.downloads { display: flex; flex-wrap: wrap; gap: 8px; font-size: 15px; }
+.downloads a { display: inline-flex; align-items: center; height: 34px; padding: 0 12px; border: 1px solid var(--s0); border-radius: 8px; color: var(--text); text-decoration: none; }
+.downloads a:hover { border-color: var(--blue); }
+.note { margin: 0; color: var(--sub); font-size: 14px; }
+
+/* The app, drawn with the same tokens it uses */
+.shot { overflow: hidden; border: 1px solid var(--s1); border-radius: 12px; background: var(--base); box-shadow: var(--shadow); font: 400 13px/1.4 var(--sans); }
+.bar { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-bottom: 1px solid var(--s0); background: var(--mantle); }
+.dot { width: 11px; height: 11px; border-radius: 50%; background: var(--s1); }
+.cols { display: grid; grid-template-columns: 170px minmax(0, 1fr); min-height: 300px; }
+.side { padding: 10px 6px; border-right: 1px solid var(--s0); background: var(--mantle); }
+.r { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; border-radius: 6px; white-space: nowrap; }
+.r.on { background: var(--s0); }
+.sq { flex: none; width: 9px; height: 9px; border-radius: 2px; background: var(--c); }
+.grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.bw { flex: none; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--c); color: var(--base); font: 600 9px var(--sans); }
+.bw.dim { opacity: .5; }
+.main { padding: 12px 14px; min-width: 0; }
+.head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.head b { font: 600 17px var(--cond); }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border: 1px solid var(--blue); border-radius: 6px; font-size: 12px; }
+.chip { flex: none; padding: 0 7px; border: 1px solid color-mix(in srgb, var(--c) 60%, transparent); border-radius: 4px; background: color-mix(in srgb, var(--c) 14%, transparent); font-size: 11px; line-height: 18px; }
+.nest { margin-left: 18px; padding-left: 6px; border-left: 1px solid var(--s0); }
+.open { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+.points { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 32px; padding-block: 24px 72px; border-top: 1px solid var(--s0); }
+.points h2 { margin: 24px 0 8px; font: 600 1.3rem/1.2 var(--cond); }
+.points p { margin: 0; color: var(--sub); font-size: 16px; }
+.other { padding-block: 0 64px; }
+.other h2 { margin: 0 0 12px; font: 600 1.3rem var(--cond); }
+.other dl { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin: 0; }
+.other dt { font-weight: 500; }
+.other dd { margin: 4px 0 0; }
+footer { padding-block: 24px 40px; border-top: 1px solid var(--s0); color: var(--sub); font-size: 14px; }
+@media (min-width: 900px) {
+  .hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: center; }
+}
+@media (max-width: 560px) {
+  .cols { grid-template-columns: minmax(0, 1fr); }
+  .side { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <img src="icon.svg" alt="">
+    <b>Tabstage</b>
+    <a href="https://github.com/de-hv/tabstage-desktop">Código en GitHub</a>
+  </header>
+
+  <section class="hero">
+    <div>
+      <h1>Tus tabs, en el navegador que elijas</h1>
+      <p class="lede">Organiza enlaces en grupos y carpetas. Cada grupo se abre en su propio navegador, o en el que tengas por defecto. Si el tab ya está abierto, Tabstage te lleva a él. Para macOS y Linux, sin extensiones.</p>
+      <div class="install">
+        <div class="cmd">
+          <code id="cmd">curl -fsSL https://de-hv.github.io/tabstage-desktop/install.sh | sh</code>
+          <button type="button" id="copy">Copiar</button>
+        </div>
+        <div class="downloads" id="downloads">
+          <a href="https://github.com/de-hv/tabstage-desktop/releases/latest">Descargar para macOS</a>
+          <a href="https://github.com/de-hv/tabstage-desktop/releases/latest">AppImage para Linux</a>
+          <a href="https://github.com/de-hv/tabstage-desktop/releases/latest">.deb y .rpm</a>
+        </div>
+        <p class="note">Con Homebrew: <code>brew install --cask de-hv/tap/tabstage</code></p>
+      </div>
+    </div>
+
+    <div class="shot" role="img" aria-label="Ventana de Tabstage con el grupo Trabajo abierto en Chrome">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+      <div class="cols">
+        <div class="side">
+          <div class="r on"><span class="sq" style="--c:var(--blue)"></span><span class="grow">Trabajo</span><span class="bw" style="--c:var(--blue)">C</span></div>
+          <div class="r"><span class="sq" style="--c:var(--mauve)"></span><span class="grow">Investigación</span><span class="bw dim" style="--c:var(--peach)">F</span></div>
+          <div class="r"><span class="sq" style="--c:var(--green)"></span><span class="grow">Personal</span><span class="bw" style="--c:var(--teal)">S</span></div>
+        </div>
+        <div class="main">
+          <div class="head"><span class="sq" style="--c:var(--blue)"></span><b>Trabajo</b><span class="pill"><span class="bw" style="--c:var(--blue)">C</span>Chrome</span></div>
+          <div class="r"><span class="grow"><b style="font-weight:500">Sprint 42</b></span><span class="chip" style="--c:var(--blue)">In progress</span></div>
+          <div class="nest">
+            <div class="r"><span class="grow">Refactor del login</span><span class="open" title="Abierto"></span></div>
+            <div class="r on"><span class="grow">Cache de sesiones</span><span style="font-size:11px">Ir al tab</span></div>
+            <div class="r"><span class="grow">Revisión del PR #418</span></div>
+          </div>
+          <div class="r"><span class="grow">Latencia de la API</span><span class="chip" style="--c:var(--mauve)">To do</span></div>
+          <div class="r"><span class="grow">Runbook de despliegue</span><span class="chip" style="--c:var(--green)">Done</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="points">
+    <div>
+      <h2>Un navegador por grupo</h2>
+      <p>Trabajo en Chrome, lecturas en Firefox, lo personal en Safari. Los grupos sin navegador asignado usan el que tú definas por defecto.</p>
+    </div>
+    <div>
+      <h2>Sin tabs duplicados</h2>
+      <p>En macOS, con Safari y los navegadores basados en Chromium, un clic lleva al tab que ya tienes abierto. En los demás se abre un tab nuevo.</p>
+    </div>
+    <div>
+      <h2>Tus datos, en un archivo</h2>
+      <p>Todo vive en un JSON que puedes guardar en iCloud, Dropbox o un repo para tenerlo igual en todos tus equipos. Nada sale de tu máquina.</p>
+    </div>
+  </section>
+
+  <section class="other">
+    <h2>Otras formas de instalar</h2>
+    <dl>
+      <div><dt>Linux, como paquete del sistema</dt><dd><code>curl -fsSL https://de-hv.github.io/tabstage-desktop/install.sh | sh -s -- --system</code></dd></div>
+      <div><dt>Una versión concreta</dt><dd><code>curl -fsSL https://de-hv.github.io/tabstage-desktop/install.sh | sh -s -- --version v0.1.0</code></dd></div>
+      <div><dt>Desinstalar</dt><dd><code>curl -fsSL https://de-hv.github.io/tabstage-desktop/install.sh | sh -s -- --uninstall</code></dd></div>
+    </dl>
+  </section>
+
+  <footer>Tabstage es software libre con licencia MIT. Cada descarga se verifica con el SHA256SUMS de su versión.</footer>
+</div>
+
+<script>
+// Copy button, falling back to selecting the text.
+document.getElementById('copy').addEventListener('click', async (event) => {
+  const text = document.getElementById('cmd').textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    event.target.textContent = 'Copiado';
+  } catch {
+    getSelection().selectAllChildren(document.getElementById('cmd'));
+  }
+});
+
+// Point the buttons straight at the latest files; they already link to the
+// release page if this request fails.
+fetch('https://api.github.com/repos/de-hv/tabstage-desktop/releases/latest')
+  .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
+  .then((release) => {
+    const find = (pattern) => release.assets.find((asset) => pattern.test(asset.name))?.browser_download_url;
+    const links = document.querySelectorAll('#downloads a');
+    const targets = [/_universal\.dmg$/, /_amd64\.AppImage$/];
+    targets.forEach((pattern, index) => {
+      const url = find(pattern);
+      if (url) links[index].href = url;
+    });
+    links.forEach((link) => (link.title = release.tag_name));
+  })
+  .catch(() => undefined);
+</script>
+</body>
+</html>

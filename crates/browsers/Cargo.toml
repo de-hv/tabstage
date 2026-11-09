@@ -1,0 +1,20 @@
+[package]
+name = "tabstage-browsers"
+description = "Finds installed browsers, opens tabs in them and focuses tabs that are already open."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+plist.workspace = true
+serde.workspace = true
+tabstage-core.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+
+[lints]
+workspace = true
