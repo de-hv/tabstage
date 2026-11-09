@@ -158,7 +158,9 @@ Icon=tabstage
 Categories=Utility;Network;
 Terminal=false
 DESKTOP
-  command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$apps" || true
+  if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database "$apps" || true
+  fi
   say "Installed $bin/tabstage"
   case ":$PATH:" in
     *":$bin:"*) ;;
