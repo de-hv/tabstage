@@ -114,7 +114,7 @@ jobs:
           [ -n "$SHA256" ] || { echo "dmg missing from SHA256SUMS"; exit 1; }
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/de-hv/homebrew-tap.git" tap
           mkdir -p tap/Casks
-          sed -e "s/@VERSION@/$VERSION/" -e "s/@SHA256@/$SHA256/" packaging/homebrew/tabstage.rb.in > tap/Casks/tabstage.rb
+          sed -e "s/@VERSION@/$VERSION/" -e "s/@SHA256@/$SHA256/" -e "s/@TAG@/$TAG/" packaging/homebrew/tabstage.rb.in > tap/Casks/tabstage.rb
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
