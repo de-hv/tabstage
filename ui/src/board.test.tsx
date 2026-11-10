@@ -13,6 +13,7 @@ import {
   WORK,
   drag,
   renderApp,
+  sidebar,
   treeRow,
 } from './test/render';
 
@@ -31,6 +32,15 @@ describe('profile board', () => {
     expect(names).toEqual(['Loose in Trabajo', 'Trabajo · Jira', 'In TEST']);
     expect(within(column('Loose in Trabajo')).getByRole('button', { name: /Onboarding/ })).toBeTruthy();
     expect(within(column('In TEST')).getByRole('button', { name: /Staging dashboard/ })).toBeTruthy();
+  });
+
+  it('cards show the readable URL, not just the domain', async () => {
+    await renderApp();
+
+    const grafana = card(/Grafana/);
+    expect(grafana.textContent).toContain('grafana.example.com');
+    expect(grafana.textContent).toContain('/d/api');
+    expect(grafana.textContent).not.toContain('https://');
   });
 
   it('moving a card to another column moves it to that group', async () => {
@@ -57,11 +67,20 @@ describe('profile board', () => {
     expect(appliedCommands(calls)).toEqual([{ type: 'moveFolder', folder: ONBOARDING, place: { group: WORK }, index: 4 }]);
   });
 
-  it('clicking a tab card opens it; a folder card shows the folder', async () => {
+  it('clicking a tab card shows its detail; a double-click opens it', async () => {
     const { calls, user } = await renderApp();
 
     await user.click(card(/Status page/));
+    expect(await screen.findByRole('heading', { name: 'Status page' })).toBeTruthy();
+    expect(calls.some((call) => call.cmd === 'open_tab')).toBe(false);
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'Trabajo' }));
+    await user.dblClick(card(/Status page/));
     expect(calls).toContainEqual({ cmd: 'open_tab', args: { tab: STATUS_TAB } });
+  });
+
+  it('clicking a folder card shows the folder', async () => {
+    const { user } = await renderApp();
 
     await user.click(card(/Onboarding/));
     expect(await screen.findByRole('heading', { name: 'Onboarding' })).toBeTruthy();

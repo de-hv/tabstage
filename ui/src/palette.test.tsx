@@ -52,6 +52,14 @@ describe('quick search', () => {
     expect(option.textContent).toContain('Firefox');
   });
 
+  it('shows the readable URL of each result', async () => {
+    const { input, user } = await openWithEvent();
+
+    await user.type(input, 'Grafana');
+
+    expect(screen.getByRole('option', { name: /Grafana/ }).textContent).toContain('grafana.example.com/d/api');
+  });
+
   it('opens a whole folder', async () => {
     const { calls, input, user } = await openWithEvent();
 

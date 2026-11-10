@@ -14,6 +14,8 @@ interface Props {
   onRevealDataFile: () => void;
   /** Profile whose browser the user wants to choose. */
   focusProfile?: string | null;
+  showUrls: boolean;
+  onShowUrls: (show: boolean) => void;
 }
 
 interface Pending {
@@ -21,7 +23,16 @@ interface Pending {
   info: DataFileInfo;
 }
 
-export function Settings({ snapshot, apply, inspectDataFolder, relocate, onRevealDataFile, focusProfile = null }: Props) {
+export function Settings({
+  snapshot,
+  apply,
+  inspectDataFolder,
+  relocate,
+  onRevealDataFile,
+  focusProfile = null,
+  showUrls,
+  onShowUrls,
+}: Props) {
   const [pending, setPending] = useState<Pending | null>(null);
 
   const chooseFolder = async () => {
@@ -47,6 +58,16 @@ export function Settings({ snapshot, apply, inspectDataFolder, relocate, onRevea
           Profiles keep personal, work and client tabs apart. Each one opens in the browser you choose here.
         </p>
         <ProfilesEditor snapshot={snapshot} apply={apply} focus={focusProfile} />
+      </section>
+
+      <section className="settings__section" aria-labelledby="sidebar-settings">
+        <h2 id="sidebar-settings" className="settings__heading">
+          Sidebar
+        </h2>
+        <label className="checkbox">
+          <input type="checkbox" checked={showUrls} onChange={(event) => onShowUrls(event.target.checked)} />
+          Show URLs under tabs in the sidebar
+        </label>
       </section>
 
       <DataLocationCard snapshot={snapshot} onReveal={onRevealDataFile} onMove={() => void chooseFolder()} />

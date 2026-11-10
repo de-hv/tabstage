@@ -48,6 +48,7 @@ export function ContainerView({ snapshot, shown, apply, actions, onSelect }: Pro
     canFocusTabs: (profile && profileView(snapshot, profile.id)?.canFocusTabs) ?? false,
     apply: done,
     onSelectFolder: (folder) => onSelect({ kind: 'folder', id: folder }),
+    onSelectTab: (tab) => onSelect({ kind: 'tab', id: tab }),
   };
   const menuHandlers = {
     workspace,

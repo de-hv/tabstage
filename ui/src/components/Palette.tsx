@@ -7,6 +7,7 @@ import { profileBrowser } from '../lib/browsers';
 import { allTabs } from '../lib/workspace';
 import { BrowserBadge } from './BrowserBadge';
 import { ItemIcon } from './ItemIcon';
+import { TabUrl } from './TabUrl';
 
 /** Emitted by the shell for the global shortcut. */
 export const OPEN_PALETTE_EVENT = 'open-palette';
@@ -103,7 +104,10 @@ export function Palette({ snapshot, openTab, openFolder }: Props) {
             onSelect={() => run(() => openTab(tab.id))}
           >
             <ItemIcon icon={tab.icon} kind="tab" />
-            <span className="palette__title">{tab.title}</span>
+            <span className="palette__title palette__title--tab">
+              {tab.title}
+              <TabUrl url={tab.url} />
+            </span>
             {meta(profile, group, folder)}
           </Command.Item>
         ))}

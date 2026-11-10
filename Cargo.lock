@@ -3545,7 +3545,7 @@ dependencies = [
 
 [[package]]
 name = "tabstage-app"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3559,7 +3559,7 @@ dependencies = [
 
 [[package]]
 name = "tabstage-browsers"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "insta",
  "plist",
@@ -3572,7 +3572,7 @@ dependencies = [
 
 [[package]]
 name = "tabstage-core"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "proptest",
  "serde",
@@ -3585,7 +3585,7 @@ dependencies = [
 
 [[package]]
 name = "tabstage-desktop"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -3605,7 +3605,7 @@ dependencies = [
 
 [[package]]
 name = "tabstage-store"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "insta",
  "serde",

@@ -4,6 +4,7 @@ import {
   FolderPlus,
   Globe,
   Layers,
+  Link,
   Palette,
   Pencil,
   Settings,
@@ -62,7 +63,14 @@ const remove = (handlers: MenuHandlers, label = 'Delete…'): MenuEntry => ({
 });
 
 export function profileMenu(
-  handlers: MenuHandlers & { onColor: () => void; onConfigure: () => void; canDelete: boolean },
+  handlers: MenuHandlers & {
+    onColor: () => void;
+    onConfigure: () => void;
+    canDelete: boolean;
+    /** Whether the sidebar shows URLs under tabs, and how to flip it. */
+    showsUrls: boolean;
+    onToggleUrls: () => void;
+  },
 ): MenuEntry[] {
   return [
     { label: 'New group', icon: Layers, keepsFocus: true, onSelect: () => handlers.onNew('group') },
@@ -72,6 +80,7 @@ export function profileMenu(
     rename(handlers),
     { label: 'Change color…', icon: Palette, onSelect: handlers.onColor },
     { label: 'Choose browser…', icon: Settings, onSelect: handlers.onConfigure },
+    { label: handlers.showsUrls ? 'Hide URLs' : 'Show URLs', icon: Link, onSelect: handlers.onToggleUrls },
     ...(handlers.canDelete ? [remove(handlers)] : []),
   ];
 }
