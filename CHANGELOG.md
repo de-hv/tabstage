@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/de-hv/tabstage-desktop/compare/v0.2.0...v0.3.0) (2026-11-10)
+
+
+### Features
+
+* Organize profiles freely, replace statuses with groups, add icons ([2c3d9ae](https://github.com/de-hv/tabstage-desktop/commit/2c3d9ae99e607465e65dc06d181fa7c48c50c7bc))
+
 ## [0.2.0](https://github.com/de-hv/tabstage-desktop/compare/v0.1.0...v0.2.0) (2026-11-09)
 
 
