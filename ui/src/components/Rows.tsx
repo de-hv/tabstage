@@ -1,174 +1,181 @@
-import { ChevronDown, ChevronRight, ExternalLink, Folder as FolderIcon, Globe } from 'lucide-react';
+import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import { useState } from 'react';
 
-import type { Command, Folder, Status, Tab } from '../api/types';
-import type { DragItem, MoveDestination } from '../lib/dnd';
+import type { Command, Folder, Tab, Workspace } from '../api/types';
+import { folderMenu, type MenuHandlers, tabMenu } from '../lib/menus';
+import type { ItemActions } from '../state/selection';
+import { ActionMenu } from './ActionMenu';
 import { useDrag, useDrop } from './DragDrop';
+import { IconPicker } from './IconPicker';
 import { InlineInput } from './InlineInput';
-import { RowMenu } from './RowMenu';
+import { ItemIcon } from './ItemIcon';
 
-/** What a row needs to show its menu and rename itself. */
-export interface RowActions {
-  statuses: Status[];
-  editing: string | null;
+/** What list rows need from the view that shows them. */
+export interface RowContext {
+  workspace: Workspace;
+  actions: ItemActions;
   canFocusTabs: boolean;
-  onStartRename: (id: string) => void;
-  onCancelRename: () => void;
-  onRenameTab: (tab: Tab, title: string) => Promise<boolean>;
-  onRenameFolder: (folder: Folder, name: string) => Promise<boolean>;
-  onSetTabStatus: (tab: Tab, status: string | null) => void;
-  onSetFolderStatus: (folder: Folder, status: string | null) => void;
-  onDeleteTab: (tab: Tab) => void;
-  onDeleteFolder: (folder: Folder) => void;
-  onOpenTab: (tab: Tab) => void;
-  onOpenFolder: (folder: Folder) => void;
-  onToggleFolder: (folder: Folder) => void;
-  /** On the board, rows drag but tiles take the drops. */
-  inBoard: boolean;
-  moveDestinations: (item: DragItem) => MoveDestination[];
-  onCommand: (command: Command) => void;
+  apply: (command: Command) => Promise<boolean>;
+  onSelectFolder: (folder: string) => void;
 }
 
-interface TabItemProps {
-  tab: Tab;
-  /** Status chip to show; hidden when a folder status applies. */
-  status: Status | undefined;
-  /** Folder name shown before the title on the board. */
-  prefix?: string;
-  actions: RowActions;
+function handlers(row: RowContext, own: Omit<MenuHandlers, 'workspace' | 'onMove'>): MenuHandlers {
+  return { ...own, workspace: row.workspace, onMove: (command) => void row.apply(command) };
 }
 
-export function TabItem({ tab, status, prefix, actions }: TabItemProps) {
-  const item: DragItem = { kind: 'tab', tab: tab.id };
-  const drag = useDrag(item);
-  const drop = useDrop(actions.inBoard ? null : { kind: 'before', node: tab.id });
-  if (actions.editing === tab.id) {
+export function TabItem({ tab, row }: { tab: Tab; row: RowContext }) {
+  const [renaming, setRenaming] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [iconOpen, setIconOpen] = useState(false);
+  const drag = useDrag({ kind: 'tab', tab: tab.id });
+  const drop = useDrop({ kind: 'before', node: tab.id });
+  if (renaming) {
     return (
       <InlineInput
         label="New name"
         initial={tab.title}
-        onCancel={actions.onCancelRename}
-        onSubmit={(title) => actions.onRenameTab(tab, title)}
+        onCancel={() => setRenaming(false)}
+        onSubmit={async (title) => {
+          const saved = await row.apply({ type: 'renameTab', tab: tab.id, title });
+          if (saved) setRenaming(false);
+          return saved;
+        }}
       />
     );
   }
   return (
-    <div className="row-wrap" {...drag} {...drop}>
-      <button type="button" className="row" title={tab.url} onClick={() => actions.onOpenTab(tab)}>
-        <Globe className="icon" aria-hidden="true" />
+    <div
+      className="row-wrap"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setMenuOpen(true);
+      }}
+      {...drag}
+      {...drop}
+    >
+      <IconPicker
+        name={tab.title}
+        icon={tab.icon}
+        open={iconOpen}
+        onOpenChange={setIconOpen}
+        onChange={(icon) => row.actions.setIcon({ tab: tab.id }, icon)}
+      >
+        <button type="button" className="row__icon" aria-label={`Icon of ${tab.title}`}>
+          <ItemIcon icon={tab.icon} kind="tab" />
+        </button>
+      </IconPicker>
+      <button type="button" className="row" title={tab.url} onClick={() => row.actions.open({ tab: tab.id })}>
         <span className="row__title">
-          {prefix && <span className="row__prefix">{prefix} / </span>}
           {tab.title} <span className="row__host">{hostOf(tab.url)}</span>
         </span>
         <span className="row__hint" aria-hidden="true">
-          {actions.canFocusTabs ? 'Open or go to tab' : 'Open'}
+          {row.canFocusTabs ? 'Open or go to tab' : 'Open'}
         </span>
-        <StatusChip status={status} />
       </button>
-      <RowMenu
+      <ActionMenu
         label={`Options for ${tab.title}`}
-        status={{
-          statuses: actions.statuses,
-          current: tab.status,
-          onChange: (next) => actions.onSetTabStatus(tab, next),
-        }}
-        moves={actions.moveDestinations(item)}
-        onMove={actions.onCommand}
-        onRename={() => actions.onStartRename(tab.id)}
-        onDelete={() => actions.onDeleteTab(tab)}
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        entries={tabMenu(
+          tab.id,
+          handlers(row, {
+            onNew: () => undefined,
+            onOpen: () => row.actions.open({ tab: tab.id }),
+            onRename: () => setRenaming(true),
+            onIcon: () => setIconOpen(true),
+            onDelete: () => row.actions.requestDelete({ tab: tab.id }),
+          }),
+        )}
       />
     </div>
   );
 }
 
-interface FolderHeaderProps {
-  folder: Folder;
-  status: Status | undefined;
-  /** On the board folders always show their tabs, so there is no toggle. */
-  toggle: boolean;
-  actions: RowActions;
-}
-
-export function FolderHeader({ folder, status, toggle, actions }: FolderHeaderProps) {
-  const item: DragItem = { kind: 'folder', folder: folder.id };
-  const drag = useDrag(item);
-  const drop = useDrop(actions.inBoard ? null : { kind: 'folder', folder: folder.id });
-  if (actions.editing === folder.id) {
+export function FolderHeader({ folder, row }: { folder: Folder; row: RowContext }) {
+  const [renaming, setRenaming] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [iconOpen, setIconOpen] = useState(false);
+  const drag = useDrag({ kind: 'folder', folder: folder.id });
+  const drop = useDrop((item) =>
+    item.kind === 'tab' ? { kind: 'into', place: { folder: folder.id } } : { kind: 'before', node: folder.id },
+  );
+  if (renaming) {
     return (
       <InlineInput
         label="New name"
         initial={folder.name}
-        onCancel={actions.onCancelRename}
-        onSubmit={(name) => actions.onRenameFolder(folder, name)}
+        onCancel={() => setRenaming(false)}
+        onSubmit={async (name) => {
+          const saved = await row.apply({ type: 'renameFolder', folder: folder.id, name });
+          if (saved) setRenaming(false);
+          return saved;
+        }}
       />
     );
   }
-  const content = (
-    <>
-      <FolderIcon className="icon" aria-hidden="true" />
-      <span className="row__title folder__name">{folder.name}</span>
-      <span className="row__count">{folder.tabs.length}</span>
-      <StatusChip status={status} />
-    </>
-  );
   return (
-    <div className="row-wrap" {...drag} {...drop}>
-      {toggle ? (
-        <button
-          type="button"
-          className="row"
-          aria-expanded={!folder.collapsed}
-          aria-label={`${folder.collapsed ? 'Expand' : 'Collapse'} ${folder.name}`}
-          onClick={() => actions.onToggleFolder(folder)}
-        >
-          {folder.collapsed ? (
-            <ChevronRight className="icon" aria-hidden="true" />
-          ) : (
-            <ChevronDown className="icon" aria-hidden="true" />
-          )}
-          {content}
+    <div
+      className="row-wrap"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setMenuOpen(true);
+      }}
+      {...drag}
+      {...drop}
+    >
+      <button
+        type="button"
+        className="icon-button row__toggle"
+        aria-expanded={!folder.collapsed}
+        aria-label={`${folder.collapsed ? 'Expand' : 'Collapse'} ${folder.name}`}
+        onClick={() => void row.apply({ type: 'setFolderCollapsed', folder: folder.id, collapsed: !folder.collapsed })}
+      >
+        {folder.collapsed ? <ChevronRight className="icon" aria-hidden="true" /> : <ChevronDown className="icon" aria-hidden="true" />}
+      </button>
+      <IconPicker
+        name={folder.name}
+        icon={folder.icon}
+        open={iconOpen}
+        onOpenChange={setIconOpen}
+        onChange={(icon) => row.actions.setIcon({ folder: folder.id }, icon)}
+      >
+        <button type="button" className="row__icon" aria-label={`Icon of ${folder.name}`}>
+          <ItemIcon icon={folder.icon} kind="folder" />
         </button>
-      ) : (
-        <div className="row row--static">{content}</div>
-      )}
+      </IconPicker>
+      <button type="button" className="row" onClick={() => row.onSelectFolder(folder.id)}>
+        <span className="row__title folder__name">{folder.name}</span>
+        <span className="row__count">{folder.tabs.length}</span>
+      </button>
       <button
         type="button"
         className="icon-button"
         title="Open the folder's tabs"
-        aria-label="Open the folder's tabs"
-        onClick={() => actions.onOpenFolder(folder)}
+        aria-label={`Open the tabs of ${folder.name}`}
+        onClick={() => row.actions.open({ folder: folder.id })}
       >
         <ExternalLink className="icon" aria-hidden="true" />
       </button>
-      <RowMenu
-        label={`Options for folder ${folder.name}`}
-        status={{
-          statuses: actions.statuses,
-          current: folder.status,
-          onChange: (next) => actions.onSetFolderStatus(folder, next),
-        }}
-        moves={actions.moveDestinations(item)}
-        onMove={actions.onCommand}
-        onRename={() => actions.onStartRename(folder.id)}
-        onDelete={() => actions.onDeleteFolder(folder)}
+      <ActionMenu
+        label={`Options for ${folder.name}`}
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        entries={folderMenu(
+          folder.id,
+          handlers(row, {
+            onNew: () => row.actions.newTab({ folder: folder.id }),
+            onOpen: () => row.actions.open({ folder: folder.id }),
+            onRename: () => setRenaming(true),
+            onIcon: () => setIconOpen(true),
+            onDelete: () => row.actions.requestDelete({ folder: folder.id }),
+          }),
+        )}
       />
     </div>
   );
 }
 
-export function StatusChip({ status }: { status: Status | undefined }) {
-  if (!status) return null;
-  return (
-    <span className="chip" data-color={status.color}>
-      {status.label}
-    </span>
-  );
-}
-
-export function findStatus(statuses: Status[], id: string | undefined): Status | undefined {
-  return statuses.find((status) => status.id === id);
-}
-
-function hostOf(url: string): string {
+export function hostOf(url: string): string {
   try {
     return new URL(url).host;
   } catch {

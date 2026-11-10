@@ -1,16 +1,4 @@
 {
-  "browserProfiles": {
-    "com.google.Chrome": [
-      {
-        "id": "Default",
-        "name": "Personal"
-      },
-      {
-        "id": "Profile 1",
-        "name": "Trabajo"
-      }
-    ]
-  },
   "browsers": [
     {
       "id": "com.google.Chrome",
@@ -42,12 +30,11 @@
     "kind": "appData"
   },
   "dataPath": "/Users/me/Library/Application Support/io.github.de-hv.tabstage/workspace.json",
+  "needsDataFile": false,
   "profiles": [
     {
       "binding": {
-        "browser": "com.google.Chrome",
-        "browserProfile": "Profile 1",
-        "newWindow": true
+        "browser": "com.google.Chrome"
       },
       "browser": "com.google.Chrome",
       "canFocusTabs": true,
@@ -57,8 +44,7 @@
     },
     {
       "binding": {
-        "browser": "org.mozilla.firefox",
-        "newWindow": false
+        "browser": "org.mozilla.firefox"
       },
       "browser": "org.mozilla.firefox",
       "canFocusTabs": false,
@@ -78,126 +64,144 @@
   "settings": {},
   "systemBrowser": "org.mozilla.firefox",
   "workspace": {
-    "groups": [
-      {
-        "children": [
-          {
-            "collapsed": false,
-            "id": "00000000-0000-0000-0000-0000000000f1",
-            "name": "Sprint 42",
-            "status": "in-progress",
-            "tabs": [
-              {
-                "id": "00000000-0000-0000-0000-000000000b01",
-                "title": "PROJ-1182 · Refactor del login",
-                "url": "https://jira.example.com/browse/PROJ-1182"
-              },
-              {
-                "id": "00000000-0000-0000-0000-000000000b02",
-                "title": "PROJ-1190 · Cache de sesiones",
-                "url": "https://jira.example.com/browse/PROJ-1190"
-              }
-            ],
-            "type": "folder"
-          },
-          {
-            "collapsed": true,
-            "id": "00000000-0000-0000-0000-0000000000f2",
-            "name": "Incidentes",
-            "status": "in-review",
-            "tabs": [
-              {
-                "id": "00000000-0000-0000-0000-000000000b03",
-                "title": "Incidente 77",
-                "url": "https://status.example.com/incidents/77"
-              }
-            ],
-            "type": "folder"
-          },
-          {
-            "id": "00000000-0000-0000-0000-000000000b04",
-            "status": "todo",
-            "title": "Grafana · latencia API",
-            "type": "tab",
-            "url": "https://grafana.example.com/d/api"
-          },
-          {
-            "id": "00000000-0000-0000-0000-000000000b05",
-            "status": "done",
-            "title": "Runbook de despliegue",
-            "type": "tab",
-            "url": "https://wiki.example.com/runbook"
-          }
-        ],
-        "color": "blue",
-        "id": "00000000-0000-0000-0000-0000000000a1",
-        "name": "Trabajo · Jira",
-        "profile": "00000000-0000-0000-0000-0000000000c1"
-      },
-      {
-        "children": [
-          {
-            "id": "00000000-0000-0000-0000-000000000b06",
-            "title": "HTTP caching · MDN",
-            "type": "tab",
-            "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Caching"
-          }
-        ],
-        "color": "mauve",
-        "id": "00000000-0000-0000-0000-0000000000a2",
-        "name": "Investigación",
-        "profile": "00000000-0000-0000-0000-0000000000c2"
-      },
-      {
-        "children": [],
-        "color": "peach",
-        "id": "00000000-0000-0000-0000-0000000000a3",
-        "name": "Docs Rust",
-        "profile": "00000000-0000-0000-0000-0000000000c3"
-      }
-    ],
     "profiles": [
       {
         "color": 0,
         "id": "00000000-0000-0000-0000-0000000000c1",
+        "items": [
+          {
+            "children": [
+              {
+                "collapsed": false,
+                "id": "00000000-0000-0000-0000-0000000000f1",
+                "name": "Sprint 42",
+                "tabs": [
+                  {
+                    "id": "00000000-0000-0000-0000-000000000b01",
+                    "title": "PROJ-1182 · Refactor del login",
+                    "url": "https://jira.example.com/browse/PROJ-1182"
+                  },
+                  {
+                    "id": "00000000-0000-0000-0000-000000000b02",
+                    "title": "PROJ-1190 · Cache de sesiones",
+                    "url": "https://jira.example.com/browse/PROJ-1190"
+                  }
+                ],
+                "type": "folder"
+              },
+              {
+                "collapsed": true,
+                "icon": {
+                  "kind": "text",
+                  "value": "77"
+                },
+                "id": "00000000-0000-0000-0000-0000000000f2",
+                "name": "Incidentes",
+                "tabs": [
+                  {
+                    "id": "00000000-0000-0000-0000-000000000b03",
+                    "title": "Incidente 77",
+                    "url": "https://status.example.com/incidents/77"
+                  }
+                ],
+                "type": "folder"
+              },
+              {
+                "id": "00000000-0000-0000-0000-000000000b04",
+                "title": "Grafana · latencia API",
+                "type": "tab",
+                "url": "https://grafana.example.com/d/api"
+              },
+              {
+                "icon": {
+                  "kind": "symbol",
+                  "value": "book-open"
+                },
+                "id": "00000000-0000-0000-0000-000000000b05",
+                "title": "Runbook de despliegue",
+                "type": "tab",
+                "url": "https://wiki.example.com/runbook"
+              }
+            ],
+            "color": "blue",
+            "id": "00000000-0000-0000-0000-0000000000a1",
+            "name": "Trabajo · Jira",
+            "type": "group"
+          },
+          {
+            "children": [
+              {
+                "id": "00000000-0000-0000-0000-000000000b07",
+                "title": "Staging dashboard",
+                "type": "tab",
+                "url": "https://staging.example.com/"
+              }
+            ],
+            "color": "peach",
+            "icon": {
+              "kind": "emoji",
+              "value": "🧪"
+            },
+            "id": "00000000-0000-0000-0000-0000000000a4",
+            "name": "In TEST",
+            "type": "group"
+          },
+          {
+            "collapsed": false,
+            "id": "00000000-0000-0000-0000-0000000000f3",
+            "name": "Onboarding",
+            "tabs": [
+              {
+                "id": "00000000-0000-0000-0000-000000000b08",
+                "title": "Client wiki",
+                "url": "https://wiki.example.com/client"
+              }
+            ],
+            "type": "folder"
+          },
+          {
+            "id": "00000000-0000-0000-0000-000000000b09",
+            "title": "Status page",
+            "type": "tab",
+            "url": "https://status.example.com/"
+          }
+        ],
         "name": "Trabajo"
       },
       {
         "color": 1,
         "id": "00000000-0000-0000-0000-0000000000c2",
+        "items": [
+          {
+            "children": [
+              {
+                "id": "00000000-0000-0000-0000-000000000b06",
+                "title": "HTTP caching · MDN",
+                "type": "tab",
+                "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Caching"
+              }
+            ],
+            "color": "mauve",
+            "id": "00000000-0000-0000-0000-0000000000a2",
+            "name": "Investigación",
+            "type": "group"
+          }
+        ],
         "name": "Personal"
       },
       {
         "color": 2,
         "id": "00000000-0000-0000-0000-0000000000c3",
+        "items": [
+          {
+            "children": [],
+            "color": "peach",
+            "id": "00000000-0000-0000-0000-0000000000a3",
+            "name": "Docs Rust",
+            "type": "group"
+          }
+        ],
         "name": "QA"
-      }
-    ],
-    "statuses": [
-      {
-        "color": "lavender",
-        "id": "todo",
-        "label": "To do"
-      },
-      {
-        "color": "blue",
-        "id": "in-progress",
-        "label": "In progress"
-      },
-      {
-        "color": "mauve",
-        "id": "in-review",
-        "label": "In review"
-      },
-      {
-        "color": "peach",
-        "id": "in-dev",
-        "label": "In dev"
-      },
-      {
-        "color": "green",
-        "id": "done",
-        "label": "Done"
       }
     ]
   }

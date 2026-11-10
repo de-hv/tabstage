@@ -1,11 +1,12 @@
 //! Tauri shell for Tabstage Desktop.
 //!
 //! Thin on purpose: it builds the [`AppService`] with the real system
-//! adapters and exposes it to the UI as IPC commands, plus the tray, the
-//! global shortcut and close-to-tray. Behavior lives in `tabstage-app`.
+//! adapters and exposes it to the UI as IPC commands, plus the global
+//! shortcut. There is no menu bar (tray) icon: on macOS closing the window
+//! hides it and the Dock brings it back; on Linux closing it quits.
+//! Behavior lives in `tabstage-app`.
 
 mod commands;
-mod tray;
 mod window;
 
 use std::sync::Mutex;
@@ -63,12 +64,11 @@ pub fn run() {
                 config_path,
                 Platform::current(),
             )?;
-            tray::create(app.handle(), &service.snapshot())?;
             app.manage::<Service>(Mutex::new(service));
 
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
             if let Err(error) = app.global_shortcut().register(PALETTE_SHORTCUT) {
-                // Another app may own the keys; the tray still offers search.
+                // Another app may own the keys; ⌘K still works in the window.
                 tracing::warn!(
                     error = &error as &dyn std::error::Error,
                     "could not register the global shortcut"
@@ -77,8 +77,11 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the window keeps Tabstage in the tray.
-            if let WindowEvent::CloseRequested { api, .. } = event
+            // macOS apps stay open without windows; the Dock icon, the global
+            // shortcut or launching again shows the window. Elsewhere there is
+            // nothing to bring it back from, so closing quits.
+            if cfg!(target_os = "macos")
+                && let WindowEvent::CloseRequested { api, .. } = event
                 && window.label() == window::MAIN
             {
                 api.prevent_close();
@@ -100,14 +103,28 @@ pub fn run() {
             commands::open_tab,
             commands::open_folder,
             commands::open_group,
+            commands::open_profile,
+            commands::choose_data_file,
             commands::inspect_data_folder,
             commands::relocate,
             commands::reveal_data_file,
         ])
-        .run(tauri::generate_context!());
+        .build(tauri::generate_context!());
 
-    if let Err(error) = result {
-        tracing::error!(error = &error as &dyn std::error::Error, "tabstage stopped");
-        std::process::exit(1);
-    }
+    let app = match result {
+        Ok(app) => app,
+        Err(error) => {
+            tracing::error!(error = &error as &dyn std::error::Error, "tabstage stopped");
+            std::process::exit(1);
+        }
+    };
+    app.run(|app, event| {
+        // A click on the Dock icon while the window is hidden.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = event {
+            window::show_main(app);
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = (app, event);
+    });
 }

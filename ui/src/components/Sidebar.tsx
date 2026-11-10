@@ -1,93 +1,95 @@
-import * as Menu from '@radix-ui/react-dropdown-menu';
-import {
-  AlertTriangle,
-  ChevronDown,
-  ChevronRight,
-  FolderPlus,
-  Globe,
-  MoreHorizontal,
-  Palette,
-  Pencil,
-  Plus,
-  Settings,
-  SquarePlus,
-  Trash2,
-} from 'lucide-react';
-import { useState } from 'react';
+import { AlertTriangle, ChevronDown, ChevronRight, Plus, Settings } from 'lucide-react';
+import { type CSSProperties, type ReactNode, useState } from 'react';
 
-import type { AccentColor, AppError, Command, Group, Profile, Snapshot } from '../api/types';
-import { groupsOf, profileView } from '../lib/browsers';
-import { useDrag, useDrop } from './DragDrop';
+import type { AppError, Command, Folder, Group, Item, Place, Profile, Snapshot, Tab } from '../api/types';
+import { needsSetup } from '../lib/browsers';
+import { nextGroupColor } from '../lib/colors';
+import type { DragItem } from '../lib/dnd';
+import { folderMenu, groupMenu, type MenuHandlers, type NewKind, profileMenu, tabMenu } from '../lib/menus';
+import { countTabs } from '../lib/workspace';
+import type { ItemActions, Selection } from '../state/selection';
+import { useTreeState } from '../state/useTreeState';
+import { ActionMenu, type MenuEntry } from './ActionMenu';
+import { type DropSpec, useDrag, useDrop } from './DragDrop';
+import { IconPicker } from './IconPicker';
 import { InlineInput } from './InlineInput';
+import { type ItemKind, ItemIcon } from './ItemIcon';
 import { ProfileColorButton } from './ProfileDot';
-import { RemoveProfileDialog } from './ProfilesEditor';
 
-/** New groups take the next accent, so neighbours rarely share a color. */
-const GROUP_COLORS: AccentColor[] = ['blue', 'mauve', 'green', 'peach', 'teal', 'pink', 'yellow', 'sky', 'lavender', 'red'];
-
-const COLLAPSED_KEY = 'tabstage.collapsedProfiles';
-
-export type CreateKind = 'folder' | 'tab';
 
 interface Props {
   snapshot: Snapshot;
-  selected: string | null;
+  selection: Selection | null;
   settingsOpen: boolean;
-  onSelect: (group: string) => void;
-  onAddGroup: (profile: string, name: string, color: AccentColor) => Promise<boolean>;
-  onAddProfile: (name: string) => Promise<boolean>;
-  onCreate: (profile: string, kind: CreateKind) => void;
+  onSelect: (selection: Selection) => void;
   onOpenSettings: () => void;
   apply: (command: Command) => Promise<AppError | null>;
+  actions: ItemActions;
 }
 
-/** Groups listed under their profile; each profile folds away. */
-export function Sidebar(props: Props) {
-  const { snapshot, onAddProfile, onOpenSettings, settingsOpen } = props;
-  const [collapsed, setCollapsed] = useState<string[]>(readCollapsed);
-  const [addingProfile, setAddingProfile] = useState(false);
+/** Pending inline "new group" or "new folder" field. */
+interface Adding {
+  place: Place;
+  kind: 'group' | 'folder';
+}
 
-  const toggle = (profile: string) => {
-    const next = collapsed.includes(profile)
-      ? collapsed.filter((id) => id !== profile)
-      : [...collapsed, profile];
-    setCollapsed(next);
-    saveCollapsed(next);
+/** The tree: profiles, their groups, folders and tabs. Every row has a menu. */
+export function Sidebar({ snapshot, selection, settingsOpen, onSelect, onOpenSettings, apply, actions }: Props) {
+  const tree = useTreeState();
+  const [adding, setAdding] = useState<Adding | null>(null);
+  const [addingProfile, setAddingProfile] = useState(false);
+  const { workspace } = snapshot;
+
+  const ctx: TreeContext = {
+    snapshot,
+    selection: settingsOpen ? null : selection,
+    tree,
+    adding,
+    onSelect,
+    apply,
+    actions,
+    onOpenSettings,
+    startNew: (place, kind) => {
+      if (kind === 'tab') {
+        actions.newTab(place);
+        return;
+      }
+      const container = 'profile' in place ? place.profile : 'group' in place ? place.group : place.folder;
+      tree.set(container, true);
+      setAdding({ place, kind });
+    },
+    stopAdding: () => setAdding(null),
   };
 
   return (
-    <nav className="sidebar" aria-label="Groups">
-      <ul className="sidebar__profiles">
-        {snapshot.workspace.profiles.map((profile) => (
-          <ProfileSection
-            key={profile.id}
-            {...props}
-            profile={profile}
-            expanded={!collapsed.includes(profile.id)}
-            onToggle={() => toggle(profile.id)}
-          />
-        ))}
-      </ul>
-      {addingProfile ? (
-        <div className="sidebar__form">
-          <InlineInput
-            label="Profile name"
-            placeholder="Work, Client X…"
-            onCancel={() => setAddingProfile(false)}
-            onSubmit={async (name) => {
-              const saved = await onAddProfile(name);
-              if (saved) setAddingProfile(false);
-              return saved;
-            }}
-          />
-        </div>
-      ) : (
-        <button type="button" className="sidebar__item sidebar__new" onClick={() => setAddingProfile(true)}>
-          <Plus className="icon" aria-hidden="true" />
-          New profile
-        </button>
-      )}
+    <nav className="sidebar" aria-label="Library">
+      <div className="sidebar__scroll">
+        <ul className="tree-list">
+          {workspace.profiles.map((profile) => (
+            <ProfileNode key={profile.id} ctx={ctx} profile={profile} />
+          ))}
+        </ul>
+      </div>
       <div className="sidebar__footer">
+        {addingProfile ? (
+          <div className="sidebar__form">
+            <InlineInput
+              label="Profile name"
+              placeholder="Work, Client X…"
+              onCancel={() => setAddingProfile(false)}
+              onSubmit={async (name) => {
+                const failure = await apply({ type: 'addProfile', name });
+                if (!failure) setAddingProfile(false);
+                return !failure;
+              }}
+            />
+          </div>
+        ) : (
+          <button type="button" className="sidebar__item" onClick={() => setAddingProfile(true)}>
+            <Plus className="icon" aria-hidden="true" />
+            New profile
+          </button>
+        )}
         <button
           type="button"
           className="sidebar__item"
@@ -102,263 +104,377 @@ export function Sidebar(props: Props) {
   );
 }
 
-interface SectionProps extends Props {
-  profile: Profile;
-  expanded: boolean;
-  onToggle: () => void;
+interface TreeContext {
+  snapshot: Snapshot;
+  selection: Selection | null;
+  tree: ReturnType<typeof useTreeState>;
+  adding: Adding | null;
+  onSelect: (selection: Selection) => void;
+  apply: (command: Command) => Promise<AppError | null>;
+  actions: ItemActions;
+  onOpenSettings: () => void;
+  startNew: (place: Place, kind: NewKind) => void;
+  stopAdding: () => void;
 }
 
-function ProfileSection({
-  snapshot,
-  profile,
-  expanded,
-  onToggle,
-  selected,
-  settingsOpen,
-  onSelect,
-  onAddGroup,
-  onCreate,
-  onOpenSettings,
-  apply,
-}: SectionProps) {
-  const [addingGroup, setAddingGroup] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [colorOpen, setColorOpen] = useState(false);
-  const [removing, setRemoving] = useState(false);
-  const drag = useDrag({ kind: 'profile', profile: profile.id });
-  const drop = useDrop({ kind: 'profile', profile: profile.id });
-  const groups = groupsOf(snapshot, profile.id);
-  const view = profileView(snapshot, profile.id);
-  const unconfigured = !view?.isBound || view.isFallback;
-  const others = snapshot.workspace.profiles.filter((candidate) => candidate.id !== profile.id);
+function handlers(ctx: TreeContext, own: Omit<MenuHandlers, 'workspace' | 'onMove'>): MenuHandlers {
+  return { ...own, workspace: ctx.snapshot.workspace, onMove: (command) => void ctx.apply(command) };
+}
+
+function isCurrent(ctx: TreeContext, kind: Selection['kind'], id: string): boolean {
+  return ctx.selection?.kind === kind && ctx.selection.id === id;
+}
+
+function ProfileNode({ ctx, profile }: { ctx: TreeContext; profile: Profile }) {
+  const expanded = ctx.tree.isExpanded(profile.id, true);
+  const place: Place = { profile: profile.id };
+  const unconfigured = needsSetup(ctx.snapshot, profile.id);
+  const canDelete = ctx.snapshot.workspace.profiles.length > 1;
 
   return (
-    <li className="profile">
-      <div className="profile__head" {...drag} {...drop}>
-        <button
-          type="button"
-          className="icon-button profile__chevron"
-          aria-expanded={expanded}
-          aria-label={`${expanded ? 'Collapse' : 'Expand'} profile ${profile.name}`}
-          onClick={onToggle}
-        >
-          {expanded ? (
-            <ChevronDown className="icon" aria-hidden="true" />
-          ) : (
-            <ChevronRight className="icon" aria-hidden="true" />
-          )}
-        </button>
-        <ProfileColorButton
-          profile={profile}
-          open={colorOpen}
-          onOpenChange={setColorOpen}
-          onChange={(color) => void apply({ type: 'setProfileColor', profile: profile.id, color })}
-        />
-        {renaming ? (
-          <div className="profile__rename">
-            <InlineInput
-              label="Profile name"
-              initial={profile.name}
-              onCancel={() => setRenaming(false)}
-              onSubmit={async (name) => {
-                const failure = await apply({ type: 'renameProfile', profile: profile.id, name });
-                if (!failure) setRenaming(false);
-                return !failure;
-              }}
-            />
-          </div>
-        ) : (
-          // The chevron is the accessible toggle; the name is a larger mouse target.
-          <span className="profile__label" onClick={onToggle} aria-hidden="true">
-            <span className="sidebar__name profile__name">{profile.name}</span>
-            <span className="row__count">{groups.length}</span>
-          </span>
+    <li>
+      <Row
+        depth={0}
+        kind="profile"
+        name={profile.name}
+        expanded={expanded}
+        onToggle={() => ctx.tree.set(profile.id, !expanded)}
+        current={isCurrent(ctx, 'profile', profile.id)}
+        onActivate={() => ctx.onSelect({ kind: 'profile', id: profile.id })}
+        drag={{ kind: 'profile', profile: profile.id }}
+        drop={{ kind: 'into', place }}
+        onRename={async (name) => !(await ctx.apply({ type: 'renameProfile', profile: profile.id, name }))}
+        leading={(open, setOpen) => (
+          <ProfileColorButton
+            profile={profile}
+            open={open}
+            onOpenChange={setOpen}
+            onChange={(color) => void ctx.apply({ type: 'setProfileColor', profile: profile.id, color })}
+          />
         )}
-        {unconfigured && (
-          <span className="profile__warning" role="img" aria-label={`${profile.name}: not set up on this computer`}>
-            <AlertTriangle className="icon" aria-hidden="true" />
-          </span>
-        )}
-        <CreateMenu
-          profile={profile}
-          hasGroups={groups.length > 0}
-          onGroup={() => setAddingGroup(true)}
-          onCreate={(kind) => onCreate(profile.id, kind)}
-        />
-        <ProfileMenu
-          profile={profile}
-          canDelete={others.length > 0}
-          onRename={() => setRenaming(true)}
-          onColor={() => setColorOpen(true)}
-          onConfigure={onOpenSettings}
-          onDelete={() => setRemoving(true)}
-        />
-      </div>
+        trailing={
+          unconfigured && (
+            <span className="tree-row__warning" role="img" aria-label={`${profile.name}: no browser chosen on this computer`}>
+              <AlertTriangle className="icon" aria-hidden="true" />
+            </span>
+          )
+        }
+        menu={(row) =>
+          profileMenu({
+            ...handlers(ctx, {
+              onNew: (kind) => ctx.startNew(place, kind),
+              onOpen: () => ctx.actions.open({ profile: profile.id }),
+              onRename: row.rename,
+              onIcon: row.openLeading,
+              onDelete: () => ctx.actions.requestDelete({ profile: profile.id }),
+            }),
+            onColor: row.openLeading,
+            onConfigure: () => ctx.actions.configureProfile(profile.id),
+            canDelete,
+          })
+        }
+      />
       {expanded && (
-        <ul className="sidebar__list profile__groups" aria-label={`Groups in ${profile.name}`}>
-          {groups.map((group) => (
-            <li key={group.id}>
-              <GroupItem group={group} current={!settingsOpen && group.id === selected} onSelect={onSelect} />
-            </li>
+        <ul className="tree-list">
+          {profile.items.map((item) => (
+            <ItemNode key={item.id} ctx={ctx} item={item} depth={1} />
           ))}
-          {addingGroup && (
-            <li className="sidebar__form">
-              <InlineInput
-                label="Group name"
-                placeholder="Jira, Reading…"
-                onCancel={() => setAddingGroup(false)}
-                onSubmit={async (name) => {
-                  const color = GROUP_COLORS[snapshot.workspace.groups.length % GROUP_COLORS.length] ?? 'blue';
-                  const saved = await onAddGroup(profile.id, name, color);
-                  if (saved) setAddingGroup(false);
-                  return saved;
-                }}
-              />
+          <AddingRow ctx={ctx} place={place} depth={1} />
+          {profile.items.length === 0 && ctx.adding === null && (
+            <li className="tree-empty" style={{ '--depth': 1 } as CSSProperties}>
+              Empty. Right-click to add.
             </li>
           )}
         </ul>
       )}
-      <RemoveProfileDialog
-        snapshot={snapshot}
-        profile={removing ? profile : null}
-        others={others}
-        onClose={() => setRemoving(false)}
-        onRemove={(moveGroupsTo) => {
-          setRemoving(false);
-          void apply({ type: 'removeProfile', profile: profile.id, moveGroupsTo });
+    </li>
+  );
+}
+
+function ItemNode({ ctx, item, depth }: { ctx: TreeContext; item: Item; depth: number }) {
+  switch (item.type) {
+    case 'group':
+      return <GroupNode ctx={ctx} group={item} depth={depth} />;
+    case 'folder':
+      return <FolderNode ctx={ctx} folder={item} depth={depth} />;
+    case 'tab':
+      return <TabNode ctx={ctx} tab={item} depth={depth} />;
+  }
+}
+
+function GroupNode({ ctx, group, depth }: { ctx: TreeContext; group: Group; depth: number }) {
+  const expanded = ctx.tree.isExpanded(group.id, false);
+  const place: Place = { group: group.id };
+  return (
+    <li>
+      <Row
+        depth={depth}
+        kind="group"
+        name={group.name}
+        expanded={expanded}
+        onToggle={() => ctx.tree.set(group.id, !expanded)}
+        current={isCurrent(ctx, 'group', group.id)}
+        onActivate={() => ctx.onSelect({ kind: 'group', id: group.id })}
+        drag={{ kind: 'group', group: group.id }}
+        drop={(item) => (item.kind === 'group' ? { kind: 'before', node: group.id } : { kind: 'into', place })}
+        onRename={async (name) => !(await ctx.apply({ type: 'renameGroup', group: group.id, name }))}
+        leading={(open, setOpen) => (
+          <IconButton ctx={ctx} name={group.name} kind="group" target={{ group: group.id }} icon={group.icon} open={open} onOpenChange={setOpen} />
+        )}
+        trailing={<span className="row__count">{countTabs(group)}</span>}
+        menu={(row) =>
+          groupMenu(
+            group.id,
+            handlers(ctx, {
+              onNew: (kind) => ctx.startNew(place, kind),
+              onOpen: () => ctx.actions.open({ group: group.id }),
+              onRename: row.rename,
+              onIcon: row.openLeading,
+              onDelete: () => ctx.actions.requestDelete({ group: group.id }),
+            }),
+          )
+        }
+      />
+      {expanded && (
+        <ul className="tree-list">
+          {group.children.map((node) => (
+            <ItemNode key={node.id} ctx={ctx} item={node} depth={depth + 1} />
+          ))}
+          <AddingRow ctx={ctx} place={place} depth={depth + 1} />
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function FolderNode({ ctx, folder, depth }: { ctx: TreeContext; folder: Folder; depth: number }) {
+  const expanded = ctx.tree.isExpanded(folder.id, false);
+  const place: Place = { folder: folder.id };
+  return (
+    <li>
+      <Row
+        depth={depth}
+        kind="folder"
+        name={folder.name}
+        expanded={expanded}
+        onToggle={() => ctx.tree.set(folder.id, !expanded)}
+        current={isCurrent(ctx, 'folder', folder.id)}
+        onActivate={() => ctx.onSelect({ kind: 'folder', id: folder.id })}
+        drag={{ kind: 'folder', folder: folder.id }}
+        drop={(item) => (item.kind === 'tab' ? { kind: 'into', place } : { kind: 'before', node: folder.id })}
+        onRename={async (name) => !(await ctx.apply({ type: 'renameFolder', folder: folder.id, name }))}
+        leading={(open, setOpen) => (
+          <IconButton ctx={ctx} name={folder.name} kind="folder" target={{ folder: folder.id }} icon={folder.icon} open={open} onOpenChange={setOpen} />
+        )}
+        trailing={<span className="row__count">{folder.tabs.length}</span>}
+        menu={(row) =>
+          folderMenu(
+            folder.id,
+            handlers(ctx, {
+              onNew: (kind) => ctx.startNew(place, kind),
+              onOpen: () => ctx.actions.open({ folder: folder.id }),
+              onRename: row.rename,
+              onIcon: row.openLeading,
+              onDelete: () => ctx.actions.requestDelete({ folder: folder.id }),
+            }),
+          )
+        }
+      />
+      {expanded && (
+        <ul className="tree-list">
+          {folder.tabs.map((tab) => (
+            <TabNode key={tab.id} ctx={ctx} tab={tab} depth={depth + 1} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+function TabNode({ ctx, tab, depth }: { ctx: TreeContext; tab: Tab; depth: number }) {
+  return (
+    <li>
+      <Row
+        depth={depth}
+        kind="tab"
+        name={tab.title}
+        title={`${tab.title}\n${tab.url}`}
+        activateLabel={`Open ${tab.title}`}
+        onActivate={() => ctx.actions.open({ tab: tab.id })}
+        drag={{ kind: 'tab', tab: tab.id }}
+        drop={{ kind: 'before', node: tab.id }}
+        onRename={async (title) => !(await ctx.apply({ type: 'renameTab', tab: tab.id, title }))}
+        leading={(open, setOpen) => (
+          <IconButton ctx={ctx} name={tab.title} kind="tab" target={{ tab: tab.id }} icon={tab.icon} open={open} onOpenChange={setOpen} />
+        )}
+        menu={(row) =>
+          tabMenu(
+            tab.id,
+            handlers(ctx, {
+              onNew: () => undefined,
+              onOpen: () => ctx.actions.open({ tab: tab.id }),
+              onRename: row.rename,
+              onIcon: row.openLeading,
+              onDelete: () => ctx.actions.requestDelete({ tab: tab.id }),
+            }),
+          )
+        }
+      />
+    </li>
+  );
+}
+
+function AddingRow({ ctx, place, depth }: { ctx: TreeContext; place: Place; depth: number }) {
+  const { adding } = ctx;
+  if (!adding || JSON.stringify(adding.place) !== JSON.stringify(place)) return null;
+  const isGroup = adding.kind === 'group';
+  return (
+    <li className="tree-form" style={{ '--depth': depth } as CSSProperties}>
+      <InlineInput
+        label={isGroup ? 'Group name' : 'Folder name'}
+        placeholder={isGroup ? 'In TEST, Reading…' : 'Sprint, Docs…'}
+        onCancel={ctx.stopAdding}
+        onSubmit={async (name) => {
+          const command: Command =
+            isGroup && 'profile' in place
+              ? {
+                  type: 'addGroup',
+                  profile: place.profile,
+                  name,
+                  color: nextGroupColor(ctx.snapshot.workspace),
+                }
+              : { type: 'addFolder', place, name };
+          const failure = await ctx.apply(command);
+          if (!failure) ctx.stopAdding();
+          return !failure;
         }}
       />
     </li>
   );
 }
 
-interface CreateMenuProps {
-  profile: Profile;
-  hasGroups: boolean;
-  onGroup: () => void;
-  onCreate: (kind: CreateKind) => void;
+interface IconButtonProps {
+  ctx: TreeContext;
+  name: string;
+  kind: ItemKind;
+  target: Parameters<ItemActions['setIcon']>[0];
+  icon: Group['icon'];
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
-/** "+" next to a profile: create a group, folder or tab inside it. */
-function CreateMenu({ profile, hasGroups, onGroup, onCreate }: CreateMenuProps) {
+function IconButton({ ctx, name, kind, target, icon, open, onOpenChange }: IconButtonProps) {
   return (
-    <Menu.Root modal={false}>
-      <Menu.Trigger asChild>
-        <button type="button" className="icon-button profile__add" aria-label={`Create in ${profile.name}`}>
-          <Plus className="icon" aria-hidden="true" />
-        </button>
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Content className="menu" align="start" sideOffset={4} onCloseAutoFocus={(event) => event.preventDefault()}>
-          <Menu.Label className="menu__label">Create in {profile.name}</Menu.Label>
-          <Menu.Item className="menu__item" onSelect={onGroup}>
-            <SquarePlus className="icon" aria-hidden="true" />
-            New group
-          </Menu.Item>
-          {hasGroups && (
-            <>
-              <Menu.Item className="menu__item" onSelect={() => onCreate('folder')}>
-                <FolderPlus className="icon" aria-hidden="true" />
-                New folder…
-              </Menu.Item>
-              <Menu.Item className="menu__item" onSelect={() => onCreate('tab')}>
-                <Globe className="icon" aria-hidden="true" />
-                New tab…
-              </Menu.Item>
-            </>
-          )}
-        </Menu.Content>
-      </Menu.Portal>
-    </Menu.Root>
+    <IconPicker
+      name={name}
+      icon={icon}
+      open={open}
+      onOpenChange={onOpenChange}
+      onChange={(next) => ctx.actions.setIcon(target, next)}
+    >
+      <button type="button" className="tree-row__icon" aria-label={`Icon of ${name}`}>
+        <ItemIcon icon={icon} kind={kind} />
+      </button>
+    </IconPicker>
   );
 }
 
-interface ProfileMenuProps {
-  profile: Profile;
-  canDelete: boolean;
-  onRename: () => void;
-  onColor: () => void;
-  onConfigure: () => void;
-  onDelete: () => void;
+/** What a row's menu can ask the row to do. */
+interface RowControls {
+  rename: () => void;
+  /** Opens the icon (or color) picker on the row's leading button. */
+  openLeading: () => void;
 }
 
-/** "⋯" next to a profile: rename, recolor, configure or delete it. */
-function ProfileMenu({ profile, canDelete, onRename, onColor, onConfigure, onDelete }: ProfileMenuProps) {
+interface RowProps {
+  depth: number;
+  kind: 'profile' | ItemKind;
+  name: string;
+  title?: string;
+  /** Leaf rows (tabs) have no chevron. */
+  expanded?: boolean;
+  onToggle?: () => void;
+  current?: boolean;
+  onActivate: () => void;
+  activateLabel?: string;
+  drag: DragItem;
+  drop: DropSpec;
+  onRename: (name: string) => Promise<boolean>;
+  leading: (open: boolean, setOpen: (open: boolean) => void) => ReactNode;
+  trailing?: ReactNode;
+  menu: (row: RowControls) => MenuEntry[];
+}
+
+function Row(props: RowProps) {
+  const { depth, kind, name, expanded, onToggle, current = false, onActivate, onRename, menu } = props;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [leadingOpen, setLeadingOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const drag = useDrag(props.drag);
+  const drop = useDrop(props.drop);
+  const controls: RowControls = { rename: () => setRenaming(true), openLeading: () => setLeadingOpen(true) };
+
   return (
-    <Menu.Root modal={false}>
-      <Menu.Trigger asChild>
-        <button type="button" className="icon-button profile__more" aria-label={`Options for profile ${profile.name}`}>
-          <MoreHorizontal className="icon" aria-hidden="true" />
-        </button>
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Content className="menu" align="start" sideOffset={4} onCloseAutoFocus={(event) => event.preventDefault()}>
-          <Menu.Item className="menu__item" onSelect={onRename}>
-            <Pencil className="icon" aria-hidden="true" />
-            Rename
-          </Menu.Item>
-          <Menu.Item className="menu__item" onSelect={onColor}>
-            <Palette className="icon" aria-hidden="true" />
-            Change color…
-          </Menu.Item>
-          <Menu.Item className="menu__item" onSelect={onConfigure}>
-            <Settings className="icon" aria-hidden="true" />
-            Configure profile
-          </Menu.Item>
-          {canDelete && (
-            <>
-              <Menu.Separator className="separator" />
-              <Menu.Item className="menu__item menu__item--danger" onSelect={onDelete}>
-                <Trash2 className="icon" aria-hidden="true" />
-                Delete…
-              </Menu.Item>
-            </>
-          )}
-        </Menu.Content>
-      </Menu.Portal>
-    </Menu.Root>
-  );
-}
-
-interface GroupItemProps {
-  group: Group;
-  current: boolean;
-  onSelect: (group: string) => void;
-}
-
-/** A sidebar group: drag to reorder or to another profile; tabs drop on it. */
-function GroupItem({ group, current, onSelect }: GroupItemProps) {
-  const drag = useDrag({ kind: 'group', group: group.id });
-  const drop = useDrop({ kind: 'group', group: group.id });
-  return (
-    <button
-      type="button"
-      className="sidebar__item profile__group"
-      data-color={group.color}
-      aria-current={current ? 'page' : undefined}
-      onClick={() => onSelect(group.id)}
-      {...drag}
+    <div
+      className="tree-row"
+      data-kind={kind}
+      data-current={current || undefined}
+      style={{ '--depth': depth } as CSSProperties}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        setMenuOpen(true);
+      }}
+      {...(renaming ? {} : drag)}
       {...drop}
     >
-      <span className="square" />
-      <span className="sidebar__name">{group.name}</span>
-    </button>
+      {expanded === undefined ? (
+        <span className="tree-row__chevron" aria-hidden="true" />
+      ) : (
+        <button
+          type="button"
+          className="tree-row__chevron"
+          aria-expanded={expanded}
+          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`}
+          onClick={onToggle}
+        >
+          {expanded ? <ChevronDown className="icon" aria-hidden="true" /> : <ChevronRight className="icon" aria-hidden="true" />}
+        </button>
+      )}
+      {props.leading(leadingOpen, setLeadingOpen)}
+      {renaming ? (
+        <div className="tree-row__rename">
+          <InlineInput
+            label="New name"
+            initial={name}
+            onCancel={() => setRenaming(false)}
+            onSubmit={async (next) => {
+              const saved = await onRename(next);
+              if (saved) setRenaming(false);
+              return saved;
+            }}
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="tree-row__name"
+          title={props.title ?? name}
+          aria-current={current ? 'page' : undefined}
+          aria-label={props.activateLabel}
+          onClick={onActivate}
+        >
+          {name}
+        </button>
+      )}
+      {props.trailing}
+      <ActionMenu
+        label={`Options for ${name}`}
+        entries={menu(controls)}
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        className="tree-row__more"
+      />
+    </div>
   );
 }
 
-function readCollapsed(): string[] {
-  try {
-    const saved: unknown = JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '[]');
-    return Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveCollapsed(ids: string[]) {
-  try {
-    localStorage.setItem(COLLAPSED_KEY, JSON.stringify(ids));
-  } catch {
-    // Storage can be unavailable; folding then resets on restart.
-  }
-}

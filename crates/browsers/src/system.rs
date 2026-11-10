@@ -13,35 +13,6 @@ pub use self::linux::System;
 pub use self::mac::System;
 use crate::{BrowserError, Result};
 
-/// Reads the profile list of `browser`. A missing or unreadable file means
-/// no profiles to choose from, never an error that blocks opening tabs.
-fn read_profiles(
-    browser: &crate::BrowserInfo,
-    platform: crate::Platform,
-    home: &std::path::Path,
-) -> Vec<crate::profiles::BrowserProfile> {
-    use crate::profiles::{ProfilesFile, chromium_profiles, firefox_profiles, profiles_file};
-    let Some(file) = profiles_file(&browser.id, platform, home) else {
-        return Vec::new();
-    };
-    let (path, parse): (_, fn(&str) -> Vec<_>) = match &file {
-        ProfilesFile::LocalState(path) => (path, chromium_profiles),
-        ProfilesFile::ProfilesIni(path) => (path, firefox_profiles),
-    };
-    match std::fs::read_to_string(path) {
-        Ok(text) => parse(&text),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-        Err(error) => {
-            tracing::warn!(
-                path = %path.display(),
-                error = &error as &dyn std::error::Error,
-                "could not read browser profiles"
-            );
-            Vec::new()
-        }
-    }
-}
-
 /// Runs a program, waits for it and fails on a non-zero exit.
 fn run(program: &str, args: &[String]) -> Result<Output> {
     let output = Command::new(program)
@@ -71,16 +42,12 @@ mod mac {
     use plist::Value;
     use tabstage_core::{BrowserId, TabUrl};
 
-    use super::read_profiles;
     use super::run;
     use crate::macos::{
         ScriptFocuser, ScriptRunner, browser_from_info_plist, default_from_launch_services,
         open_command,
     };
-    use crate::profiles::{BrowserProfile, launch_flags};
-    use crate::{
-        BrowserInfo, Catalog, Focus, LaunchOptions, Launcher, Platform, Result, TabFocuser,
-    };
+    use crate::{BrowserInfo, Catalog, Focus, Launcher, Result, TabFocuser};
 
     /// macOS: apps in the Applications folders, `open -b` and AppleScript.
     #[derive(Debug, Default, Clone, Copy)]
@@ -147,22 +114,11 @@ mod mac {
                 }
             }
         }
-
-        fn profiles(&self, browser: &BrowserInfo) -> Result<Vec<BrowserProfile>> {
-            Ok(home().map_or_else(Vec::new, |home| {
-                read_profiles(browser, Platform::MacOs, &home)
-            }))
-        }
     }
 
     impl Launcher for System {
-        fn open(&self, browser: &BrowserInfo, url: &TabUrl, options: &LaunchOptions) -> Result<()> {
-            let flags = launch_flags(
-                browser.kind,
-                options.browser_profile.as_deref(),
-                options.new_window,
-            );
-            let (program, args) = open_command(&browser.id, url, &flags);
+        fn open(&self, browser: &BrowserInfo, url: &TabUrl) -> Result<()> {
+            let (program, args) = open_command(&browser.id, url);
             run(program, &args).map(drop)
         }
     }
@@ -194,13 +150,9 @@ mod linux {
 
     use tabstage_core::{BrowserId, TabUrl};
 
-    use super::{read_profiles, run};
+    use super::run;
     use crate::linux::{catalog, exec_args};
-    use crate::profiles::{BrowserProfile, launch_flags};
-    use crate::{
-        BrowserError, BrowserInfo, Catalog, Focus, Launch, LaunchOptions, Launcher, Platform,
-        Result, TabFocuser,
-    };
+    use crate::{BrowserError, BrowserInfo, Catalog, Focus, Launch, Launcher, Result, TabFocuser};
 
     /// Linux: XDG desktop entries, `xdg-settings` and the entry's `Exec` line.
     #[derive(Debug, Default, Clone, Copy)]
@@ -261,26 +213,14 @@ mod linux {
                 }
             }
         }
-
-        fn profiles(&self, browser: &BrowserInfo) -> Result<Vec<BrowserProfile>> {
-            let home = env::var_os("HOME").map(std::path::PathBuf::from);
-            Ok(home.map_or_else(Vec::new, |home| {
-                read_profiles(browser, Platform::Linux, &home)
-            }))
-        }
     }
 
     impl Launcher for System {
-        fn open(&self, browser: &BrowserInfo, url: &TabUrl, options: &LaunchOptions) -> Result<()> {
+        fn open(&self, browser: &BrowserInfo, url: &TabUrl) -> Result<()> {
             let Launch::DesktopExec(exec) = &browser.launch else {
                 return Err(BrowserError::BadExec(browser.id.to_string()));
             };
-            let flags = launch_flags(
-                browser.kind,
-                options.browser_profile.as_deref(),
-                options.new_window,
-            );
-            let args = exec_args(exec, url.as_str(), &flags)?;
+            let args = exec_args(exec, url.as_str())?;
             let (program, rest) = args
                 .split_first()
                 .ok_or_else(|| BrowserError::BadExec(exec.clone()))?;

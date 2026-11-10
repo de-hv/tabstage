@@ -1,18 +1,20 @@
-//! The workspace: groups that hold tabs and folders of tabs.
+//! The workspace: profiles that hold groups, folders and tabs.
 //!
-//! Order is the position in each `Vec`, so there are no order fields that
-//! can get out of sync. Every change goes through a [`Workspace`] method
-//! that checks its references and returns a [`WorkspaceError`] instead of
-//! panicking.
+//! The hierarchy is fixed: a profile holds groups, folders and tabs; a group
+//! holds folders and tabs; a folder holds tabs. Order is the position in
+//! each `Vec`, so there are no order fields that can get out of sync. Every
+//! change goes through a [`Workspace`] method that checks its references and
+//! returns a [`WorkspaceError`] instead of panicking.
 
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::color::AccentColor;
+use crate::icon::Icon;
 use crate::ids::{FolderId, GroupId, ProfileId, TabId};
 use crate::profile::{DEFAULT_PROFILE_NAME, Profile, ProfileColor};
-use crate::status::{AccentColor, Status, StatusId, default_statuses};
 use crate::url::TabUrl;
 
 /// A saved link.
@@ -24,21 +26,21 @@ pub struct Tab {
     pub url: TabUrl,
     /// Title shown in the UI.
     pub title: String,
-    /// Own status. A folder's status takes precedence over it.
+    /// Custom icon; the UI shows the default tab icon without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<StatusId>,
+    pub icon: Option<Icon>,
 }
 
-/// A named folder of tabs inside a group. Folders do not nest.
+/// A named folder of tabs. Folders do not nest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Folder {
     /// Stable id.
     pub id: FolderId,
     /// Name shown in the UI.
     pub name: String,
-    /// Status that applies to every tab in the folder.
+    /// Custom icon; the UI shows the default folder icon without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<StatusId>,
+    pub icon: Option<Icon>,
     /// Whether the folder is shown collapsed.
     #[serde(default)]
     pub collapsed: bool,
@@ -57,7 +59,7 @@ pub enum Node {
     Folder(Folder),
 }
 
-/// A group of tabs and folders. It opens with its profile's browser.
+/// A group of tabs and folders, such as "In TEST".
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Group {
     /// Stable id.
@@ -66,47 +68,80 @@ pub struct Group {
     pub name: String,
     /// Accent color.
     pub color: AccentColor,
-    /// Profile the group belongs to and opens with.
-    pub profile: ProfileId,
+    /// Custom icon; the UI shows the default group icon without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<Icon>,
     /// Tabs and folders in display order.
     #[serde(default)]
     pub children: Vec<Node>,
 }
 
-/// Where a tab lives.
+/// A direct child of a profile.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum Item {
+    /// A group.
+    Group(Group),
+    /// A folder outside any group.
+    Folder(Folder),
+    /// A tab outside any group or folder.
+    Tab(Tab),
+}
+
+/// Something that holds tabs, and except for a folder, folders too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Place {
+    /// Directly inside a profile.
+    Profile(ProfileId),
     /// Directly inside a group.
     Group(GroupId),
     /// Inside a folder.
     Folder(FolderId),
 }
 
-/// Something a status can be set on.
+/// A group, folder or tab, for changes that apply to any of them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Target {
+    /// A group.
+    Group(GroupId),
+    /// A folder.
+    Folder(FolderId),
     /// A tab.
     Tab(TabId),
-    /// A folder, and through it all of its tabs.
-    Folder(FolderId),
 }
 
-/// A tab together with the group and folder that contain it.
+/// A tab together with what contains it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TabRef<'a> {
-    /// The group the tab belongs to.
-    pub group: &'a Group,
+    /// The profile the tab belongs to.
+    pub profile: &'a Profile,
+    /// The group the tab is in, if any.
+    pub group: Option<&'a Group>,
     /// The folder the tab is in, if any.
     pub folder: Option<&'a Folder>,
     /// The tab.
     pub tab: &'a Tab,
 }
 
+/// A folder together with what contains it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FolderRef<'a> {
+    /// The profile the folder belongs to.
+    pub profile: &'a Profile,
+    /// The group the folder is in, if any.
+    pub group: Option<&'a Group>,
+    /// The folder.
+    pub folder: &'a Folder,
+}
+
 /// Errors returned by [`Workspace`] changes.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum WorkspaceError {
+    /// No profile has this id.
+    #[error("profile {0} not found")]
+    ProfileNotFound(ProfileId),
     /// No group has this id.
     #[error("group {0} not found")]
     GroupNotFound(GroupId),
@@ -116,25 +151,16 @@ pub enum WorkspaceError {
     /// No tab has this id.
     #[error("tab {0} not found")]
     TabNotFound(TabId),
-    /// No status has this id.
-    #[error("status `{0}` not found")]
-    StatusNotFound(StatusId),
     /// A name was empty or only whitespace.
     #[error("name is empty")]
     EmptyName,
-    /// A status cannot be replaced by itself when it is removed.
-    #[error("a status cannot be replaced by itself")]
-    SameStatus,
-    /// Two statuses share the same id.
-    #[error("status `{0}` is defined more than once")]
-    DuplicateStatus(StatusId),
-    /// Two groups, folders or tabs share the same id.
+    /// A folder was put inside a folder; folders do not nest.
+    #[error("a folder cannot go inside another folder")]
+    NestedFolder,
+    /// Two profiles, groups, folders or tabs share the same id.
     #[error("id {0} is used more than once")]
     DuplicateId(String),
-    /// No profile has this id.
-    #[error("profile {0} not found")]
-    ProfileNotFound(ProfileId),
-    /// A profile cannot take over its own groups when it is removed.
+    /// A profile cannot take over its own items when it is removed.
     #[error("a profile cannot be replaced by itself")]
     SameProfile,
     /// A workspace must have at least one profile.
@@ -145,12 +171,10 @@ pub enum WorkspaceError {
 /// Result type for workspace changes.
 pub type Result<T> = std::result::Result<T, WorkspaceError>;
 
-/// All groups and statuses of a user.
+/// Everything a user keeps: profiles and their contents.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Workspace {
-    statuses: Vec<Status>,
     profiles: Vec<Profile>,
-    groups: Vec<Group>,
 }
 
 impl Default for Workspace {
@@ -160,19 +184,27 @@ impl Default for Workspace {
 }
 
 impl Workspace {
-    /// An empty workspace with the default statuses and one profile.
+    /// A workspace with one empty profile.
     #[must_use]
     pub fn new() -> Self {
         Self {
-            statuses: default_statuses(),
             profiles: vec![Profile {
                 id: ProfileId::new(),
                 name: DEFAULT_PROFILE_NAME.to_owned(),
                 color: ProfileColor::default(),
+                items: Vec::new(),
             }],
-            groups: Vec::new(),
         }
     }
+
+    /// A workspace with these profiles. Call [`Workspace::validate`] before
+    /// trusting it.
+    #[must_use]
+    pub fn from_profiles(profiles: Vec<Profile>) -> Self {
+        Self { profiles }
+    }
+
+    // ---- profiles -------------------------------------------------------
 
     /// Profiles in display order. There is always at least one.
     #[must_use]
@@ -186,7 +218,8 @@ impl Workspace {
         self.profiles.iter().find(|profile| profile.id == id)
     }
 
-    /// Adds a profile at the end.
+    /// Adds an empty profile at the end, with a color no other profile uses
+    /// when one is left.
     ///
     /// # Errors
     ///
@@ -195,7 +228,12 @@ impl Workspace {
         let name = clean_name(name)?;
         let id = ProfileId::new();
         let color = ProfileColor::next_after(self.profiles.iter().map(|profile| profile.color));
-        self.profiles.push(Profile { id, name, color });
+        self.profiles.push(Profile {
+            id,
+            name,
+            color,
+            items: Vec::new(),
+        });
         Ok(id)
     }
 
@@ -233,76 +271,62 @@ impl Workspace {
         Ok(())
     }
 
-    /// Removes a profile and moves its groups to `move_groups_to`.
+    /// Removes a profile and appends its items to `move_items_to`.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::ProfileNotFound`] for either id,
-    /// or [`WorkspaceError::SameProfile`] when both ids are equal. Together
+    /// [`WorkspaceError::ProfileNotFound`] for either id, or
+    /// [`WorkspaceError::SameProfile`] when both ids are equal. Together
     /// these keep at least one profile.
-    pub fn remove_profile(&mut self, id: ProfileId, move_groups_to: ProfileId) -> Result<Profile> {
+    pub fn remove_profile(&mut self, id: ProfileId, move_items_to: ProfileId) -> Result<Profile> {
         let index = self.profile_index(id)?;
         // The target must be another existing profile, so the last profile
         // can never be removed.
-        if id == move_groups_to {
+        if id == move_items_to {
             return Err(WorkspaceError::SameProfile);
         }
-        self.profile_index(move_groups_to)?;
-        for group in self.groups.iter_mut().filter(|group| group.profile == id) {
-            group.profile = move_groups_to;
-        }
-        Ok(self.profiles.remove(index))
+        self.profile_index(move_items_to)?;
+        let mut removed = self.profiles.remove(index);
+        let items = std::mem::take(&mut removed.items);
+        self.profile_mut(move_items_to)?.items.extend(items);
+        Ok(removed)
     }
 
-    /// Moves a group to another profile.
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::GroupNotFound`] or [`WorkspaceError::ProfileNotFound`].
-    pub fn set_group_profile(&mut self, id: GroupId, profile: ProfileId) -> Result<()> {
-        self.profile_index(profile)?;
-        self.group_mut(id)?.profile = profile;
-        Ok(())
-    }
+    // ---- groups ---------------------------------------------------------
 
-    fn profile_index(&self, id: ProfileId) -> Result<usize> {
+    /// Every group, profile by profile, in display order.
+    pub fn groups(&self) -> impl Iterator<Item = &Group> {
         self.profiles
             .iter()
-            .position(|profile| profile.id == id)
-            .ok_or(WorkspaceError::ProfileNotFound(id))
-    }
-
-    fn profile_mut(&mut self, id: ProfileId) -> Result<&mut Profile> {
-        self.profiles
-            .iter_mut()
-            .find(|profile| profile.id == id)
-            .ok_or(WorkspaceError::ProfileNotFound(id))
-    }
-
-    /// Groups in display order.
-    #[must_use]
-    pub fn groups(&self) -> &[Group] {
-        &self.groups
-    }
-
-    /// Statuses in display order.
-    #[must_use]
-    pub fn statuses(&self) -> &[Status] {
-        &self.statuses
+            .flat_map(|profile| &profile.items)
+            .filter_map(|item| match item {
+                Item::Group(group) => Some(group),
+                Item::Folder(_) | Item::Tab(_) => None,
+            })
     }
 
     /// The group with this id.
     #[must_use]
     pub fn group(&self, id: GroupId) -> Option<&Group> {
-        self.groups.iter().find(|group| group.id == id)
+        self.groups().find(|group| group.id == id)
     }
 
-    /// Adds a group at the end, in `profile`.
+    /// The profile that holds this group.
+    #[must_use]
+    pub fn group_profile(&self, id: GroupId) -> Option<&Profile> {
+        self.profiles.iter().find(|profile| {
+            profile
+                .items
+                .iter()
+                .any(|item| matches!(item, Item::Group(group) if group.id == id))
+        })
+    }
+
+    /// Adds an empty group at the end of `profile`.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::EmptyName`] when `name` is blank or
-    /// [`WorkspaceError::ProfileNotFound`].
+    /// [`WorkspaceError::EmptyName`] or [`WorkspaceError::ProfileNotFound`].
     pub fn add_group(
         &mut self,
         profile: ProfileId,
@@ -310,15 +334,14 @@ impl Workspace {
         color: AccentColor,
     ) -> Result<GroupId> {
         let name = clean_name(name)?;
-        self.profile_index(profile)?;
         let id = GroupId::new();
-        self.groups.push(Group {
+        self.profile_mut(profile)?.items.push(Item::Group(Group {
             id,
             name,
             color,
-            profile,
+            icon: None,
             children: Vec::new(),
-        });
+        }));
         Ok(id)
     }
 
@@ -333,16 +356,17 @@ impl Workspace {
         Ok(())
     }
 
-    /// Moves a group to `index`, clamped to the end of the list.
+    /// Moves a group to `index` among the items of `profile`, clamped to the
+    /// end. Works across profiles. Nothing changes when `profile` is unknown.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::GroupNotFound`].
-    pub fn move_group(&mut self, id: GroupId, index: usize) -> Result<()> {
-        let from = self.group_index(id)?;
-        let group = self.groups.remove(from);
-        let to = index.min(self.groups.len());
-        self.groups.insert(to, group);
+    /// [`WorkspaceError::GroupNotFound`] or [`WorkspaceError::ProfileNotFound`].
+    pub fn move_group(&mut self, id: GroupId, profile: ProfileId, index: usize) -> Result<()> {
+        self.profile_index(profile)?;
+        let group = self.take_group(id)?;
+        let items = &mut self.profile_mut(profile)?.items;
+        items.insert(index.min(items.len()), Item::Group(group));
         Ok(())
     }
 
@@ -352,25 +376,51 @@ impl Workspace {
     ///
     /// [`WorkspaceError::GroupNotFound`].
     pub fn remove_group(&mut self, id: GroupId) -> Result<Group> {
-        let index = self.group_index(id)?;
-        Ok(self.groups.remove(index))
+        self.take_group(id)
     }
 
-    /// Adds an empty folder at the end of a group.
+    // ---- folders --------------------------------------------------------
+
+    /// Finds a folder with its profile and group.
+    #[must_use]
+    pub fn find_folder(&self, id: FolderId) -> Option<FolderRef<'_>> {
+        self.profiles.iter().find_map(|profile| {
+            profile.items.iter().find_map(|item| match item {
+                Item::Folder(folder) if folder.id == id => Some(FolderRef {
+                    profile,
+                    group: None,
+                    folder,
+                }),
+                Item::Group(group) => group.children.iter().find_map(|node| match node {
+                    Node::Folder(folder) if folder.id == id => Some(FolderRef {
+                        profile,
+                        group: Some(group),
+                        folder,
+                    }),
+                    _ => None,
+                }),
+                Item::Folder(_) | Item::Tab(_) => None,
+            })
+        })
+    }
+
+    /// Adds an empty folder at the end of a profile or group.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::EmptyName`] or [`WorkspaceError::GroupNotFound`].
-    pub fn add_folder(&mut self, group: GroupId, name: &str) -> Result<FolderId> {
+    /// [`WorkspaceError::EmptyName`], [`WorkspaceError::NestedFolder`] for a
+    /// folder place, or the not-found error of `place`.
+    pub fn add_folder(&mut self, place: Place, name: &str) -> Result<FolderId> {
         let name = clean_name(name)?;
         let id = FolderId::new();
-        self.group_mut(group)?.children.push(Node::Folder(Folder {
+        let folder = Folder {
             id,
             name,
-            status: None,
+            icon: None,
             collapsed: false,
             tabs: Vec::new(),
-        }));
+        };
+        self.insert_folder(place, usize::MAX, folder)?;
         Ok(id)
     }
 
@@ -395,18 +445,20 @@ impl Workspace {
         Ok(())
     }
 
-    /// Moves a folder to `index` among the children of `group`, clamped to
-    /// the end. Works across groups. Nothing changes when `group` is unknown.
+    /// Moves a folder to `index` within a profile or group, clamped to the
+    /// end. Nothing changes when `place` is unknown or a folder.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::FolderNotFound`] or [`WorkspaceError::GroupNotFound`].
-    pub fn move_folder(&mut self, id: FolderId, group: GroupId, index: usize) -> Result<()> {
-        self.group_index(group)?;
-        let folder = self.remove_folder(id)?;
-        let children = &mut self.group_mut(group)?.children;
-        children.insert(index.min(children.len()), Node::Folder(folder));
-        Ok(())
+    /// [`WorkspaceError::FolderNotFound`], [`WorkspaceError::NestedFolder`]
+    /// or the not-found error of `place`.
+    pub fn move_folder(&mut self, id: FolderId, place: Place, index: usize) -> Result<()> {
+        if matches!(place, Place::Folder(_)) {
+            return Err(WorkspaceError::NestedFolder);
+        }
+        self.ensure_place(place)?;
+        let folder = self.take_folder(id)?;
+        self.insert_folder(place, index, folder)
     }
 
     /// Removes a folder together with its tabs.
@@ -415,25 +467,58 @@ impl Workspace {
     ///
     /// [`WorkspaceError::FolderNotFound`].
     pub fn remove_folder(&mut self, id: FolderId) -> Result<Folder> {
-        for group in &mut self.groups {
-            let found = group
-                .children
-                .iter()
-                .position(|node| matches!(node, Node::Folder(folder) if folder.id == id));
-            if let Some(index) = found
-                && let Node::Folder(folder) = group.children.remove(index)
-            {
-                return Ok(folder);
+        self.take_folder(id)
+    }
+
+    // ---- tabs -----------------------------------------------------------
+
+    /// Every tab with what contains it, in display order.
+    #[must_use]
+    pub fn tabs(&self) -> Vec<TabRef<'_>> {
+        let mut found = Vec::new();
+        for profile in &self.profiles {
+            let at = |group, folder, tab| TabRef {
+                profile,
+                group,
+                folder,
+                tab,
+            };
+            for item in &profile.items {
+                match item {
+                    Item::Tab(tab) => found.push(at(None, None, tab)),
+                    Item::Folder(folder) => {
+                        found.extend(folder.tabs.iter().map(|tab| at(None, Some(folder), tab)));
+                    }
+                    Item::Group(group) => {
+                        for node in &group.children {
+                            match node {
+                                Node::Tab(tab) => found.push(at(Some(group), None, tab)),
+                                Node::Folder(folder) => found.extend(
+                                    folder
+                                        .tabs
+                                        .iter()
+                                        .map(|tab| at(Some(group), Some(folder), tab)),
+                                ),
+                            }
+                        }
+                    }
+                }
             }
         }
-        Err(WorkspaceError::FolderNotFound(id))
+        found
+    }
+
+    /// Finds a tab with its profile, group and folder.
+    #[must_use]
+    pub fn find_tab(&self, id: TabId) -> Option<TabRef<'_>> {
+        self.tabs().into_iter().find(|found| found.tab.id == id)
     }
 
     /// Adds a tab at the end of `place`. A blank title falls back to the URL.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::GroupNotFound`] or [`WorkspaceError::FolderNotFound`].
+    /// The not-found error of `place`.
     pub fn add_tab(&mut self, place: Place, url: TabUrl, title: &str) -> Result<TabId> {
         let title = tab_title(title, &url);
         let id = TabId::new();
@@ -441,7 +526,7 @@ impl Workspace {
             id,
             url,
             title,
-            status: None,
+            icon: None,
         };
         self.insert_tab(place, usize::MAX, tab)?;
         Ok(id)
@@ -468,92 +553,42 @@ impl Workspace {
     }
 
     /// Moves a tab to `index` within `place`, clamped to the end. Works
-    /// across folders and groups. Nothing changes when `place` is unknown.
+    /// across profiles, groups and folders. Nothing changes when `place` is
+    /// unknown.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::TabNotFound`], [`WorkspaceError::GroupNotFound`] or
-    /// [`WorkspaceError::FolderNotFound`].
+    /// [`WorkspaceError::TabNotFound`] or the not-found error of `place`.
     pub fn move_tab(&mut self, id: TabId, place: Place, index: usize) -> Result<()> {
         self.ensure_place(place)?;
         let tab = self.take_tab(id).ok_or(WorkspaceError::TabNotFound(id))?;
         self.insert_tab(place, index, tab)
     }
 
-    /// Finds a tab with its group and folder.
-    #[must_use]
-    pub fn find_tab(&self, id: TabId) -> Option<TabRef<'_>> {
-        self.groups.iter().find_map(|group| {
-            group.children.iter().find_map(|node| match node {
-                Node::Tab(tab) if tab.id == id => Some(TabRef {
-                    group,
-                    folder: None,
-                    tab,
-                }),
-                Node::Tab(_) => None,
-                Node::Folder(folder) => {
-                    folder
-                        .tabs
-                        .iter()
-                        .find(|tab| tab.id == id)
-                        .map(|tab| TabRef {
-                            group,
-                            folder: Some(folder),
-                            tab,
-                        })
-                }
-            })
-        })
-    }
+    // ---- any item -------------------------------------------------------
 
-    /// Sets or clears the status of a tab or folder.
+    /// Sets or clears the custom icon of a group, folder or tab.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::StatusNotFound`], [`WorkspaceError::TabNotFound`] or
-    /// [`WorkspaceError::FolderNotFound`].
-    pub fn set_status(&mut self, target: Target, status: Option<StatusId>) -> Result<()> {
-        if let Some(status) = &status {
-            self.ensure_status(status)?;
-        }
+    /// The not-found error of `target`.
+    pub fn set_icon(&mut self, target: Target, icon: Option<Icon>) -> Result<()> {
         match target {
-            Target::Tab(id) => self.tab_mut(id)?.status = status,
-            Target::Folder(id) => self.folder_mut(id)?.status = status,
+            Target::Group(id) => self.group_mut(id)?.icon = icon,
+            Target::Folder(id) => self.folder_mut(id)?.icon = icon,
+            Target::Tab(id) => self.tab_mut(id)?.icon = icon,
         }
         Ok(())
     }
 
-    /// The status a tab shows: its folder's status when set, else its own.
+    /// Checks the invariants a deserialized workspace must hold: at least
+    /// one profile and unique ids.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::TabNotFound`].
-    pub fn effective_status(&self, id: TabId) -> Result<Option<&StatusId>> {
-        let found = self.find_tab(id).ok_or(WorkspaceError::TabNotFound(id))?;
-        let folder_status = found.folder.and_then(|folder| folder.status.as_ref());
-        Ok(folder_status.or(found.tab.status.as_ref()))
-    }
-
-    /// Checks the invariants a deserialized workspace must hold: unique ids
-    /// and statuses that exist.
-    ///
-    /// # Errors
-    ///
-    /// The first [`WorkspaceError::DuplicateStatus`],
-    /// [`WorkspaceError::DuplicateId`] or [`WorkspaceError::StatusNotFound`]
-    /// found.
+    /// [`WorkspaceError::NoProfiles`] or the first
+    /// [`WorkspaceError::DuplicateId`] found.
     pub fn validate(&self) -> Result<()> {
-        let mut status_ids = HashSet::with_capacity(self.statuses.len());
-        for status in &self.statuses {
-            if !status_ids.insert(&status.id) {
-                return Err(WorkspaceError::DuplicateStatus(status.id.clone()));
-            }
-        }
-        let check_status = |slot: &Option<StatusId>| match slot {
-            Some(id) if !status_ids.contains(id) => Err(WorkspaceError::StatusNotFound(id.clone())),
-            _ => Ok(()),
-        };
-
         if self.profiles.is_empty() {
             return Err(WorkspaceError::NoProfiles);
         }
@@ -565,26 +600,26 @@ impl Workspace {
                 Err(WorkspaceError::DuplicateId(id))
             }
         };
+        let folder = |folder: &Folder, unique: &mut dyn FnMut(String) -> Result<()>| {
+            unique(folder.id.to_string())?;
+            folder
+                .tabs
+                .iter()
+                .try_for_each(|tab| unique(tab.id.to_string()))
+        };
         for profile in &self.profiles {
             unique(profile.id.to_string())?;
-        }
-        for group in &self.groups {
-            unique(group.id.to_string())?;
-            if self.profile(group.profile).is_none() {
-                return Err(WorkspaceError::ProfileNotFound(group.profile));
-            }
-            for node in &group.children {
-                match node {
-                    Node::Tab(tab) => {
-                        unique(tab.id.to_string())?;
-                        check_status(&tab.status)?;
-                    }
-                    Node::Folder(folder) => {
-                        unique(folder.id.to_string())?;
-                        check_status(&folder.status)?;
-                        for tab in &folder.tabs {
-                            unique(tab.id.to_string())?;
-                            check_status(&tab.status)?;
+            for item in &profile.items {
+                match item {
+                    Item::Tab(tab) => unique(tab.id.to_string())?,
+                    Item::Folder(found) => folder(found, &mut unique)?,
+                    Item::Group(group) => {
+                        unique(group.id.to_string())?;
+                        for node in &group.children {
+                            match node {
+                                Node::Tab(tab) => unique(tab.id.to_string())?,
+                                Node::Folder(found) => folder(found, &mut unique)?,
+                            }
                         }
                     }
                 }
@@ -593,196 +628,148 @@ impl Workspace {
         Ok(())
     }
 
-    /// Adds a status at the end. Its id is derived from the label and made
-    /// unique (`blocked`, `blocked-2`…).
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::EmptyName`] when `label` is blank.
-    pub fn add_status(&mut self, label: &str, color: AccentColor) -> Result<StatusId> {
-        let label = clean_name(label)?;
-        let base = slug(&label);
-        let id = (1..)
-            .map(|n| {
-                if n == 1 {
-                    base.clone()
-                } else {
-                    format!("{base}-{n}")
-                }
-            })
-            .find(|candidate| {
-                self.statuses
-                    .iter()
-                    .all(|status| status.id.as_str() != candidate)
-            })
-            .and_then(|candidate| StatusId::parse(&candidate).ok())
-            .ok_or(WorkspaceError::EmptyName)?;
-        self.statuses.push(Status {
-            id: id.clone(),
-            label,
-            color,
-        });
-        Ok(id)
-    }
+    // ---- internals ------------------------------------------------------
 
-    /// Renames a status. Its id stays the same.
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::EmptyName`] or [`WorkspaceError::StatusNotFound`].
-    pub fn rename_status(&mut self, id: &StatusId, label: &str) -> Result<()> {
-        let label = clean_name(label)?;
-        self.status_mut(id)?.label = label;
-        Ok(())
-    }
-
-    /// Changes the color of a status.
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::StatusNotFound`].
-    pub fn set_status_color(&mut self, id: &StatusId, color: AccentColor) -> Result<()> {
-        self.status_mut(id)?.color = color;
-        Ok(())
-    }
-
-    /// Moves a status to `index`, clamped to the end.
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::StatusNotFound`].
-    pub fn move_status(&mut self, id: &StatusId, index: usize) -> Result<()> {
-        let from = self
-            .statuses
+    fn profile_index(&self, id: ProfileId) -> Result<usize> {
+        self.profiles
             .iter()
-            .position(|status| &status.id == id)
-            .ok_or_else(|| WorkspaceError::StatusNotFound(id.clone()))?;
-        let status = self.statuses.remove(from);
-        let to = index.min(self.statuses.len());
-        self.statuses.insert(to, status);
-        Ok(())
+            .position(|profile| profile.id == id)
+            .ok_or(WorkspaceError::ProfileNotFound(id))
     }
 
-    fn status_mut(&mut self, id: &StatusId) -> Result<&mut Status> {
-        self.statuses
+    fn profile_mut(&mut self, id: ProfileId) -> Result<&mut Profile> {
+        self.profiles
             .iter_mut()
-            .find(|status| &status.id == id)
-            .ok_or_else(|| WorkspaceError::StatusNotFound(id.clone()))
-    }
-
-    /// Removes a status. Tabs and folders that used it move to
-    /// `replacement`, or lose their status when it is `None`.
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::StatusNotFound`] for either id, or
-    /// [`WorkspaceError::SameStatus`] when both ids are equal.
-    pub fn remove_status(
-        &mut self,
-        id: &StatusId,
-        replacement: Option<&StatusId>,
-    ) -> Result<Status> {
-        if replacement == Some(id) {
-            return Err(WorkspaceError::SameStatus);
-        }
-        if let Some(replacement) = replacement {
-            self.ensure_status(replacement)?;
-        }
-        let index = self
-            .statuses
-            .iter()
-            .position(|status| &status.id == id)
-            .ok_or_else(|| WorkspaceError::StatusNotFound(id.clone()))?;
-
-        let reassign = |slot: &mut Option<StatusId>| {
-            if slot.as_ref() == Some(id) {
-                *slot = replacement.cloned();
-            }
-        };
-        for node in self.groups.iter_mut().flat_map(|group| &mut group.children) {
-            match node {
-                Node::Tab(tab) => reassign(&mut tab.status),
-                Node::Folder(folder) => {
-                    reassign(&mut folder.status);
-                    folder
-                        .tabs
-                        .iter_mut()
-                        .for_each(|tab| reassign(&mut tab.status));
-                }
-            }
-        }
-        Ok(self.statuses.remove(index))
-    }
-
-    fn group_index(&self, id: GroupId) -> Result<usize> {
-        self.groups
-            .iter()
-            .position(|group| group.id == id)
-            .ok_or(WorkspaceError::GroupNotFound(id))
+            .find(|profile| profile.id == id)
+            .ok_or(WorkspaceError::ProfileNotFound(id))
     }
 
     fn group_mut(&mut self, id: GroupId) -> Result<&mut Group> {
-        self.groups
+        self.profiles
             .iter_mut()
-            .find(|group| group.id == id)
+            .flat_map(|profile| &mut profile.items)
+            .find_map(|item| match item {
+                Item::Group(group) if group.id == id => Some(group),
+                _ => None,
+            })
             .ok_or(WorkspaceError::GroupNotFound(id))
     }
 
     fn folder_mut(&mut self, id: FolderId) -> Result<&mut Folder> {
-        self.groups
+        self.profiles
             .iter_mut()
-            .flat_map(|group| &mut group.children)
-            .find_map(|node| match node {
-                Node::Folder(folder) if folder.id == id => Some(folder),
-                _ => None,
+            .flat_map(|profile| &mut profile.items)
+            .find_map(|item| match item {
+                Item::Folder(folder) => (folder.id == id).then_some(folder),
+                Item::Group(group) => group.children.iter_mut().find_map(|node| match node {
+                    Node::Folder(folder) if folder.id == id => Some(folder),
+                    _ => None,
+                }),
+                Item::Tab(_) => None,
             })
             .ok_or(WorkspaceError::FolderNotFound(id))
     }
 
     fn tab_mut(&mut self, id: TabId) -> Result<&mut Tab> {
-        self.groups
+        self.profiles
             .iter_mut()
-            .flat_map(|group| &mut group.children)
-            .find_map(|node| match node {
-                Node::Tab(tab) if tab.id == id => Some(tab),
-                Node::Tab(_) => None,
-                Node::Folder(folder) => folder.tabs.iter_mut().find(|tab| tab.id == id),
+            .flat_map(|profile| &mut profile.items)
+            .find_map(|item| match item {
+                Item::Tab(tab) => (tab.id == id).then_some(tab),
+                Item::Folder(folder) => folder.tabs.iter_mut().find(|tab| tab.id == id),
+                Item::Group(group) => group.children.iter_mut().find_map(|node| match node {
+                    Node::Tab(tab) => (tab.id == id).then_some(tab),
+                    Node::Folder(folder) => folder.tabs.iter_mut().find(|tab| tab.id == id),
+                }),
             })
             .ok_or(WorkspaceError::TabNotFound(id))
     }
 
-    fn ensure_status(&self, id: &StatusId) -> Result<()> {
-        if self.statuses.iter().any(|status| &status.id == id) {
-            Ok(())
-        } else {
-            Err(WorkspaceError::StatusNotFound(id.clone()))
-        }
-    }
-
     fn ensure_place(&mut self, place: Place) -> Result<()> {
         match place {
-            Place::Group(id) => self.group_index(id).map(drop),
+            Place::Profile(id) => self.profile_index(id).map(drop),
+            Place::Group(id) => self.group_mut(id).map(drop),
             Place::Folder(id) => self.folder_mut(id).map(drop),
         }
     }
 
+    fn take_group(&mut self, id: GroupId) -> Result<Group> {
+        for profile in &mut self.profiles {
+            let found = profile
+                .items
+                .iter()
+                .position(|item| matches!(item, Item::Group(group) if group.id == id));
+            if let Some(index) = found
+                && let Item::Group(group) = profile.items.remove(index)
+            {
+                return Ok(group);
+            }
+        }
+        Err(WorkspaceError::GroupNotFound(id))
+    }
+
+    fn take_folder(&mut self, id: FolderId) -> Result<Folder> {
+        for profile in &mut self.profiles {
+            let loose = profile
+                .items
+                .iter()
+                .position(|item| matches!(item, Item::Folder(folder) if folder.id == id));
+            if let Some(index) = loose
+                && let Item::Folder(folder) = profile.items.remove(index)
+            {
+                return Ok(folder);
+            }
+            for item in &mut profile.items {
+                if let Item::Group(group) = item
+                    && let Some(index) = group
+                        .children
+                        .iter()
+                        .position(|node| matches!(node, Node::Folder(folder) if folder.id == id))
+                    && let Node::Folder(folder) = group.children.remove(index)
+                {
+                    return Ok(folder);
+                }
+            }
+        }
+        Err(WorkspaceError::FolderNotFound(id))
+    }
+
     /// Removes a tab from wherever it is.
     fn take_tab(&mut self, id: TabId) -> Option<Tab> {
-        for group in &mut self.groups {
-            let loose = group
-                .children
+        fn from_folder(folder: &mut Folder, id: TabId) -> Option<Tab> {
+            let index = folder.tabs.iter().position(|tab| tab.id == id)?;
+            Some(folder.tabs.remove(index))
+        }
+        for profile in &mut self.profiles {
+            let loose = profile
+                .items
                 .iter()
-                .position(|node| matches!(node, Node::Tab(tab) if tab.id == id));
+                .position(|item| matches!(item, Item::Tab(tab) if tab.id == id));
             if let Some(index) = loose
-                && let Node::Tab(tab) = group.children.remove(index)
+                && let Item::Tab(tab) = profile.items.remove(index)
             {
                 return Some(tab);
             }
-            for node in &mut group.children {
-                if let Node::Folder(folder) = node
-                    && let Some(index) = folder.tabs.iter().position(|tab| tab.id == id)
-                {
-                    return Some(folder.tabs.remove(index));
+            for item in &mut profile.items {
+                let taken = match item {
+                    Item::Tab(_) => None,
+                    Item::Folder(folder) => from_folder(folder, id),
+                    Item::Group(group) => {
+                        let loose = group
+                            .children
+                            .iter()
+                            .position(|node| matches!(node, Node::Tab(tab) if tab.id == id));
+                        match loose.map(|index| group.children.remove(index)) {
+                            Some(Node::Tab(tab)) => Some(tab),
+                            _ => group.children.iter_mut().find_map(|node| match node {
+                                Node::Folder(folder) => from_folder(folder, id),
+                                Node::Tab(_) => None,
+                            }),
+                        }
+                    }
+                };
+                if taken.is_some() {
+                    return taken;
                 }
             }
         }
@@ -792,6 +779,10 @@ impl Workspace {
     /// Inserts a tab at `index` (clamped) within `place`.
     fn insert_tab(&mut self, place: Place, index: usize, tab: Tab) -> Result<()> {
         match place {
+            Place::Profile(id) => {
+                let items = &mut self.profile_mut(id)?.items;
+                items.insert(index.min(items.len()), Item::Tab(tab));
+            }
             Place::Group(id) => {
                 let children = &mut self.group_mut(id)?.children;
                 children.insert(index.min(children.len()), Node::Tab(tab));
@@ -803,24 +794,21 @@ impl Workspace {
         }
         Ok(())
     }
-}
 
-/// Lowercase id from a label: letters and digits kept, anything else
-/// becomes a single `-`. Falls back to `status` when nothing is left.
-fn slug(label: &str) -> String {
-    let mut slug = String::with_capacity(label.len());
-    for c in label.chars().flat_map(char::to_lowercase) {
-        if c.is_alphanumeric() {
-            slug.push(c);
-        } else if !slug.is_empty() && !slug.ends_with('-') {
-            slug.push('-');
+    /// Inserts a folder at `index` (clamped) within a profile or group.
+    fn insert_folder(&mut self, place: Place, index: usize, folder: Folder) -> Result<()> {
+        match place {
+            Place::Profile(id) => {
+                let items = &mut self.profile_mut(id)?.items;
+                items.insert(index.min(items.len()), Item::Folder(folder));
+            }
+            Place::Group(id) => {
+                let children = &mut self.group_mut(id)?.children;
+                children.insert(index.min(children.len()), Node::Folder(folder));
+            }
+            Place::Folder(_) => return Err(WorkspaceError::NestedFolder),
         }
-    }
-    let slug = slug.trim_end_matches('-');
-    if slug.is_empty() {
-        "status".to_owned()
-    } else {
-        slug.to_owned()
+        Ok(())
     }
 }
 
@@ -841,804 +829,4 @@ fn clean_name(raw: &str) -> Result<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn first_profile(workspace: &Workspace) -> ProfileId {
-        workspace.profiles()[0].id
-    }
-
-    fn url(raw: &str) -> TabUrl {
-        TabUrl::parse(raw).expect("valid test url")
-    }
-
-    fn status(raw: &str) -> StatusId {
-        StatusId::parse(raw).expect("valid test status")
-    }
-
-    fn group_tab_ids(workspace: &Workspace, group: GroupId) -> Vec<TabId> {
-        workspace
-            .group(group)
-            .expect("group exists")
-            .children
-            .iter()
-            .filter_map(|node| match node {
-                Node::Tab(tab) => Some(tab.id),
-                Node::Folder(_) => None,
-            })
-            .collect()
-    }
-
-    fn folder(workspace: &Workspace, id: FolderId) -> &Folder {
-        workspace
-            .groups()
-            .iter()
-            .flat_map(|group| &group.children)
-            .find_map(|node| match node {
-                Node::Folder(folder) if folder.id == id => Some(folder),
-                _ => None,
-            })
-            .expect("folder exists")
-    }
-
-    /// Adds the extension's board statuses, which tests use by id
-    /// (`in-progress`, `in-review`, `in-dev`, `done`).
-    fn add_board_statuses(workspace: &mut Workspace) {
-        for label in ["In progress", "In review", "In dev", "Done"] {
-            workspace
-                .add_status(label, AccentColor::Blue)
-                .expect("status");
-        }
-    }
-
-    /// A workspace with one group "Work" holding a folder "Sprint", and the
-    /// board statuses.
-    fn work() -> (Workspace, GroupId, FolderId) {
-        let mut workspace = Workspace::new();
-        add_board_statuses(&mut workspace);
-        let profile = first_profile(&workspace);
-        let group = workspace
-            .add_group(profile, "Work", AccentColor::Blue)
-            .expect("add group");
-        let folder = workspace.add_folder(group, "Sprint").expect("add folder");
-        (workspace, group, folder)
-    }
-
-    #[test]
-    fn new_workspace_has_default_statuses_one_profile_and_no_groups() {
-        let workspace = Workspace::new();
-
-        assert_eq!(workspace.statuses(), default_statuses().as_slice());
-        let names: Vec<_> = workspace
-            .profiles()
-            .iter()
-            .map(|p| p.name.as_str())
-            .collect();
-        assert_eq!(names, [DEFAULT_PROFILE_NAME]);
-        assert!(workspace.groups().is_empty());
-    }
-
-    #[test]
-    fn add_group_trims_name_and_belongs_to_its_profile() {
-        let mut workspace = Workspace::new();
-        let profile = first_profile(&workspace);
-
-        let id = workspace
-            .add_group(profile, "  Work  ", AccentColor::Mauve)
-            .expect("add group");
-
-        let group = workspace.group(id).expect("group exists");
-        assert_eq!(group.name, "Work");
-        assert_eq!(group.color, AccentColor::Mauve);
-        assert_eq!(group.profile, profile);
-    }
-
-    #[test]
-    fn add_group_rejects_blank_name_or_unknown_profile() {
-        let mut workspace = Workspace::new();
-        let missing = ProfileId::new();
-
-        assert_eq!(
-            workspace.add_group(first_profile(&workspace), "   ", AccentColor::Blue),
-            Err(WorkspaceError::EmptyName)
-        );
-        assert_eq!(
-            workspace.add_group(missing, "Work", AccentColor::Blue),
-            Err(WorkspaceError::ProfileNotFound(missing))
-        );
-        assert!(workspace.groups().is_empty());
-    }
-
-    #[test]
-    fn add_profile_trims_name_and_appends() {
-        let mut workspace = Workspace::new();
-
-        let work = workspace.add_profile("  Trabajo ").expect("add");
-
-        assert_eq!(workspace.profiles().len(), 2);
-        assert_eq!(
-            workspace.profile(work).map(|p| p.name.as_str()),
-            Some("Trabajo")
-        );
-        assert_eq!(workspace.add_profile(" "), Err(WorkspaceError::EmptyName));
-    }
-
-    #[test]
-    fn new_profiles_get_a_color_no_other_profile_uses() {
-        let mut workspace = Workspace::new();
-
-        let work = workspace.add_profile("Trabajo").expect("add");
-        let qa = workspace.add_profile("QA").expect("add");
-
-        let colors: Vec<_> = workspace
-            .profiles()
-            .iter()
-            .map(|p| p.color.index())
-            .collect();
-        assert_eq!(colors, [0, 1, 2]);
-        workspace
-            .set_profile_color(work, ProfileColor::new(5).expect("color"))
-            .expect("recolor");
-        assert_eq!(workspace.profile(work).map(|p| p.color.index()), Some(5));
-        let next = workspace.add_profile("Next").expect("add");
-        assert_eq!(workspace.profile(next).map(|p| p.color.index()), Some(1));
-        let missing = ProfileId::new();
-        assert_eq!(
-            workspace.set_profile_color(missing, ProfileColor::default()),
-            Err(WorkspaceError::ProfileNotFound(missing))
-        );
-        let _ = qa;
-    }
-
-    #[test]
-    fn rename_and_move_profiles() {
-        let mut workspace = Workspace::new();
-        let first = first_profile(&workspace);
-        let work = workspace.add_profile("Trabajo").expect("add");
-
-        workspace.rename_profile(first, "Personal").expect("rename");
-        workspace.move_profile(work, 0).expect("move");
-
-        let names: Vec<_> = workspace
-            .profiles()
-            .iter()
-            .map(|p| p.name.as_str())
-            .collect();
-        assert_eq!(names, ["Trabajo", "Personal"]);
-        let missing = ProfileId::new();
-        assert_eq!(
-            workspace.rename_profile(missing, "x"),
-            Err(WorkspaceError::ProfileNotFound(missing))
-        );
-    }
-
-    #[test]
-    fn removing_a_profile_moves_its_groups() {
-        let (mut workspace, group, _) = work();
-        let first = first_profile(&workspace);
-        let work_profile = workspace.add_profile("Trabajo").expect("add");
-
-        let removed = workspace
-            .remove_profile(first, work_profile)
-            .expect("remove");
-
-        assert_eq!(removed.name, DEFAULT_PROFILE_NAME);
-        assert_eq!(workspace.group(group).expect("group").profile, work_profile);
-        assert_eq!(workspace.validate(), Ok(()));
-    }
-
-    #[test]
-    fn remove_profile_rejects_last_itself_or_unknown_target() {
-        let mut workspace = Workspace::new();
-        let first = first_profile(&workspace);
-
-        assert_eq!(
-            workspace.remove_profile(first, first),
-            Err(WorkspaceError::SameProfile)
-        );
-        let missing = ProfileId::new();
-        assert_eq!(
-            workspace.remove_profile(first, missing),
-            Err(WorkspaceError::ProfileNotFound(missing))
-        );
-        let other = workspace.add_profile("Otro").expect("add");
-        workspace.remove_profile(other, first).expect("remove");
-        assert_eq!(
-            workspace.remove_profile(first, other),
-            Err(WorkspaceError::ProfileNotFound(other))
-        );
-        assert_eq!(workspace.profiles().len(), 1);
-    }
-
-    #[test]
-    fn the_only_profile_cannot_be_removed() {
-        let mut workspace = Workspace::new();
-        let first = first_profile(&workspace);
-        let other = workspace.add_profile("Otro").expect("add");
-        workspace.remove_profile(other, first).expect("remove");
-
-        // Only one left: there is no other profile to move its groups to.
-        let ghost = ProfileId::new();
-        assert_eq!(
-            workspace.remove_profile(first, ghost),
-            Err(WorkspaceError::ProfileNotFound(ghost))
-        );
-        assert_eq!(workspace.profiles().len(), 1);
-    }
-
-    #[test]
-    fn set_group_profile_moves_a_group() {
-        let (mut workspace, group, _) = work();
-        let work_profile = workspace.add_profile("Trabajo").expect("add");
-
-        workspace
-            .set_group_profile(group, work_profile)
-            .expect("set");
-
-        assert_eq!(workspace.group(group).expect("group").profile, work_profile);
-        let missing = ProfileId::new();
-        assert_eq!(
-            workspace.set_group_profile(group, missing),
-            Err(WorkspaceError::ProfileNotFound(missing))
-        );
-    }
-
-    #[test]
-    fn validate_rejects_groups_of_unknown_profiles_and_empty_profiles() {
-        let ghost = "00000000-0000-0000-0000-0000000000ff";
-        let group = format!(
-            r#"{{"id":"00000000-0000-0000-0000-000000000001","name":"G","color":"blue","profile":"{ghost}"}}"#
-        );
-        let profile = r#"{"id":"00000000-0000-0000-0000-0000000000aa","name":"P","color":0}"#;
-
-        let unknown = from_json(&format!(
-            r#"{{"statuses":[],"profiles":[{profile}],"groups":[{group}]}}"#
-        ));
-        let empty = from_json(r#"{"statuses":[],"profiles":[],"groups":[]}"#);
-
-        assert_eq!(
-            unknown.validate(),
-            Err(WorkspaceError::ProfileNotFound(ghost.parse().expect("id")))
-        );
-        assert_eq!(empty.validate(), Err(WorkspaceError::NoProfiles));
-    }
-
-    #[test]
-    fn rename_unknown_group_fails() {
-        let mut workspace = Workspace::new();
-        let missing = GroupId::new();
-
-        assert_eq!(
-            workspace.rename_group(missing, "X"),
-            Err(WorkspaceError::GroupNotFound(missing))
-        );
-    }
-
-    #[test]
-    fn move_group_reorders_and_clamps_index() {
-        let mut workspace = Workspace::new();
-        let p = first_profile(&workspace);
-        let a = workspace.add_group(p, "A", AccentColor::Blue).expect("a");
-        let b = workspace.add_group(p, "B", AccentColor::Blue).expect("b");
-        let c = workspace.add_group(p, "C", AccentColor::Blue).expect("c");
-
-        workspace.move_group(a, 99).expect("move");
-
-        let order: Vec<_> = workspace.groups().iter().map(|group| group.id).collect();
-        assert_eq!(order, [b, c, a]);
-    }
-
-    #[test]
-    fn remove_group_returns_it() {
-        let (mut workspace, group, _) = work();
-
-        let removed = workspace.remove_group(group).expect("remove");
-
-        assert_eq!(removed.name, "Work");
-        assert!(workspace.groups().is_empty());
-    }
-
-    #[test]
-    fn add_tab_uses_url_when_title_is_blank() {
-        let (mut workspace, group, _) = work();
-
-        let id = workspace
-            .add_tab(Place::Group(group), url("https://a.dev/x"), "  ")
-            .expect("add tab");
-
-        assert_eq!(
-            workspace.find_tab(id).expect("tab").tab.title,
-            "https://a.dev/x"
-        );
-    }
-
-    #[test]
-    fn add_tab_into_folder_is_found_with_its_group_and_folder() {
-        let (mut workspace, group, folder_id) = work();
-
-        let id = workspace
-            .add_tab(Place::Folder(folder_id), url("https://a.dev"), "Docs")
-            .expect("add tab");
-
-        let found = workspace.find_tab(id).expect("tab");
-        assert_eq!(found.group.id, group);
-        assert_eq!(found.folder.map(|folder| folder.id), Some(folder_id));
-        assert_eq!(found.tab.title, "Docs");
-    }
-
-    #[test]
-    fn add_tab_to_unknown_folder_fails() {
-        let (mut workspace, _, _) = work();
-        let missing = FolderId::new();
-
-        assert_eq!(
-            workspace.add_tab(Place::Folder(missing), url("https://a.dev"), "x"),
-            Err(WorkspaceError::FolderNotFound(missing))
-        );
-    }
-
-    #[test]
-    fn set_folder_collapsed_toggles_it() {
-        let (mut workspace, _, folder_id) = work();
-
-        workspace
-            .set_folder_collapsed(folder_id, true)
-            .expect("collapse");
-
-        assert!(folder(&workspace, folder_id).collapsed);
-    }
-
-    #[test]
-    fn place_and_target_serialize_as_tagged_ids() {
-        let id = FolderId::from(uuid::Uuid::nil());
-        let nil = "00000000-0000-0000-0000-000000000000";
-
-        assert_eq!(
-            serde_json::to_string(&Place::Folder(id)).expect("json"),
-            format!(r#"{{"folder":"{nil}"}}"#)
-        );
-        assert_eq!(
-            serde_json::to_string(&Target::Folder(id)).expect("json"),
-            format!(r#"{{"folder":"{nil}"}}"#)
-        );
-    }
-
-    #[test]
-    fn remove_folder_removes_its_tabs() {
-        let (mut workspace, _, folder_id) = work();
-        let tab = workspace
-            .add_tab(Place::Folder(folder_id), url("https://a.dev"), "x")
-            .expect("add tab");
-
-        let removed = workspace.remove_folder(folder_id).expect("remove");
-
-        assert_eq!(removed.tabs.len(), 1);
-        assert!(workspace.find_tab(tab).is_none());
-    }
-
-    #[test]
-    fn rename_tab_trims_and_falls_back_to_url() {
-        let (mut workspace, group, _) = work();
-        let tab = workspace
-            .add_tab(Place::Group(group), url("https://a.dev/"), "a")
-            .expect("tab");
-
-        workspace.rename_tab(tab, "  Docs  ").expect("rename");
-        assert_eq!(workspace.find_tab(tab).expect("tab").tab.title, "Docs");
-
-        workspace.rename_tab(tab, " ").expect("rename");
-        assert_eq!(
-            workspace.find_tab(tab).expect("tab").tab.title,
-            "https://a.dev/"
-        );
-    }
-
-    #[test]
-    fn move_folder_reorders_within_its_group() {
-        let (mut workspace, group, sprint) = work();
-        let tab = workspace
-            .add_tab(Place::Group(group), url("https://a.dev/"), "a")
-            .expect("tab");
-
-        workspace.move_folder(sprint, group, 99).expect("move");
-
-        let children: Vec<_> = workspace
-            .group(group)
-            .expect("group")
-            .children
-            .iter()
-            .map(node_id)
-            .collect();
-        assert_eq!(children, [tab.to_string(), sprint.to_string()]);
-    }
-
-    #[test]
-    fn move_folder_to_another_group_keeps_its_tabs() {
-        let (mut workspace, _, sprint) = work();
-        let tab = workspace
-            .add_tab(Place::Folder(sprint), url("https://a.dev/"), "a")
-            .expect("tab");
-        let other = workspace
-            .add_group(first_profile(&workspace), "Other", AccentColor::Green)
-            .expect("group");
-
-        workspace.move_folder(sprint, other, 0).expect("move");
-
-        let found = workspace.find_tab(tab).expect("tab");
-        assert_eq!(found.group.id, other);
-        assert_eq!(found.folder.map(|f| f.id), Some(sprint));
-    }
-
-    #[test]
-    fn move_folder_to_unknown_group_changes_nothing() {
-        let (mut workspace, group, sprint) = work();
-        let missing = GroupId::new();
-
-        assert_eq!(
-            workspace.move_folder(sprint, missing, 0),
-            Err(WorkspaceError::GroupNotFound(missing))
-        );
-        assert_eq!(workspace.group(group).expect("group").children.len(), 1);
-    }
-
-    fn node_id(node: &Node) -> String {
-        match node {
-            Node::Tab(tab) => tab.id.to_string(),
-            Node::Folder(folder) => folder.id.to_string(),
-        }
-    }
-
-    #[test]
-    fn remove_tab_from_folder() {
-        let (mut workspace, _, folder_id) = work();
-        let tab = workspace
-            .add_tab(Place::Folder(folder_id), url("https://a.dev"), "x")
-            .expect("add tab");
-
-        workspace.remove_tab(tab).expect("remove");
-
-        assert!(folder(&workspace, folder_id).tabs.is_empty());
-        assert_eq!(
-            workspace.remove_tab(tab),
-            Err(WorkspaceError::TabNotFound(tab))
-        );
-    }
-
-    #[test]
-    fn move_tab_within_group_reorders() {
-        let (mut workspace, group, _) = work();
-        let a = workspace
-            .add_tab(Place::Group(group), url("https://a.dev"), "a")
-            .expect("a");
-        let b = workspace
-            .add_tab(Place::Group(group), url("https://b.dev"), "b")
-            .expect("b");
-
-        workspace.move_tab(b, Place::Group(group), 0).expect("move");
-
-        assert_eq!(group_tab_ids(&workspace, group), [b, a]);
-    }
-
-    #[test]
-    fn move_tab_from_group_into_another_groups_folder() {
-        let (mut workspace, work_group, _) = work();
-        let other = workspace
-            .add_group(first_profile(&workspace), "Other", AccentColor::Green)
-            .expect("other");
-        let research = workspace.add_folder(other, "Research").expect("folder");
-        let tab = workspace
-            .add_tab(Place::Group(work_group), url("https://a.dev"), "a")
-            .expect("tab");
-
-        workspace
-            .move_tab(tab, Place::Folder(research), 0)
-            .expect("move");
-
-        let found = workspace.find_tab(tab).expect("tab");
-        assert_eq!(found.group.id, other);
-        assert_eq!(found.folder.map(|folder| folder.id), Some(research));
-        assert!(group_tab_ids(&workspace, work_group).is_empty());
-    }
-
-    #[test]
-    fn move_tab_to_unknown_place_keeps_the_tab() {
-        let (mut workspace, group, _) = work();
-        let tab = workspace
-            .add_tab(Place::Group(group), url("https://a.dev"), "a")
-            .expect("tab");
-        let missing = FolderId::new();
-
-        let result = workspace.move_tab(tab, Place::Folder(missing), 0);
-
-        assert_eq!(result, Err(WorkspaceError::FolderNotFound(missing)));
-        assert_eq!(group_tab_ids(&workspace, group), [tab]);
-    }
-
-    #[test]
-    fn folder_status_overrides_tab_status() {
-        let (mut workspace, _, folder_id) = work();
-        let tab = workspace
-            .add_tab(Place::Folder(folder_id), url("https://a.dev"), "a")
-            .expect("tab");
-        workspace
-            .set_status(Target::Tab(tab), Some(status("todo")))
-            .expect("tab status");
-
-        assert_eq!(workspace.effective_status(tab), Ok(Some(&status("todo"))));
-
-        workspace
-            .set_status(Target::Folder(folder_id), Some(status("done")))
-            .expect("folder status");
-
-        assert_eq!(workspace.effective_status(tab), Ok(Some(&status("done"))));
-    }
-
-    #[test]
-    fn set_unknown_status_fails() {
-        let (mut workspace, _, folder_id) = work();
-
-        assert_eq!(
-            workspace.set_status(Target::Folder(folder_id), Some(status("nope"))),
-            Err(WorkspaceError::StatusNotFound(status("nope")))
-        );
-    }
-
-    #[test]
-    fn remove_status_moves_users_to_replacement() {
-        let (mut workspace, group, folder_id) = work();
-        let tab = workspace
-            .add_tab(Place::Group(group), url("https://a.dev"), "a")
-            .expect("tab");
-        workspace
-            .set_status(Target::Tab(tab), Some(status("in-dev")))
-            .expect("tab");
-        workspace
-            .set_status(Target::Folder(folder_id), Some(status("in-dev")))
-            .expect("folder");
-
-        let removed = workspace
-            .remove_status(&status("in-dev"), Some(&status("done")))
-            .expect("remove");
-
-        assert_eq!(removed.label, "In dev");
-        assert_eq!(workspace.effective_status(tab), Ok(Some(&status("done"))));
-        assert_eq!(folder(&workspace, folder_id).status, Some(status("done")));
-        assert!(
-            workspace
-                .statuses()
-                .iter()
-                .all(|s| s.id != status("in-dev"))
-        );
-    }
-
-    #[test]
-    fn remove_status_without_replacement_clears_it() {
-        let (mut workspace, group, _) = work();
-        let tab = workspace
-            .add_tab(Place::Group(group), url("https://a.dev"), "a")
-            .expect("tab");
-        workspace
-            .set_status(Target::Tab(tab), Some(status("todo")))
-            .expect("tab");
-
-        workspace
-            .remove_status(&status("todo"), None)
-            .expect("remove");
-
-        assert_eq!(workspace.effective_status(tab), Ok(None));
-    }
-
-    #[test]
-    fn add_status_derives_a_unique_id_from_the_label() {
-        let mut workspace = Workspace::new();
-
-        let blocked = workspace
-            .add_status("  Blocked by QA ", AccentColor::Red)
-            .expect("add");
-        let again = workspace
-            .add_status("Blocked by QA", AccentColor::Red)
-            .expect("add");
-        let accented = workspace
-            .add_status("Revisión", AccentColor::Pink)
-            .expect("add");
-        let symbols = workspace.add_status("!!!", AccentColor::Sky).expect("add");
-
-        assert_eq!(blocked.as_str(), "blocked-by-qa");
-        assert_eq!(again.as_str(), "blocked-by-qa-2");
-        assert_eq!(accented.as_str(), "revisión");
-        assert_eq!(symbols.as_str(), "status");
-        let last = workspace.statuses().last().expect("status");
-        assert_eq!((last.label.as_str(), last.color), ("!!!", AccentColor::Sky));
-        assert_eq!(workspace.validate(), Ok(()));
-    }
-
-    #[test]
-    fn add_status_rejects_blank_label() {
-        let mut workspace = Workspace::new();
-
-        assert_eq!(
-            workspace.add_status(" ", AccentColor::Red),
-            Err(WorkspaceError::EmptyName)
-        );
-    }
-
-    #[test]
-    fn rename_and_recolor_keep_the_id() {
-        let mut workspace = Workspace::new();
-
-        workspace
-            .rename_status(&status("todo"), " Pendiente ")
-            .expect("rename");
-        workspace
-            .set_status_color(&status("todo"), AccentColor::Teal)
-            .expect("color");
-
-        let todo = &workspace.statuses()[0];
-        assert_eq!(todo.id, status("todo"));
-        assert_eq!(
-            (todo.label.as_str(), todo.color),
-            ("Pendiente", AccentColor::Teal)
-        );
-        assert_eq!(
-            workspace.rename_status(&status("nope"), "x"),
-            Err(WorkspaceError::StatusNotFound(status("nope")))
-        );
-    }
-
-    #[test]
-    fn move_status_reorders_and_clamps() {
-        let mut workspace = Workspace::new();
-        add_board_statuses(&mut workspace);
-
-        workspace.move_status(&status("todo"), 99).expect("move");
-
-        let ids: Vec<_> = workspace.statuses().iter().map(|s| s.id.as_str()).collect();
-        assert_eq!(ids, ["in-progress", "in-review", "in-dev", "done", "todo"]);
-    }
-
-    #[test]
-    fn remove_status_rejects_itself_or_unknown_replacement() {
-        let mut workspace = Workspace::new();
-
-        assert_eq!(
-            workspace.remove_status(&status("todo"), Some(&status("todo"))),
-            Err(WorkspaceError::SameStatus)
-        );
-        assert_eq!(
-            workspace.remove_status(&status("todo"), Some(&status("nope"))),
-            Err(WorkspaceError::StatusNotFound(status("nope")))
-        );
-        assert_eq!(workspace.statuses().len(), default_statuses().len());
-    }
-
-    #[test]
-    fn workspace_round_trips_through_json() {
-        let (mut workspace, group, folder_id) = work();
-        workspace
-            .add_tab(Place::Folder(folder_id), url("https://a.dev"), "a")
-            .expect("tab");
-        workspace
-            .add_tab(Place::Group(group), url("https://b.dev"), "b")
-            .expect("tab");
-
-        let json = serde_json::to_string(&workspace).expect("serialize");
-        let back: Workspace = serde_json::from_str(&json).expect("deserialize");
-
-        assert_eq!(back, workspace);
-    }
-
-    #[test]
-    fn built_workspace_is_valid() {
-        let (mut workspace, group, folder_id) = work();
-        let tab = workspace
-            .add_tab(Place::Group(group), url("https://a.dev"), "a")
-            .expect("tab");
-        workspace
-            .set_status(Target::Tab(tab), Some(status("todo")))
-            .expect("status");
-        workspace
-            .set_status(Target::Folder(folder_id), Some(status("done")))
-            .expect("status");
-
-        assert_eq!(workspace.validate(), Ok(()));
-    }
-
-    fn from_json(json: &str) -> Workspace {
-        serde_json::from_str(json).expect("valid json shape")
-    }
-
-    const TAB_A: &str = "00000000-0000-0000-0000-00000000000a";
-    const GROUP_1: &str = "00000000-0000-0000-0000-000000000001";
-    const PROFILE_1: &str = "00000000-0000-0000-0000-0000000000aa";
-
-    #[test]
-    fn validate_rejects_unknown_status_reference() {
-        let workspace = from_json(&format!(
-            r#"{{"statuses":[],"profiles":[{{"id":"{PROFILE_1}","name":"P","color":0}}],"groups":[{{"id":"{GROUP_1}","name":"G","color":"blue","profile":"{PROFILE_1}",
-            "children":[{{"type":"tab","id":"{TAB_A}","url":"https://a.dev","title":"a","status":"ghost"}}]}}]}}"#
-        ));
-
-        assert_eq!(
-            workspace.validate(),
-            Err(WorkspaceError::StatusNotFound(status("ghost")))
-        );
-    }
-
-    #[test]
-    fn validate_rejects_duplicate_status() {
-        let workspace = from_json(&format!(
-            r#"{{"statuses":[{{"id":"todo","label":"A","color":"blue"}},{{"id":"todo","label":"B","color":"red"}}],"profiles":[{{"id":"{PROFILE_1}","name":"P","color":0}}],"groups":[]}}"#
-        ));
-
-        assert_eq!(
-            workspace.validate(),
-            Err(WorkspaceError::DuplicateStatus(status("todo")))
-        );
-    }
-
-    #[test]
-    fn validate_rejects_tab_id_used_twice() {
-        let workspace = from_json(&format!(
-            r#"{{"statuses":[],"profiles":[{{"id":"{PROFILE_1}","name":"P","color":0}}],"groups":[{{"id":"{GROUP_1}","name":"G","color":"blue","profile":"{PROFILE_1}","children":[
-            {{"type":"tab","id":"{TAB_A}","url":"https://a.dev","title":"a"}},
-            {{"type":"folder","id":"00000000-0000-0000-0000-0000000000f1","name":"F","tabs":[
-              {{"id":"{TAB_A}","url":"https://b.dev","title":"b"}}]}}]}}]}}"#
-        ));
-
-        assert_eq!(
-            workspace.validate(),
-            Err(WorkspaceError::DuplicateId(TAB_A.to_owned()))
-        );
-    }
-
-    mod props {
-        use super::*;
-        use proptest::prelude::*;
-
-        fn all_tab_ids(workspace: &Workspace) -> Vec<TabId> {
-            let mut ids: Vec<_> = workspace
-                .groups()
-                .iter()
-                .flat_map(|group| &group.children)
-                .flat_map(|node| match node {
-                    Node::Tab(tab) => vec![tab.id],
-                    Node::Folder(folder) => folder.tabs.iter().map(|tab| tab.id).collect(),
-                })
-                .collect();
-            ids.sort();
-            ids
-        }
-
-        proptest! {
-            /// Any sequence of moves keeps every tab exactly once.
-            #[test]
-            fn moves_never_lose_or_duplicate_tabs(
-                moves in prop::collection::vec((0usize..6, 0usize..4, 0usize..8), 0..40)
-            ) {
-                let (mut workspace, group, folder_id) = work();
-                let other = workspace.add_group(first_profile(&workspace), "Other", AccentColor::Green).expect("other");
-                let other_folder = workspace.add_folder(other, "F").expect("folder");
-                let places = [
-                    Place::Group(group),
-                    Place::Folder(folder_id),
-                    Place::Group(other),
-                    Place::Folder(other_folder),
-                ];
-                let tabs: Vec<_> = (0..6)
-                    .map(|n| {
-                        workspace
-                            .add_tab(places[n % 4], url(&format!("https://t{n}.dev")), "t")
-                            .expect("tab")
-                    })
-                    .collect();
-                let before = all_tab_ids(&workspace);
-
-                for (tab, place, index) in moves {
-                    workspace.move_tab(tabs[tab], places[place], index).expect("move");
-                }
-
-                prop_assert_eq!(all_tab_ids(&workspace), before);
-            }
-        }
-    }
-}
+mod tests;

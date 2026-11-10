@@ -1,4 +1,4 @@
-//! Main window helpers shared by the tray, the global shortcut and the
+//! Main window helpers shared by the Dock, the global shortcut and the
 //! single-instance handler.
 
 use tauri::{AppHandle, Emitter, Manager};

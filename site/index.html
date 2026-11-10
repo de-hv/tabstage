@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tabstage Desktop</title>
-<meta name="description" content="Keep your tabs in groups and folders, and open each group with the right browser profile. For macOS and Linux.">
+<meta name="description" content="Keep your tabs in profiles, groups and folders, each profile in the browser you choose. For macOS and Linux.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500&display=swap">
@@ -101,8 +101,8 @@ footer { padding-block: 24px 40px; border-top: 1px solid var(--s0); color: var(-
 
   <section class="hero">
     <div>
-      <h1>Your tabs, in the right browser profile</h1>
-      <p class="lede">Keep links in groups and folders, and sort the groups into profiles such as Work and Personal. Each profile opens in the browser and browser profile you pick, so every link lands where you are signed in. If the tab is already open, Tabstage takes you to it. For macOS and Linux, no extension needed.</p>
+      <h1>Your tabs, organized your way</h1>
+      <p class="lede">Keep links in profiles such as Work, Personal or a client, and inside them in groups and folders, as deep as you need. Each profile opens in the browser you pick. If the tab is already open, Tabstage takes you to it. For macOS and Linux, no extension needed.</p>
       <div class="install">
         <div class="cmd">
           <code id="cmd">curl -fsSL https://de-hv.github.io/tabstage-desktop/install.sh | sh</code>
@@ -117,26 +117,26 @@ footer { padding-block: 24px 40px; border-top: 1px solid var(--s0); color: var(-
       </div>
     </div>
 
-    <div class="shot" role="img" aria-label="Tabstage window: groups sorted into the Work and Personal profiles, the Jira group opening in Chrome's Work profile">
+    <div class="shot" role="img" aria-label="Tabstage window: a tree of profiles, groups, folders and tabs next to the In TEST group">
       <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
       <div class="cols">
         <div class="side">
-          <div class="r"><span class="chev">▾</span><span class="bw" style="--c:var(--blue)">C</span><span class="grow"><b style="font-weight:500">Work</b></span><span class="meta">2</span></div>
-          <div class="r ind on"><span class="sq" style="--c:var(--blue)"></span><span class="grow">Jira</span></div>
-          <div class="r ind"><span class="sq" style="--c:var(--teal)"></span><span class="grow">Clients</span></div>
-          <div class="r"><span class="chev">▾</span><span class="bw" style="--c:var(--peach)">F</span><span class="grow"><b style="font-weight:500">Personal</b></span><span class="meta">1</span></div>
-          <div class="r ind"><span class="sq" style="--c:var(--mauve)"></span><span class="grow">Reading</span></div>
+          <div class="r"><span class="chev">▾</span><span class="sq" style="--c:var(--blue);border-radius:50%"></span><span class="grow"><b style="font-weight:500">Work</b></span></div>
+          <div class="r ind"><span class="chev">▸</span><span class="grow">In progress</span><span class="meta">4</span></div>
+          <div class="r ind on"><span class="chev">▾</span><span class="grow">🧪 In TEST</span><span class="meta">3</span></div>
+          <div class="r ind" style="padding-left:34px"><span class="grow">PROJ-142 checkout</span><span class="meta">2</span></div>
+          <div class="r ind"><span class="chev">▸</span><span class="grow">Done</span><span class="meta">9</span></div>
+          <div class="r ind"><span class="chev">▸</span><span class="grow">Onboarding</span><span class="meta">2</span></div>
+          <div class="r"><span class="chev">▸</span><span class="sq" style="--c:var(--peach);border-radius:50%"></span><span class="grow"><b style="font-weight:500">Personal</b></span></div>
         </div>
         <div class="main">
-          <div class="head"><span class="sq" style="--c:var(--blue)"></span><b>Jira</b><span class="pill"><span class="bw" style="--c:var(--blue)">C</span>in Work · Chrome · Work</span></div>
-          <div class="r"><span class="grow"><b style="font-weight:500">Sprint 42</b></span><span class="chip" style="--c:var(--blue)">In progress</span></div>
+          <div class="head"><b>🧪 In TEST</b><span class="pill">Work · opens in Chrome</span></div>
+          <div class="r"><span class="grow"><b style="font-weight:500">PROJ-142 checkout</b></span><span class="meta">2</span></div>
           <div class="nest">
-            <div class="r"><span class="grow">Login refactor</span><span class="open" title="Open"></span></div>
-            <div class="r on"><span class="grow">Session cache</span><span style="font-size:11px">Go to tab</span></div>
-            <div class="r"><span class="grow">Review PR #418</span></div>
+            <div class="r"><span class="grow">Jira PROJ-142</span><span class="open" title="Open"></span></div>
+            <div class="r on"><span class="grow">PR #881 checkout fix</span><span style="font-size:11px">Go to tab</span></div>
           </div>
-          <div class="r"><span class="grow">API latency</span><span class="chip" style="--c:var(--mauve)">To do</span></div>
-          <div class="r"><span class="grow">Deploy runbook</span><span class="chip" style="--c:var(--green)">Done</span></div>
+          <div class="r"><span class="grow">Staging dashboard</span></div>
         </div>
       </div>
     </div>
@@ -144,8 +144,8 @@ footer { padding-block: 24px 40px; border-top: 1px solid var(--s0); color: var(-
 
   <section class="points">
     <div>
-      <h2>Profiles, with the right sign-in</h2>
-      <p>Work in Chrome's work profile, reading in Firefox, personal things in Safari. Each Tabstage profile picks a browser and, for Chromium and Firefox, one of its profiles, and can open a whole group in a new window.</p>
+      <h2>Groups as statuses</h2>
+      <p>Each profile is also a board with one column per group. Name them In progress, In TEST and Done, and drag a tab or folder along. Give anything an emoji, an icon or a ticket number.</p>
     </div>
     <div>
       <h2>No duplicate tabs</h2>
@@ -153,7 +153,7 @@ footer { padding-block: 24px 40px; border-top: 1px solid var(--s0); color: var(-
     </div>
     <div>
       <h2>Your data, in one file</h2>
-      <p>Everything lives in a JSON file you can keep in iCloud Drive, Dropbox or a git repo to share it across machines. Each machine picks its own browsers for your profiles. Nothing leaves your computer.</p>
+      <p>Everything lives in one JSON file in a local folder you choose on first run. Nothing leaves your computer.</p>
     </div>
   </section>
 

@@ -1,9 +1,8 @@
 //! Saves and loads the Tabstage Desktop workspace as one JSON file.
 //!
-//! The file can live in a synced folder (iCloud, Dropbox, Syncthing, git).
-//! Writes are atomic (temp file + rename), and [`FileStore`] refuses to
-//! overwrite a file another device changed since it was last read, so a
-//! sync never silently loses work.
+//! The file lives in a local folder. Writes are atomic (temp file + rename),
+//! and [`FileStore`] refuses to overwrite a file that something else changed
+//! since it was last read, so no work is silently lost.
 
 mod migrate;
 
@@ -23,7 +22,7 @@ use thiserror::Error;
 pub const APP: &str = "tabstage-desktop";
 
 /// Version of the file format this build writes.
-pub const FORMAT_VERSION: u32 = 2;
+pub const FORMAT_VERSION: u32 = 3;
 
 /// App-wide settings shared by every machine. Empty for now: browser
 /// choices are machine-local since format 2.
@@ -36,7 +35,7 @@ pub struct Settings {}
 pub struct Document {
     /// App settings.
     pub settings: Settings,
-    /// Groups, folders, tabs, statuses and profiles.
+    /// Profiles with their groups, folders and tabs.
     pub workspace: Workspace,
     /// Browsers an older file assigned, for this machine's config. Empty
     /// unless the file was just upgraded; never written to disk.
@@ -64,7 +63,7 @@ pub enum StoreError {
     /// The file was written by a newer version of the app.
     #[error("data file version {0} is newer than this app supports")]
     UnsupportedVersion(u32),
-    /// The file breaks a workspace rule, such as an unknown status.
+    /// The file breaks a workspace rule, such as an id used twice.
     #[error("data file has invalid content")]
     Invalid(#[from] WorkspaceError),
     /// The file changed on disk (for example from another device) since it
@@ -112,6 +111,9 @@ pub fn from_json(text: &str) -> Result<Document> {
         Vec::new()
     };
     migrate::fill_profile_colors(&mut value);
+    if header.version < 3 {
+        migrate::upgrade_v2(&mut value);
+    }
     let file: FileOwned = serde_json::from_value(value).map_err(StoreError::Parse)?;
     file.workspace.validate()?;
     Ok(Document {
@@ -282,7 +284,7 @@ fn fingerprint(bytes: &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tabstage_core::{AccentColor, Place, TabUrl, Target};
+    use tabstage_core::{AccentColor, Icon, Place, TabUrl, Target};
 
     fn sample() -> Document {
         let mut workspace = Workspace::new();
@@ -290,7 +292,16 @@ mod tests {
         let group = workspace
             .add_group(work, "Work", AccentColor::Blue)
             .expect("group");
-        let folder = workspace.add_folder(group, "Sprint 42").expect("folder");
+        let folder = workspace
+            .add_folder(Place::Group(group), "Sprint 42")
+            .expect("folder");
+        workspace
+            .add_tab(
+                Place::Profile(work),
+                TabUrl::parse("https://wiki.dev/").expect("url"),
+                "Wiki",
+            )
+            .expect("tab");
         let tab = workspace
             .add_tab(
                 Place::Folder(folder),
@@ -299,11 +310,8 @@ mod tests {
             )
             .expect("tab");
         workspace
-            .set_status(
-                Target::Tab(tab),
-                Some(tabstage_core::StatusId::parse("todo").expect("status")),
-            )
-            .expect("status");
+            .set_icon(Target::Tab(tab), Some(Icon::text("142").expect("icon")))
+            .expect("icon");
         Document {
             settings: Settings::default(),
             workspace,
@@ -396,12 +404,13 @@ mod tests {
             .map(|p| p.color.index())
             .collect();
         assert_eq!(colors, [0, 1]);
+        let group = document.workspace.groups().next().expect("group").id;
         assert_eq!(
-            document.workspace.groups()[0].profile,
-            document.workspace.profiles()[1].id
+            document.workspace.group_profile(group).map(|p| p.id),
+            Some(document.workspace.profiles()[1].id)
         );
         assert_eq!(document.migrated.len(), 2);
-        assert!(to_json(&document).contains("\"version\": 2"));
+        assert!(to_json(&document).contains("\"version\": 3"));
     }
 
     #[test]
@@ -428,13 +437,35 @@ mod tests {
     }
 
     #[test]
+    fn version_2_files_are_upgraded_to_nested_profiles_without_statuses() {
+        let v2 = r#"{"app":"tabstage-desktop","version":2,"settings":{},
+            "workspace":{"statuses":[{"id":"todo","label":"To do","color":"lavender"}],"profiles":[
+              {"id":"00000000-0000-0000-0000-0000000000c1","name":"Cliente","color":3}],"groups":[
+              {"id":"00000000-0000-0000-0000-000000000001","name":"In TEST","color":"blue",
+               "profile":"00000000-0000-0000-0000-0000000000c1","children":[
+                 {"type":"tab","id":"00000000-0000-0000-0000-00000000000a","url":"https://a.dev/","title":"a","status":"todo"}]}]}}"#;
+
+        let document = from_json(v2).expect("upgrade");
+
+        let profile = &document.workspace.profiles()[0];
+        assert_eq!(profile.items.len(), 1);
+        assert_eq!(document.workspace.tabs().len(), 1);
+        let text = to_json(&document);
+        assert!(!text.contains("status"), "{text}");
+        assert_eq!(
+            from_json(&text).expect("reload").workspace,
+            document.workspace
+        );
+    }
+
+    #[test]
     fn from_json_rejects_invalid_workspace() {
-        let text = to_json(&sample()).replace("\"status\": \"todo\"", "\"status\": \"ghost\"");
+        let text = to_json(&sample()).replace("\"profiles\": [", "\"profiles\": [] ,\"x\": [");
 
         let result = from_json(&text);
 
         assert!(
-            matches!(result, Err(StoreError::Invalid(WorkspaceError::StatusNotFound(ref id))) if id.as_str() == "ghost"),
+            matches!(result, Err(StoreError::Invalid(WorkspaceError::NoProfiles))),
             "{result:?}"
         );
     }

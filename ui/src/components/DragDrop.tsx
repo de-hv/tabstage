@@ -50,16 +50,20 @@ export function useDrag(item: DragItem) {
   };
 }
 
+/** A drop target, or a function that picks one for what is being dragged. */
+export type DropSpec = DropTarget | ((item: DragItem) => DropTarget | null) | null;
+
 /**
  * Props that make an element a drop target. It only accepts drops that
  * would change something, so the cursor shows when a drop does nothing.
  */
-export function useDrop(target: DropTarget | null) {
+export function useDrop(spec: DropSpec) {
   const { item, setItem, workspace, apply } = useDragState();
   const [over, setOver] = useState(false);
+  const target = item && typeof spec === 'function' ? spec(item) : typeof spec === 'function' ? null : spec;
   const command = item && target ? dropCommand(item, target, workspace) : null;
 
-  if (!target) return {};
+  if (!spec) return {};
   return {
     'data-drop': (over && command !== null) || undefined,
     onDragOver: (event: DragEvent) => {
@@ -88,7 +92,7 @@ export function DropEnd({ target }: { target: DropTarget }) {
   if (!isDragging) return null;
   return (
     <div className="drop-end" {...drop}>
-      Soltar al final
+      Drop at the end
     </div>
   );
 }

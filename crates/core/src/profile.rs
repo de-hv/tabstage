@@ -1,13 +1,13 @@
 //! Tabstage profiles: named contexts such as "Work" or "Personal".
 //!
-//! Every group belongs to one profile. Which browser (and which profile of
-//! that browser) a profile opens in is decided on each machine, so it is not
-//! part of this synced model.
+//! A profile holds groups, folders and tabs. Which browser it opens in is
+//! decided on each machine, so it is not part of this synced model.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ids::ProfileId;
+use crate::workspace::Item;
 
 /// Name of the profile a new or migrated workspace starts with.
 pub const DEFAULT_PROFILE_NAME: &str = "Default";
@@ -76,7 +76,7 @@ impl From<ProfileColor> for u8 {
     }
 }
 
-/// A named context that groups open in.
+/// A named context such as "Work" that holds groups, folders and tabs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
     /// Stable id.
@@ -85,6 +85,9 @@ pub struct Profile {
     pub name: String,
     /// Color of its dot in the UI.
     pub color: ProfileColor,
+    /// Groups, folders and tabs in display order.
+    #[serde(default)]
+    pub items: Vec<Item>,
 }
 
 #[cfg(test)]

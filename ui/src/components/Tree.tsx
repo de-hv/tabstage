@@ -1,28 +1,26 @@
-import type { Node } from '../api/types';
+import type { Node, Place } from '../api/types';
 import { DropEnd } from './DragDrop';
-import { FolderHeader, type RowActions, TabItem, findStatus } from './Rows';
+import { FolderHeader, type RowContext, TabItem } from './Rows';
 
 interface Props {
-  group: string;
+  place: Place;
   nodes: Node[];
-  actions: RowActions;
+  row: RowContext;
 }
 
-/** List view: folders and loose tabs in saved order. */
-export function Tree({ group, nodes, actions }: Props) {
-  const status = (id: string | undefined) => findStatus(actions.statuses, id);
-
+/** List of a group or folder: folders (expandable) and tabs in saved order. */
+export function Tree({ place, nodes, row }: Props) {
   return (
     <ul className="tree">
       {nodes.map((node) =>
         node.type === 'folder' ? (
           <li key={node.id}>
-            <FolderHeader folder={node} status={status(node.status)} toggle actions={actions} />
+            <FolderHeader folder={node} row={row} />
             {!node.collapsed && node.tabs.length > 0 && (
               <ul className="tree__nested">
                 {node.tabs.map((tab) => (
                   <li key={tab.id}>
-                    <TabItem tab={tab} status={node.status ? undefined : status(tab.status)} actions={actions} />
+                    <TabItem tab={tab} row={row} />
                   </li>
                 ))}
                 <li>
@@ -33,12 +31,12 @@ export function Tree({ group, nodes, actions }: Props) {
           </li>
         ) : (
           <li key={node.id}>
-            <TabItem tab={node} status={status(node.status)} actions={actions} />
+            <TabItem tab={node} row={row} />
           </li>
         ),
       )}
       <li>
-        <DropEnd target={{ kind: 'end', place: { group } }} />
+        <DropEnd target={{ kind: 'end', place }} />
       </li>
     </ul>
   );

@@ -7,6 +7,9 @@
 //! and which browser a profile opens in is machine-local. The browsers found
 //! in a v1 file are returned as [`MigratedBinding`]s so the app can store
 //! them in this machine's config.
+//!
+//! Version 3 nests groups inside their profile (`profile.items`), so a
+//! profile can also hold folders and tabs directly, and drops statuses.
 
 use serde_json::{Map, Value, json};
 use tabstage_core::{BrowserId, DEFAULT_PROFILE_NAME, ProfileColor, ProfileId};
@@ -105,9 +108,137 @@ pub(crate) fn upgrade_v1(file: &mut Value) -> Vec<MigratedBinding> {
     bindings
 }
 
+/// Turns a version 2 file into a version 3 file in place: each profile gets
+/// its groups as `items`, and statuses are dropped.
+pub(crate) fn upgrade_v2(file: &mut Value) {
+    let Some(workspace) = file.get_mut("workspace").and_then(Value::as_object_mut) else {
+        return;
+    };
+    workspace.remove("statuses");
+    let groups = match workspace.remove("groups") {
+        Some(Value::Array(groups)) => groups,
+        _ => Vec::new(),
+    };
+    let mut profiles = match workspace.remove("profiles") {
+        Some(Value::Array(profiles)) => profiles,
+        _ => Vec::new(),
+    };
+    for profile in profiles.iter_mut().filter_map(Value::as_object_mut) {
+        profile.insert("items".to_owned(), Value::Array(Vec::new()));
+    }
+    for mut group in groups {
+        let Some(fields) = group.as_object_mut() else {
+            continue;
+        };
+        let owner = fields.remove("profile");
+        for child in fields
+            .get_mut("children")
+            .and_then(Value::as_array_mut)
+            .into_iter()
+            .flatten()
+        {
+            drop_status(child);
+            for tab in child
+                .get_mut("tabs")
+                .and_then(Value::as_array_mut)
+                .into_iter()
+                .flatten()
+            {
+                drop_status(tab);
+            }
+        }
+        fields.insert("type".to_owned(), json!("group"));
+        // A group of an unknown profile goes to the first one.
+        let index = profiles
+            .iter()
+            .position(|profile| Some(&profile["id"]) == owner.as_ref())
+            .unwrap_or(0);
+        if let Some(items) = profiles
+            .get_mut(index)
+            .and_then(|profile| profile.get_mut("items"))
+            .and_then(Value::as_array_mut)
+        {
+            items.push(group);
+        }
+    }
+    workspace.insert("profiles".to_owned(), Value::Array(profiles));
+    if let Some(root) = file.as_object_mut() {
+        root.insert("version".to_owned(), json!(3));
+    }
+}
+
+fn drop_status(value: &mut Value) {
+    if let Some(fields) = value.as_object_mut() {
+        fields.remove("status");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const PROFILE_A: &str = "00000000-0000-0000-0000-0000000000a1";
+    const PROFILE_B: &str = "00000000-0000-0000-0000-0000000000b1";
+
+    fn v2() -> Value {
+        json!({
+            "app": "tabstage-desktop",
+            "version": 2,
+            "settings": {},
+            "workspace": {
+                "statuses": [{ "id": "todo", "label": "To do", "color": "lavender" }],
+                "profiles": [
+                    { "id": PROFILE_A, "name": "A", "color": 0 },
+                    { "id": PROFILE_B, "name": "B", "color": 1 }
+                ],
+                "groups": [
+                    { "id": GROUP_DEFAULT, "name": "In TEST", "color": "blue", "profile": PROFILE_B, "children": [
+                        { "type": "tab", "id": "00000000-0000-0000-0000-00000000000a", "url": "https://a.dev/", "title": "a", "status": "todo" },
+                        { "type": "folder", "id": "00000000-0000-0000-0000-0000000000f1", "name": "F", "status": "todo", "collapsed": false, "tabs": [
+                            { "id": "00000000-0000-0000-0000-00000000000b", "url": "https://b.dev/", "title": "b", "status": "todo" }
+                        ] }
+                    ] },
+                    { "id": GROUP_CHROME, "name": "Lost", "color": "red", "profile": "00000000-0000-0000-0000-0000000000ff", "children": [] },
+                    { "id": GROUP_CHROME_TOO, "name": "Mine", "color": "red", "profile": PROFILE_A, "children": [] }
+                ]
+            }
+        })
+    }
+
+    fn item_names(file: &Value, profile: usize) -> Vec<String> {
+        file["workspace"]["profiles"][profile]["items"]
+            .as_array()
+            .expect("items")
+            .iter()
+            .map(|item| item["name"].as_str().expect("name").to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn v2_groups_move_inside_their_profile_in_order() {
+        let mut file = v2();
+
+        upgrade_v2(&mut file);
+
+        assert_eq!(item_names(&file, 0), ["Lost", "Mine"]);
+        assert_eq!(item_names(&file, 1), ["In TEST"]);
+        assert_eq!(file["version"], 3);
+        assert!(file["workspace"].get("groups").is_none());
+        let item = &file["workspace"]["profiles"][1]["items"][0];
+        assert_eq!(item["type"], "group");
+        assert!(item.get("profile").is_none());
+    }
+
+    #[test]
+    fn v2_statuses_are_dropped_everywhere() {
+        let mut file = v2();
+
+        upgrade_v2(&mut file);
+
+        assert!(file["workspace"].get("statuses").is_none());
+        let text = file.to_string();
+        assert!(!text.contains("\"status\""), "{text}");
+    }
 
     const GROUP_DEFAULT: &str = "00000000-0000-0000-0000-000000000001";
     const GROUP_CHROME: &str = "00000000-0000-0000-0000-000000000002";
