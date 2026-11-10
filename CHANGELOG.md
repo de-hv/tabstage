@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/de-hv/tabstage-desktop/compare/v0.3.0...v0.3.1) (2026-11-10)
+
+
+### Features
+
+* Show tab details on click and readable URLs everywhere ([6cef437](https://github.com/de-hv/tabstage-desktop/commit/6cef437ef83b791eebd859c08e407aa9c8b0081a))
+
 ## [0.3.0](https://github.com/de-hv/tabstage-desktop/compare/v0.2.0...v0.3.0) (2026-11-10)
 
 
