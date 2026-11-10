@@ -13,6 +13,9 @@ export const api = {
   openTab: (tab: Uuid) => invoke<Opened>('open_tab', { tab }),
   openFolder: (folder: Uuid) => invoke<OpenSummary>('open_folder', { folder }),
   openGroup: (group: Uuid) => invoke<OpenSummary>('open_group', { group }),
+  openProfile: (profile: Uuid) => invoke<OpenSummary>('open_profile', { profile }),
+  /** First run: `null` keeps the data file in the default location. */
+  chooseDataFile: (folder: string | null) => invoke<Snapshot>('choose_data_file', { folder }),
   inspectDataFolder: (folder: string) => invoke<DataFileInfo>('inspect_data_folder', { folder }),
   relocate: (folder: string, mode: Relocate) => invoke<Snapshot>('relocate', { folder, mode }),
   revealDataFile: () => invoke<void>('reveal_data_file'),

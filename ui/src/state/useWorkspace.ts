@@ -4,7 +4,7 @@ import { api, asAppError } from '../api/client';
 import type { AppError, Command, DataFileInfo, Opened, Relocate, Snapshot } from '../api/types';
 
 /** Errors a form shows next to its own fields instead of in the banner. */
-const INLINE_CODES: ReadonlySet<AppError['code']> = new Set(['invalidUrl', 'invalid']);
+const INLINE_CODES: ReadonlySet<AppError['code']> = new Set(['invalidUrl', 'invalid', 'cloudFolder']);
 
 const NOTICE_MS = 3000;
 
@@ -17,9 +17,13 @@ export interface WorkspaceState {
   reload: () => Promise<void>;
   keepMine: () => Promise<void>;
   dismissError: () => void;
+  /** Opens a tab; `browserName` is for the "already open" notice. */
   openTab: (tab: string, browserName: string) => Promise<void>;
   openFolder: (folder: string) => Promise<void>;
   openGroup: (group: string) => Promise<void>;
+  openProfile: (profile: string) => Promise<void>;
+  /** First run. Resolves to the error, if any, so the dialog can show it. */
+  chooseDataFile: (folder: string | null) => Promise<AppError | null>;
   /** What a folder holds, or `null` when it cannot be read (error shown). */
   inspectDataFolder: (folder: string) => Promise<DataFileInfo | null>;
   relocate: (folder: string, mode: Relocate) => Promise<void>;
@@ -93,6 +97,8 @@ export function useWorkspace(): WorkspaceState {
       }),
     openFolder: (folder) => attempt(async () => void (await api.openFolder(folder))),
     openGroup: (group) => attempt(async () => void (await api.openGroup(group))),
+    openProfile: (profile) => attempt(async () => void (await api.openProfile(profile))),
+    chooseDataFile: (folder) => run(() => api.chooseDataFile(folder), true),
     inspectDataFolder: async (folder) => {
       try {
         return await api.inspectDataFolder(folder);

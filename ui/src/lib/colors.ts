@@ -1,20 +1,9 @@
-import type { AccentColor } from '../api/types';
+import type { AccentColor, Workspace } from '../api/types';
+import { allGroups } from './workspace';
 
-/** The ten accents, in palette order, with the names shown in menus. */
-export const ACCENTS: { color: AccentColor; name: string }[] = [
-  { color: 'lavender', name: 'Lavender' },
-  { color: 'blue', name: 'Blue' },
-  { color: 'sky', name: 'Sky' },
-  { color: 'teal', name: 'Teal' },
-  { color: 'green', name: 'Green' },
-  { color: 'yellow', name: 'Yellow' },
-  { color: 'peach', name: 'Peach' },
-  { color: 'red', name: 'Red' },
-  { color: 'pink', name: 'Pink' },
-  { color: 'mauve', name: 'Mauve' },
-];
+/** New groups take the next accent, so neighbours rarely share a color. */
+const GROUP_COLORS: AccentColor[] = ['blue', 'mauve', 'green', 'peach', 'teal', 'pink', 'yellow', 'sky', 'lavender', 'red'];
 
-/** The first accent nobody uses yet, so new items stand apart. */
-export function nextAccent(used: AccentColor[]): AccentColor {
-  return ACCENTS.find(({ color }) => !used.includes(color))?.color ?? 'blue';
+export function nextGroupColor(workspace: Workspace): AccentColor {
+  return GROUP_COLORS[allGroups(workspace).length % GROUP_COLORS.length] ?? 'blue';
 }

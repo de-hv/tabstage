@@ -1,6 +1,5 @@
 //! IPC commands. Each one locks the service, delegates and turns errors
-//! into an [`ErrorPayload`] the UI can switch on. Commands that change
-//! groups also refresh the tray menu.
+//! into an [`ErrorPayload`] the UI can switch on.
 
 use std::path::Path;
 use std::sync::MutexGuard;
@@ -12,11 +11,11 @@ use tabstage_app::{
 };
 use tabstage_browsers::Opened;
 use tabstage_browsers::system::System;
-use tabstage_core::{FolderId, GroupId, TabId};
+use tabstage_core::{FolderId, GroupId, ProfileId, TabId};
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::{Service, tray};
+use crate::Service;
 
 type Reply<T> = Result<T, ErrorPayload>;
 
@@ -33,11 +32,9 @@ fn payload(error: &AppError) -> ErrorPayload {
     payload
 }
 
-/// Refreshes the tray after a change and passes the snapshot through.
-fn changed(app: &AppHandle, result: tabstage_app::Result<Snapshot>) -> Reply<Snapshot> {
-    let snapshot = result.map_err(|e| payload(&e))?;
-    tray::refresh(app, &snapshot);
-    Ok(snapshot)
+/// Turns a service result into a reply for the UI.
+fn changed(result: tabstage_app::Result<Snapshot>) -> Reply<Snapshot> {
+    result.map_err(|e| payload(&e))
 }
 
 /// Current state.
@@ -48,23 +45,23 @@ pub fn snapshot(service: State<'_, Service>) -> Reply<Snapshot> {
 
 /// Applies a change and saves it.
 #[tauri::command]
-pub fn apply(app: AppHandle, service: State<'_, Service>, command: Command) -> Reply<Snapshot> {
+pub fn apply(service: State<'_, Service>, command: Command) -> Reply<Snapshot> {
     let result = lock(&service)?.apply(command);
-    changed(&app, result)
+    changed(result)
 }
 
 /// Re-reads the data file after a change from another device.
 #[tauri::command]
-pub fn reload(app: AppHandle, service: State<'_, Service>) -> Reply<Snapshot> {
+pub fn reload(service: State<'_, Service>) -> Reply<Snapshot> {
     let result = lock(&service)?.reload();
-    changed(&app, result)
+    changed(result)
 }
 
 /// Overwrites the data file with this window's state.
 #[tauri::command]
-pub fn force_save(app: AppHandle, service: State<'_, Service>) -> Reply<Snapshot> {
+pub fn force_save(service: State<'_, Service>) -> Reply<Snapshot> {
     let result = lock(&service)?.force_save();
-    changed(&app, result)
+    changed(result)
 }
 
 /// Whether the data file changed on disk.
@@ -100,6 +97,23 @@ pub fn open_group(service: State<'_, Service>, group: GroupId) -> Reply<OpenSumm
     lock(&service)?.open_group(group).map_err(|e| payload(&e))
 }
 
+/// Opens every tab of a profile.
+#[tauri::command(async)]
+pub fn open_profile(service: State<'_, Service>, profile: ProfileId) -> Reply<OpenSummary> {
+    lock(&service)?
+        .open_profile(profile)
+        .map_err(|e| payload(&e))
+}
+
+/// First run: keeps the data file in `folder`, or in the default location
+/// when it is `None`.
+#[tauri::command]
+pub fn choose_data_file(service: State<'_, Service>, folder: Option<String>) -> Reply<Snapshot> {
+    let path = folder.map(|folder| data_file_in(Path::new(&folder)));
+    let result = lock(&service)?.choose_data_file(path);
+    changed(result)
+}
+
 /// What a folder the user picked already holds.
 #[tauri::command]
 pub fn inspect_data_folder(folder: String) -> Reply<DataFileInfo> {
@@ -108,15 +122,10 @@ pub fn inspect_data_folder(folder: String) -> Reply<DataFileInfo> {
 
 /// Moves the data file into `folder`; the service remembers it for next launch.
 #[tauri::command]
-pub fn relocate(
-    app: AppHandle,
-    service: State<'_, Service>,
-    folder: String,
-    mode: Relocate,
-) -> Reply<Snapshot> {
+pub fn relocate(service: State<'_, Service>, folder: String, mode: Relocate) -> Reply<Snapshot> {
     let path = data_file_in(Path::new(&folder));
     let result = lock(&service)?.relocate(path, mode);
-    changed(&app, result)
+    changed(result)
 }
 
 /// Shows the data file in Finder (or the file manager on Linux).

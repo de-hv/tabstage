@@ -1,7 +1,7 @@
 //! Machine-local config: where this machine keeps its data file.
 //!
-//! The data file may live in a synced folder, so the pointer to it cannot
-//! live inside it. It is a small JSON file in the app config folder.
+//! The pointer to the data file cannot live inside it, so it is a small JSON
+//! file in the app config folder, together with the browser of each profile.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -14,18 +14,13 @@ use tabstage_core::{BrowserId, ProfileId};
 /// Name of the data file inside the folder the user picks.
 pub const DATA_FILE_NAME: &str = "workspace.json";
 
-/// Which browser a Tabstage profile opens in on this machine.
+/// Which browser a Tabstage profile opens in on this machine. Fields that
+/// older versions wrote (`browserProfile`, `newWindow`) are ignored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileBinding {
     /// Installed browser.
     pub browser: BrowserId,
-    /// Profile of that browser, when it exposes profiles.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub browser_profile: Option<String>,
-    /// Open several tabs at once in a new window.
-    #[serde(default)]
-    pub new_window: bool,
 }
 
 /// Settings that belong to this machine only.
@@ -35,9 +30,8 @@ pub struct AppConfig {
     /// Data file chosen by the user; `None` means the default location.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_path: Option<PathBuf>,
-    /// Browser of each Tabstage profile on this machine. Profile names and
-    /// groups are synced; these choices are not, because browsers differ
-    /// between machines and operating systems.
+    /// Browser of each Tabstage profile on this machine. Browsers differ
+    /// between machines, so these choices stay out of the data file.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub profiles: BTreeMap<ProfileId, ProfileBinding>,
 }
@@ -113,21 +107,40 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("nested/config.json");
         let mut config = AppConfig {
-            data_path: Some(PathBuf::from("/Users/me/Dropbox/Tabstage/workspace.json")),
+            data_path: Some(PathBuf::from("/Users/me/Documents/Tabstage/workspace.json")),
             ..AppConfig::default()
         };
         config.profiles.insert(
             ProfileId::new(),
             ProfileBinding {
                 browser: BrowserId::parse("com.google.Chrome").expect("id"),
-                browser_profile: Some("Profile 1".into()),
-                new_window: true,
             },
         );
 
         save_config(&path, &config).expect("save");
 
         assert_eq!(load_config(&path), config);
+    }
+
+    #[test]
+    fn bindings_from_older_versions_load_without_their_extra_fields() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("config.json");
+        let profile = ProfileId::new();
+        fs::write(
+            &path,
+            format!(
+                r#"{{"profiles":{{"{profile}":{{"browser":"com.google.Chrome","browserProfile":"Profile 1","newWindow":true}}}}}}"#
+            ),
+        )
+        .expect("write");
+
+        let config = load_config(&path);
+
+        assert_eq!(
+            config.profiles.get(&profile).map(|b| b.browser.as_str()),
+            Some("com.google.Chrome")
+        );
     }
 
     #[test]

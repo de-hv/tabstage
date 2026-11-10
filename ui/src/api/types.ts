@@ -4,8 +4,6 @@
 
 export type Uuid = string;
 export type BrowserId = string;
-export type StatusId = string;
-
 export type AccentColor =
   | 'lavender'
   | 'blue'
@@ -18,49 +16,53 @@ export type AccentColor =
   | 'pink'
   | 'mauve';
 
-export interface Status {
-  id: StatusId;
-  label: string;
-  color: AccentColor;
-}
+/** A custom icon; without one the UI shows the default of the item's kind. */
+export type Icon =
+  | { kind: 'emoji'; value: string }
+  /** A Lucide icon name, such as `git-pull-request`. */
+  | { kind: 'symbol'; value: string }
+  /** One to three characters, such as `142` or `★`. */
+  | { kind: 'text'; value: string };
 
 export interface Tab {
   id: Uuid;
   url: string;
   title: string;
-  status?: StatusId;
+  icon?: Icon;
 }
 
 export interface Folder {
   id: Uuid;
   name: string;
-  status?: StatusId;
+  icon?: Icon;
   collapsed: boolean;
   tabs: Tab[];
 }
 
+/** A direct child of a group. */
 export type Node = ({ type: 'tab' } & Tab) | ({ type: 'folder' } & Folder);
+
+export interface Group {
+  id: Uuid;
+  name: string;
+  color: AccentColor;
+  icon?: Icon;
+  children: Node[];
+}
+
+/** A direct child of a profile. */
+export type Item = ({ type: 'group' } & Group) | Node;
 
 export interface Profile {
   id: Uuid;
   name: string;
   /** Index into the 20 profile colors (see lib/profileColors.ts). */
   color: number;
-}
-
-export interface Group {
-  id: Uuid;
-  name: string;
-  color: AccentColor;
-  /** Every group belongs to one profile and opens with it. */
-  profile: Uuid;
-  children: Node[];
+  items: Item[];
 }
 
 export interface Workspace {
-  statuses: Status[];
   profiles: Profile[];
-  groups: Group[];
 }
 
 export type BrowserKind = 'chromium' | 'safari' | 'firefox' | 'other';
@@ -72,23 +74,15 @@ export interface BrowserInfo {
   launch: { type: 'macBundle' } | { type: 'desktopExec'; exec: string };
 }
 
-export interface BrowserProfile {
-  /** What the browser needs to open it (`Profile 1`, or a Firefox profile name). */
-  id: string;
-  name: string;
-}
-
 /** Machine-local: which browser a Tabstage profile opens in here. */
 export interface ProfileBinding {
   browser: BrowserId;
-  browserProfile?: string;
-  newWindow: boolean;
 }
 
 export interface ProfileView {
   profile: Uuid;
   binding: ProfileBinding | null;
-  /** Browser that opens the profile's groups here. */
+  /** Browser that opens the profile's tabs here. */
   browser: BrowserId | null;
   isBound: boolean;
   /** The bound browser is not installed here, so the system one is used. */
@@ -100,10 +94,11 @@ export interface Snapshot {
   workspace: Workspace;
   settings: Record<string, never>;
   browsers: BrowserInfo[];
-  browserProfiles: Record<BrowserId, BrowserProfile[]>;
   systemBrowser: BrowserId | null;
   dataPath: string;
   dataLocation: DataLocation;
+  /** First run: no data file yet, so the app asks where to keep it. */
+  needsDataFile: boolean;
   profiles: ProfileView[];
 }
 
@@ -124,42 +119,32 @@ export interface DataFileInfo {
   tabs: number;
 }
 
-export type Place = { group: Uuid } | { folder: Uuid };
-export type Target = { tab: Uuid } | { folder: Uuid };
+/** Something that holds tabs; a folder cannot hold folders. */
+export type Place = { profile: Uuid } | { group: Uuid } | { folder: Uuid };
+/** A group, folder or tab. */
+export type Target = { group: Uuid } | { folder: Uuid } | { tab: Uuid };
 
 export type Command =
   | { type: 'addGroup'; profile: Uuid; name: string; color: AccentColor }
   | { type: 'renameGroup'; group: Uuid; name: string }
-  | { type: 'setGroupProfile'; group: Uuid; profile: Uuid }
-  | { type: 'moveGroup'; group: Uuid; index: number }
+  | { type: 'moveGroup'; group: Uuid; profile: Uuid; index: number }
   | { type: 'removeGroup'; group: Uuid }
-  | { type: 'addFolder'; group: Uuid; name: string }
+  | { type: 'addFolder'; place: Place; name: string }
   | { type: 'renameFolder'; folder: Uuid; name: string }
   | { type: 'setFolderCollapsed'; folder: Uuid; collapsed: boolean }
-  | { type: 'moveFolder'; folder: Uuid; group: Uuid; index: number }
+  | { type: 'moveFolder'; folder: Uuid; place: Place; index: number }
   | { type: 'removeFolder'; folder: Uuid }
   | { type: 'addTab'; place: Place; url: string; title: string }
   | { type: 'renameTab'; tab: Uuid; title: string }
   | { type: 'removeTab'; tab: Uuid }
   | { type: 'moveTab'; tab: Uuid; place: Place; index: number }
-  | { type: 'setStatus'; target: Target; status: StatusId | null }
-  | { type: 'addStatus'; label: string; color: AccentColor }
-  | { type: 'renameStatus'; status: StatusId; label: string }
-  | { type: 'setStatusColor'; status: StatusId; color: AccentColor }
-  | { type: 'moveStatus'; status: StatusId; index: number }
-  | { type: 'removeStatus'; status: StatusId; replacement: StatusId | null }
+  | { type: 'setIcon'; target: Target; icon: Icon | null }
   | { type: 'addProfile'; name: string }
   | { type: 'renameProfile'; profile: Uuid; name: string }
   | { type: 'setProfileColor'; profile: Uuid; color: number }
   | { type: 'moveProfile'; profile: Uuid; index: number }
-  | { type: 'removeProfile'; profile: Uuid; moveGroupsTo: Uuid }
-  | {
-      type: 'bindProfile';
-      profile: Uuid;
-      browser: BrowserId;
-      browserProfile: string | null;
-      newWindow: boolean;
-    };
+  | { type: 'removeProfile'; profile: Uuid; moveItemsTo: Uuid }
+  | { type: 'bindProfile'; profile: Uuid; browser: BrowserId | null };
 
 export type ErrorCode =
   | 'notFound'
@@ -171,6 +156,7 @@ export type ErrorCode =
   | 'invalidUrl'
   | 'unknownBrowser'
   | 'noBrowser'
+  | 'cloudFolder'
   | 'internal';
 
 export interface AppError {

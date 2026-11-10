@@ -18,10 +18,6 @@ fn lists_installed_browsers_and_the_default() {
 
     for browser in &installed {
         println!("{:<28} {:<40} {:?}", browser.name, browser.id, browser.kind);
-        let profiles = system.profiles(browser).expect("profiles");
-        for profile in profiles {
-            println!("    profile {:<24} id={}", profile.name, profile.id);
-        }
     }
     println!("default: {default:?}");
     assert!(!installed.is_empty(), "no browser found");

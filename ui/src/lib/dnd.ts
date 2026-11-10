@@ -1,4 +1,5 @@
-import type { Command, Folder, Group, Place, Tab, Workspace } from '../api/types';
+import type { Command, Place, Workspace } from '../api/types';
+import { listLength, type Location, locate, placeLabel, samePlace } from './workspace';
 
 /** What is being dragged. */
 export type DragItem =
@@ -9,66 +10,12 @@ export type DragItem =
 
 /** Where it is dropped. */
 export type DropTarget =
-  /** On a tab or folder row of a list: take that row's place. */
+  /** On a group, folder or tab row: take that row's place. */
   | { kind: 'before'; node: string }
-  /** The empty space after a list. */
-  | { kind: 'end'; place: Place }
-  /** On a folder header: into the folder. */
-  | { kind: 'folder'; folder: string }
-  /** On a group in the sidebar. */
-  | { kind: 'group'; group: string }
-  /** On a status tile of the board. */
-  | { kind: 'tile'; status: string | null }
-  /** On a profile header in the sidebar. */
-  | { kind: 'profile'; profile: string };
-
-/** Where a tab or folder sits: its list and its index in that list. */
-interface Location {
-  group: Group;
-  folder?: Folder;
-  index: number;
-}
-
-function locate(workspace: Workspace, id: string): Location | null {
-  for (const group of workspace.groups) {
-    for (const [index, node] of group.children.entries()) {
-      if (node.id === id) return { group, index };
-      if (node.type === 'folder') {
-        const inFolder = node.tabs.findIndex((tab) => tab.id === id);
-        if (inFolder !== -1) return { group, folder: node, index: inFolder };
-      }
-    }
-  }
-  return null;
-}
-
-function findTab(workspace: Workspace, id: string): Tab | undefined {
-  const at = locate(workspace, id);
-  if (!at) return undefined;
-  const node = at.folder ? at.folder.tabs[at.index] : at.group.children[at.index];
-  return node as Tab | undefined;
-}
-
-function findFolder(workspace: Workspace, id: string): Folder | undefined {
-  for (const group of workspace.groups) {
-    const node = group.children.find((child) => child.id === id);
-    if (node?.type === 'folder') return node;
-  }
-  return undefined;
-}
-
-function samePlace(at: Location, place: Place): boolean {
-  return 'folder' in place ? at.folder?.id === place.folder : !at.folder && at.group.id === place.group;
-}
-
-function placeOf(at: Location): Place {
-  return at.folder ? { folder: at.folder.id } : { group: at.group.id };
-}
-
-function listLength(workspace: Workspace, place: Place): number | null {
-  if ('folder' in place) return findFolder(workspace, place.folder)?.tabs.length ?? null;
-  return workspace.groups.find((group) => group.id === place.group)?.children.length ?? null;
-}
+  /** On a profile, group or folder (header, sidebar row or board column): go to its end. */
+  | { kind: 'into'; place: Place }
+  /** The space after a list: go to its end, also from within the same list. */
+  | { kind: 'end'; place: Place };
 
 /**
  * The index to send for "put it at `index` of `place`": the Rust side removes
@@ -76,125 +23,51 @@ function listLength(workspace: Workspace, place: Place): number | null {
  * `null` when the item would stay where it is.
  */
 function finalIndex(from: Location, place: Place, index: number): number | null {
-  if (!samePlace(from, place)) return index;
+  if (!samePlace(from.place, place)) return index;
   const adjusted = from.index < index ? index - 1 : index;
   return adjusted === from.index ? null : adjusted;
 }
 
-function moveTab(workspace: Workspace, tab: string, place: Place, index: number): Command | null {
-  const from = locate(workspace, tab);
-  if (!from) return null;
-  const to = finalIndex(from, place, index);
-  return to === null ? null : { type: 'moveTab', tab, place, index: to };
-}
-
-function moveFolder(workspace: Workspace, folder: string, group: string, index: number): Command | null {
-  const from = locate(workspace, folder);
-  if (!from) return null;
-  const to = finalIndex(from, { group }, index);
-  return to === null ? null : { type: 'moveFolder', folder, group, index: to };
+/** Where a drop puts things, or `null` for a target that does not exist. */
+function destination(workspace: Workspace, target: DropTarget): { place: Place; index: number } | null {
+  if (target.kind === 'into' || target.kind === 'end') {
+    const length = listLength(workspace, target.place);
+    return length === null ? null : { place: target.place, index: length };
+  }
+  const at = locate(workspace, target.node);
+  return at ? { place: at.place, index: at.index } : null;
 }
 
 /** The command a drop means, or `null` when it would change nothing. */
 export function dropCommand(item: DragItem, target: DropTarget, workspace: Workspace): Command | null {
+  if (item.kind === 'profile') return dropProfile(item.profile, target, workspace);
+  const id = item.kind === 'tab' ? item.tab : item.kind === 'folder' ? item.folder : item.group;
+  if (target.kind === 'before' && target.node === id) return null;
+  const from = locate(workspace, id);
+  const to = destination(workspace, target);
+  if (!from || !to) return null;
+  // Dropping on its own container is not a "move to the end".
+  if (target.kind === 'into' && samePlace(from.place, to.place)) return null;
+  const index = finalIndex(from, to.place, to.index);
+  if (index === null) return null;
   switch (item.kind) {
     case 'tab':
-      return dropTab(item.tab, target, workspace);
+      return { type: 'moveTab', tab: item.tab, place: to.place, index };
     case 'folder':
-      return dropFolder(item.folder, target, workspace);
+      // Folders do not nest.
+      return 'folder' in to.place ? null : { type: 'moveFolder', folder: item.folder, place: to.place, index };
     case 'group':
-      return dropGroup(item.group, target, workspace);
-    case 'profile':
-      return dropProfile(item.profile, target, workspace);
+      // Groups only live directly in a profile.
+      return 'profile' in to.place
+        ? { type: 'moveGroup', group: item.group, profile: to.place.profile, index }
+        : null;
   }
-}
-
-function dropTab(tab: string, target: DropTarget, workspace: Workspace): Command | null {
-  switch (target.kind) {
-    case 'before': {
-      if (target.node === tab) return null;
-      const at = locate(workspace, target.node);
-      return at ? moveTab(workspace, tab, placeOf(at), at.index) : null;
-    }
-    case 'end': {
-      const length = listLength(workspace, target.place);
-      return length === null ? null : moveTab(workspace, tab, target.place, length);
-    }
-    case 'folder': {
-      const folder = findFolder(workspace, target.folder);
-      // Already inside: the header is not a "move to the end" target.
-      if (!folder || folder.tabs.some((candidate) => candidate.id === tab)) return null;
-      return moveTab(workspace, tab, { folder: folder.id }, folder.tabs.length);
-    }
-    case 'group': {
-      const length = listLength(workspace, { group: target.group });
-      return length === null ? null : moveTab(workspace, tab, { group: target.group }, length);
-    }
-    case 'profile':
-      return null;
-    case 'tile': {
-      const at = locate(workspace, tab);
-      // A folder status decides the tile of every tab in it.
-      if (!at || at.folder?.status) return null;
-      const current = findTab(workspace, tab)?.status ?? null;
-      return current === target.status ? null : { type: 'setStatus', target: { tab }, status: target.status };
-    }
-  }
-}
-
-function dropFolder(folder: string, target: DropTarget, workspace: Workspace): Command | null {
-  switch (target.kind) {
-    case 'before':
-    case 'folder': {
-      const node = target.kind === 'before' ? target.node : target.folder;
-      if (node === folder) return null;
-      const at = locate(workspace, node);
-      // Folders only live in a group's top level.
-      if (!at || at.folder) return null;
-      return moveFolder(workspace, folder, at.group.id, at.index);
-    }
-    case 'end': {
-      if ('folder' in target.place) return null;
-      const length = listLength(workspace, target.place);
-      return length === null ? null : moveFolder(workspace, folder, target.place.group, length);
-    }
-    case 'group': {
-      const length = listLength(workspace, { group: target.group });
-      return length === null ? null : moveFolder(workspace, folder, target.group, length);
-    }
-    case 'profile':
-      return null;
-    case 'tile': {
-      const current = findFolder(workspace, folder)?.status ?? null;
-      return current === target.status
-        ? null
-        : { type: 'setStatus', target: { folder }, status: target.status };
-    }
-  }
-}
-
-function dropGroup(group: string, target: DropTarget, workspace: Workspace): Command | null {
-  const dragged = workspace.groups.find((candidate) => candidate.id === group);
-  if (!dragged) return null;
-  if (target.kind === 'profile') {
-    const exists = workspace.profiles.some((profile) => profile.id === target.profile);
-    return exists && target.profile !== dragged.profile
-      ? { type: 'setGroupProfile', group, profile: target.profile }
-      : null;
-  }
-  if (target.kind !== 'group' || target.group === group) return null;
-  const index = workspace.groups.findIndex((candidate) => candidate.id === target.group);
-  const onto = workspace.groups[index];
-  if (!onto) return null;
-  // Across profiles the group joins the other profile; within one it takes the place.
-  return onto.profile === dragged.profile
-    ? { type: 'moveGroup', group, index }
-    : { type: 'setGroupProfile', group, profile: onto.profile };
 }
 
 function dropProfile(profile: string, target: DropTarget, workspace: Workspace): Command | null {
-  if (target.kind !== 'profile' || target.profile === profile) return null;
-  const index = workspace.profiles.findIndex((candidate) => candidate.id === target.profile);
+  if (target.kind === 'before' || !('profile' in target.place) || target.place.profile === profile) return null;
+  const onto = target.place.profile;
+  const index = workspace.profiles.findIndex((candidate) => candidate.id === onto);
   return index === -1 ? null : { type: 'moveProfile', profile, index };
 }
 
@@ -204,31 +77,26 @@ export interface MoveDestination {
   command: Command;
 }
 
-/**
- * Where a tab or folder can be moved from its menu: every group (to its
- * end) and, for tabs, every folder. The current container is left out.
- */
+/** Every place, profile by profile, in tree order. */
+function allPlaces(workspace: Workspace): Place[] {
+  return workspace.profiles.flatMap((profile) => [
+    { profile: profile.id },
+    ...profile.items.flatMap((item): Place[] => {
+      if (item.type === 'folder') return [{ folder: item.id }];
+      if (item.type === 'tab') return [];
+      return [
+        { group: item.id },
+        ...item.children.flatMap((node): Place[] => (node.type === 'folder' ? [{ folder: node.id }] : [])),
+      ];
+    }),
+  ]);
+}
+
+/** Where an item can be moved from its menu; its current place is left out. */
 export function moveDestinations(item: DragItem, workspace: Workspace): MoveDestination[] {
   if (item.kind === 'profile') return [];
-  if (item.kind === 'group') {
-    return workspace.profiles.flatMap((profile) => {
-      const command = dropCommand(item, { kind: 'profile', profile: profile.id }, workspace);
-      return command ? [{ label: profile.name, command }] : [];
-    });
-  }
-  const id = item.kind === 'tab' ? item.tab : item.folder;
-  const at = locate(workspace, id);
-  const destinations: MoveDestination[] = [];
-  for (const group of workspace.groups) {
-    const isHere = item.kind === 'tab' ? at?.group.id === group.id && !at.folder : at?.group.id === group.id;
-    const toGroup = isHere ? null : dropCommand(item, { kind: 'group', group: group.id }, workspace);
-    if (toGroup) destinations.push({ label: group.name, command: toGroup });
-    if (item.kind !== 'tab') continue;
-    for (const node of group.children) {
-      if (node.type !== 'folder') continue;
-      const toFolder = dropCommand(item, { kind: 'folder', folder: node.id }, workspace);
-      if (toFolder) destinations.push({ label: `${group.name} / ${node.name}`, command: toFolder });
-    }
-  }
-  return destinations;
+  return allPlaces(workspace).flatMap((place) => {
+    const command = dropCommand(item, { kind: 'into', place }, workspace);
+    return command ? [{ label: placeLabel(workspace, place), command }] : [];
+  });
 }

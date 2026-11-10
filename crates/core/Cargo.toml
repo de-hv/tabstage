@@ -1,6 +1,6 @@
 [package]
 name = "tabstage-core"
-description = "Pure domain model for Tabstage Desktop: groups, folders, tabs, statuses and browser choice."
+description = "Pure domain model for Tabstage Desktop: profiles, groups, folders, tabs and icons."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,6 +11,7 @@ serde.workspace = true
 thiserror.workspace = true
 url.workspace = true
 uuid.workspace = true
+unicode-segmentation.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

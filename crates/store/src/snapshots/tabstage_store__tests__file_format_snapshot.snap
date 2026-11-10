@@ -5,49 +5,52 @@ expression: to_json_redacted(&sample())
 {
   "app": "tabstage-desktop",
   "settings": {},
-  "version": 2,
+  "version": 3,
   "workspace": {
-    "groups": [
-      {
-        "children": [
-          {
-            "collapsed": false,
-            "id": "[uuid]",
-            "name": "Sprint 42",
-            "tabs": [
-              {
-                "id": "[uuid]",
-                "status": "todo",
-                "title": "Issue 1",
-                "url": "https://a.dev/issue/1"
-              }
-            ],
-            "type": "folder"
-          }
-        ],
-        "color": "blue",
-        "id": "[uuid]",
-        "name": "Work",
-        "profile": "[uuid]"
-      }
-    ],
     "profiles": [
       {
         "color": 0,
         "id": "[uuid]",
+        "items": [],
         "name": "Default"
       },
       {
         "color": 1,
         "id": "[uuid]",
+        "items": [
+          {
+            "children": [
+              {
+                "collapsed": false,
+                "id": "[uuid]",
+                "name": "Sprint 42",
+                "tabs": [
+                  {
+                    "icon": {
+                      "kind": "text",
+                      "value": "142"
+                    },
+                    "id": "[uuid]",
+                    "title": "Issue 1",
+                    "url": "https://a.dev/issue/1"
+                  }
+                ],
+                "type": "folder"
+              }
+            ],
+            "color": "blue",
+            "id": "[uuid]",
+            "name": "Work",
+            "type": "group"
+          },
+          {
+            "id": "[uuid]",
+            "title": "Wiki",
+            "type": "tab",
+            "url": "https://wiki.dev/"
+          }
+        ],
         "name": "Trabajo"
-      }
-    ],
-    "statuses": [
-      {
-        "color": "lavender",
-        "id": "todo",
-        "label": "To do"
       }
     ]
   }

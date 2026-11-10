@@ -7,7 +7,9 @@ export default defineConfig({
   plugins: [react()],
   clearScreen: false,
   server: { port: 1420, strictPort: true },
-  build: { target: 'es2022', outDir: 'dist', emptyOutDir: true },
+  // The emoji list (lazy) and the icon-name index make chunks over Vite's 500 kB hint;
+  // they load from disk in the app, so the higher limit only silences that hint.
+  build: { target: 'es2022', outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 700 },
   test: {
     environment: 'happy-dom',
     setupFiles: ['src/test/setup.ts'],

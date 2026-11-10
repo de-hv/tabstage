@@ -1,11 +1,10 @@
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { open } from '@tauri-apps/plugin-dialog';
-import { Cloud, Folder, FolderInput, HardDrive } from 'lucide-react';
+import { AlertTriangle, Folder, FolderInput, HardDrive } from 'lucide-react';
 import { useState } from 'react';
 
 import type { Command, DataFileInfo, DataLocationKind, Relocate, Snapshot } from '../api/types';
 import { ProfilesEditor } from './ProfilesEditor';
-import { StatusEditor } from './StatusEditor';
 
 interface Props {
   snapshot: Snapshot;
@@ -13,6 +12,8 @@ interface Props {
   inspectDataFolder: (folder: string) => Promise<DataFileInfo | null>;
   relocate: (folder: string, mode: Relocate) => Promise<void>;
   onRevealDataFile: () => void;
+  /** Profile whose browser the user wants to choose. */
+  focusProfile?: string | null;
 }
 
 interface Pending {
@@ -20,7 +21,7 @@ interface Pending {
   info: DataFileInfo;
 }
 
-export function Settings({ snapshot, apply, inspectDataFolder, relocate, onRevealDataFile }: Props) {
+export function Settings({ snapshot, apply, inspectDataFolder, relocate, onRevealDataFile, focusProfile = null }: Props) {
   const [pending, setPending] = useState<Pending | null>(null);
 
   const chooseFolder = async () => {
@@ -43,20 +44,12 @@ export function Settings({ snapshot, apply, inspectDataFolder, relocate, onRevea
           Profiles
         </h2>
         <p className="settings__help">
-          Each group opens with its profile. Profile names are shared between your computers; the browser and its
-          profile are chosen on each computer.
+          Profiles keep personal, work and client tabs apart. Each one opens in the browser you choose here.
         </p>
-        <ProfilesEditor snapshot={snapshot} apply={apply} />
+        <ProfilesEditor snapshot={snapshot} apply={apply} focus={focusProfile} />
       </section>
 
       <DataLocationCard snapshot={snapshot} onReveal={onRevealDataFile} onMove={() => void chooseFolder()} />
-
-      <section className="settings__section" aria-labelledby="statuses">
-        <h2 id="statuses" className="settings__heading">
-          Statuses
-        </h2>
-        <StatusEditor statuses={snapshot.workspace.statuses} apply={apply} />
-      </section>
 
       <AlertDialog.Root open={pending !== null} onOpenChange={(isOpen) => !isOpen && setPending(null)}>
         <AlertDialog.Portal>
@@ -64,8 +57,8 @@ export function Settings({ snapshot, apply, inspectDataFolder, relocate, onRevea
           <AlertDialog.Content className="dialog">
             <AlertDialog.Title className="dialog__title">That folder already has Tabstage data</AlertDialog.Title>
             <AlertDialog.Description className="dialog__text">
-              It has {pending?.info.groups} groups and {pending?.info.tabs} tabs. Use them on this computer, or
-              replace them with the data from here.
+              It has {pending?.info.groups} groups and {pending?.info.tabs} tabs. Use that data, or replace it with
+              the data you have now.
             </AlertDialog.Description>
             <div className="dialog__actions">
               <AlertDialog.Cancel className="button">Cancel</AlertDialog.Cancel>
@@ -73,7 +66,7 @@ export function Settings({ snapshot, apply, inspectDataFolder, relocate, onRevea
                 className="button"
                 onClick={() => pending && void relocate(pending.folder, 'replaceWithMine')}
               >
-                Replace with this computer's data
+                Replace with my current data
               </AlertDialog.Action>
               <AlertDialog.Action
                 className="button button--accent"
@@ -110,26 +103,18 @@ function DataLocationCard({
 }) {
   const { kind } = snapshot.dataLocation;
   const service = SERVICE[kind];
-  const title =
-    kind === 'appData'
-      ? `On this ${isMac() ? 'Mac' : 'computer'} only`
-      : service
-        ? `Synced through ${service}`
-        : 'In a folder you chose';
-  const detail =
-    kind === 'appData'
-      ? 'Not shared with other computers. Changes save instantly.'
-      : service
-        ? 'Your other computers with the same folder see the same groups. Changes save instantly.'
-        : 'Shared with any computer that syncs this folder. Changes save instantly.';
-  const Icon = kind === 'appData' ? HardDrive : service ? Cloud : Folder;
+  const title = kind === 'appData' ? `On this ${isMac() ? 'Mac' : 'computer'}` : service ? `In ${service}` : 'In a folder you chose';
+  const detail = service
+    ? `Cloud folders are no longer supported. Move the file to a local folder.`
+    : 'A local file. Changes save instantly.';
+  const Icon = service ? AlertTriangle : kind === 'appData' ? HardDrive : Folder;
 
   return (
     <section className="settings__section" aria-labelledby="data-location">
       <h2 id="data-location" className="settings__heading">
         Where your data lives
       </h2>
-      <div className="data-card">
+      <div className="data-card" data-warning={service ? true : undefined}>
         <span className="data-card__icon">
           <Icon className="icon" aria-hidden="true" />
         </span>
@@ -146,7 +131,7 @@ function DataLocationCard({
           </button>
           <button type="button" className="button" onClick={onMove}>
             <FolderInput className="icon" aria-hidden="true" />
-            {kind === 'appData' ? 'Move to a synced folder…' : 'Move to another folder…'}
+            Move to another folder…
           </button>
         </div>
       </div>

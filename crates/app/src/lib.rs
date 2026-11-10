@@ -5,25 +5,22 @@
 //! Tauri: the shell forwards IPC calls to it, and tests drive it with a fake
 //! [`System`].
 //!
-//! Every group belongs to a Tabstage profile. Profiles and groups live in the
-//! synced data file; which browser (and which profile of that browser) a
-//! profile opens in lives in this machine's [`config::AppConfig`].
+//! A Tabstage profile holds groups, folders and tabs, all in the data file.
+//! Which browser a profile opens in lives in this machine's
+//! [`config::AppConfig`].
 
 pub mod config;
-pub mod tray;
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tabstage_browsers::profiles::BrowserProfile;
 use tabstage_browsers::{
-    BrowserError, BrowserInfo, Catalog, LaunchOptions, Launcher, Opened, Platform, TabFocuser,
-    can_focus_tabs, find_installed, open_tab,
+    BrowserError, BrowserInfo, Catalog, Launcher, Opened, Platform, TabFocuser, can_focus_tabs,
+    find_installed, open_tab,
 };
 use tabstage_core::{
-    AccentColor, BrowserId, FolderId, Group, GroupId, Node, Place, ProfileColor, ProfileId,
-    StatusId, Tab, TabId, TabUrl, TabUrlError, Target, Workspace, WorkspaceError,
+    AccentColor, BrowserId, FolderId, GroupId, Icon, Item, Node, Place, ProfileColor, ProfileId,
+    Tab, TabId, TabUrl, TabUrlError, Target, Workspace, WorkspaceError,
 };
 use tabstage_store::{Document, FileStore, Settings, StoreError};
 use thiserror::Error;
@@ -45,7 +42,7 @@ impl<T: Catalog + Launcher + TabFocuser> System for T {}
 pub enum Command {
     /// Add a group at the end of a profile.
     AddGroup {
-        /// Profile the group belongs to.
+        /// Profile that gets the group.
         profile: ProfileId,
         /// Group name.
         name: String,
@@ -59,18 +56,13 @@ pub enum Command {
         /// New name.
         name: String,
     },
-    /// Move a group to another profile.
-    SetGroupProfile {
-        /// Group to move.
-        group: GroupId,
-        /// Its new profile.
-        profile: ProfileId,
-    },
-    /// Move a group in the sidebar.
+    /// Move a group, within its profile or to another one.
     MoveGroup {
         /// Group to move.
         group: GroupId,
-        /// New position among all groups.
+        /// Destination profile.
+        profile: ProfileId,
+        /// Position among the profile's items.
         index: usize,
     },
     /// Remove a group and everything in it.
@@ -78,10 +70,10 @@ pub enum Command {
         /// Group to remove.
         group: GroupId,
     },
-    /// Add a folder at the end of a group.
+    /// Add a folder at the end of a profile or group.
     AddFolder {
-        /// Group that gets the folder.
-        group: GroupId,
+        /// Profile or group that gets the folder.
+        place: Place,
         /// Folder name.
         name: String,
     },
@@ -99,13 +91,13 @@ pub enum Command {
         /// Whether it is collapsed.
         collapsed: bool,
     },
-    /// Move a folder, within its group or to another one.
+    /// Move a folder into a profile or group.
     MoveFolder {
         /// Folder to move.
         folder: FolderId,
-        /// Destination group.
-        group: GroupId,
-        /// Position among the group's children.
+        /// Destination profile or group.
+        place: Place,
+        /// Position in the destination.
         index: usize,
     },
     /// Remove a folder and its tabs.
@@ -143,47 +135,12 @@ pub enum Command {
         /// Position in the destination.
         index: usize,
     },
-    /// Set or clear a status.
-    SetStatus {
-        /// Tab or folder.
+    /// Set or clear the custom icon of a group, folder or tab.
+    SetIcon {
+        /// What gets the icon.
         target: Target,
-        /// New status, or `None` to clear it.
-        status: Option<StatusId>,
-    },
-    /// Add a status at the end.
-    AddStatus {
-        /// Name shown in the UI.
-        label: String,
-        /// Accent color.
-        color: AccentColor,
-    },
-    /// Rename a status.
-    RenameStatus {
-        /// Status to rename.
-        status: StatusId,
-        /// New name.
-        label: String,
-    },
-    /// Change a status color.
-    SetStatusColor {
-        /// Status to change.
-        status: StatusId,
-        /// New color.
-        color: AccentColor,
-    },
-    /// Move a status.
-    MoveStatus {
-        /// Status to move.
-        status: StatusId,
-        /// New position.
-        index: usize,
-    },
-    /// Remove a status, moving its tabs to another one or to none.
-    RemoveStatus {
-        /// Status to remove.
-        status: StatusId,
-        /// Status that takes its tabs and folders.
-        replacement: Option<StatusId>,
+        /// The icon, or `None` for the default one.
+        icon: Option<Icon>,
     },
     /// Add a profile at the end.
     AddProfile {
@@ -211,23 +168,19 @@ pub enum Command {
         /// New position.
         index: usize,
     },
-    /// Remove a profile, moving its groups to another one.
+    /// Remove a profile, moving its items to another one.
     RemoveProfile {
         /// Profile to remove.
         profile: ProfileId,
-        /// Profile that takes its groups.
-        move_groups_to: ProfileId,
+        /// Profile that takes its groups, folders and tabs.
+        move_items_to: ProfileId,
     },
     /// Choose, on this machine, the browser a profile opens in.
     BindProfile {
         /// Profile to configure.
         profile: ProfileId,
-        /// An installed browser.
-        browser: BrowserId,
-        /// One of that browser's profiles, if it has any.
-        browser_profile: Option<String>,
-        /// Open several tabs at once in a new window.
-        new_window: bool,
+        /// An installed browser, or `None` for the system browser.
+        browser: Option<BrowserId>,
     },
 }
 
@@ -239,7 +192,7 @@ pub struct ProfileView {
     pub profile: ProfileId,
     /// What this machine's config says, if anything.
     pub binding: Option<ProfileBinding>,
-    /// Browser that will open the profile's groups here.
+    /// Browser that will open the profile's tabs here.
     pub browser: Option<BrowserId>,
     /// The profile has a browser chosen on this machine.
     pub is_bound: bool,
@@ -249,7 +202,9 @@ pub struct ProfileView {
     pub can_focus_tabs: bool,
 }
 
-/// Kind of place the data file lives in, as the UI describes it.
+/// Kind of place the data file lives in, as the UI describes it. Cloud
+/// folders are refused for new locations; an older config may still point
+/// at one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DataLocationKind {
@@ -265,6 +220,17 @@ pub enum DataLocationKind {
     GoogleDrive,
     /// Any other folder the user chose.
     Folder,
+}
+
+impl DataLocationKind {
+    /// A folder a cloud service syncs.
+    #[must_use]
+    pub const fn is_cloud(self) -> bool {
+        matches!(
+            self,
+            Self::ICloudDrive | Self::Dropbox | Self::OneDrive | Self::GoogleDrive
+        )
+    }
 }
 
 /// Where the data file is, for the Settings card.
@@ -303,20 +269,20 @@ pub fn classify_location(path: &Path, is_default: bool) -> DataLocationKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
-    /// Groups, folders, tabs, statuses and profiles.
+    /// Profiles with their groups, folders and tabs.
     pub workspace: Workspace,
     /// Synced settings.
     pub settings: Settings,
     /// Browsers installed on this machine.
     pub browsers: Vec<BrowserInfo>,
-    /// Profiles of each installed browser that exposes them.
-    pub browser_profiles: BTreeMap<BrowserId, Vec<BrowserProfile>>,
     /// Browser used for profiles that are not configured here.
     pub system_browser: Option<BrowserId>,
     /// Path of the data file on this machine.
     pub data_path: String,
     /// Where the data file is, in words the UI can show.
     pub data_location: DataLocation,
+    /// First run: no data file yet, so the UI asks where to keep it.
+    pub needs_data_file: bool,
     /// How each profile opens here, in profile order.
     pub profiles: Vec<ProfileView>,
 }
@@ -349,9 +315,9 @@ pub enum AppError {
     /// The browser is not installed on this machine.
     #[error("browser {0} is not installed")]
     UnknownBrowser(BrowserId),
-    /// The browser has no profile with this id.
-    #[error("browser profile `{0}` not found")]
-    UnknownBrowserProfile(String),
+    /// Cloud folders are not allowed for the data file.
+    #[error("the data file cannot go in a cloud folder ({0})")]
+    CloudFolder(String),
     /// No browser is installed at all.
     #[error("no browser is installed")]
     NoBrowser,
@@ -369,7 +335,6 @@ impl AppError {
                 WorkspaceError::GroupNotFound(_)
                 | WorkspaceError::FolderNotFound(_)
                 | WorkspaceError::TabNotFound(_)
-                | WorkspaceError::StatusNotFound(_)
                 | WorkspaceError::ProfileNotFound(_),
             ) => "notFound",
             Self::Workspace(_) => "invalid",
@@ -378,7 +343,8 @@ impl AppError {
             Self::Store(_) => "badFile",
             Self::Browser(_) => "browser",
             Self::Url(_) => "invalidUrl",
-            Self::UnknownBrowser(_) | Self::UnknownBrowserProfile(_) => "unknownBrowser",
+            Self::UnknownBrowser(_) => "unknownBrowser",
+            Self::CloudFolder(_) => "cloudFolder",
             Self::NoBrowser => "noBrowser",
         }
     }
@@ -445,16 +411,10 @@ pub struct DataFileInfo {
 pub fn inspect_data_file(path: &Path) -> Result<DataFileInfo> {
     let document = FileStore::new(path).load()?;
     let (groups, tabs) = document.map_or((0, 0), |document| {
-        let groups = document.workspace.groups();
-        let tabs = groups
-            .iter()
-            .flat_map(|group| &group.children)
-            .map(|node| match node {
-                Node::Tab(_) => 1,
-                Node::Folder(folder) => folder.tabs.len(),
-            })
-            .sum();
-        (groups.len(), tabs)
+        (
+            document.workspace.groups().count(),
+            document.workspace.tabs().len(),
+        )
     });
     Ok(DataFileInfo {
         path: path.display().to_string(),
@@ -464,24 +424,11 @@ pub fn inspect_data_file(path: &Path) -> Result<DataFileInfo> {
     })
 }
 
-/// The browser a profile opens in here, and how.
+/// The browser a profile opens in here.
 struct Resolution<'a> {
     browser: Option<&'a BrowserInfo>,
     binding: Option<&'a ProfileBinding>,
     is_fallback: bool,
-}
-
-impl Resolution<'_> {
-    /// Launch options; a fallback browser ignores the bound browser's profile.
-    fn options(&self, first_of_many: bool) -> LaunchOptions {
-        match self.binding {
-            Some(binding) if !self.is_fallback => LaunchOptions {
-                browser_profile: binding.browser_profile.clone(),
-                new_window: first_of_many && binding.new_window,
-            },
-            _ => LaunchOptions::default(),
-        }
-    }
 }
 
 /// Owns the document and this machine's config, and opens tabs.
@@ -493,7 +440,6 @@ pub struct AppService<S> {
     config: AppConfig,
     document: Document,
     browsers: Vec<BrowserInfo>,
-    browser_profiles: BTreeMap<BrowserId, Vec<BrowserProfile>>,
     system_browser: Option<BrowserId>,
     platform: Platform,
 }
@@ -502,8 +448,10 @@ impl<S: System> AppService<S> {
     /// Loads the data file (or starts a new one), this machine's config and
     /// the installed browsers.
     ///
-    /// On first run the only profile opens in the system browser. A version 1
-    /// data file is upgraded: its browsers become this machine's bindings.
+    /// On first run the only profile opens in the system browser, and nothing
+    /// is written until the user picks where to keep the data file (see
+    /// [`AppService::choose_data_file`]). A version 1 data file is upgraded:
+    /// its browsers become this machine's bindings.
     ///
     /// # Errors
     ///
@@ -520,7 +468,6 @@ impl<S: System> AppService<S> {
             .and_then(|id| find_installed(&browsers, &id))
             .or_else(|| browsers.first())
             .map(|browser| browser.id.clone());
-        let browser_profiles = profiles_of(&system, &browsers);
         let mut config = load_config(&config_path);
 
         let loaded = store.load()?;
@@ -537,8 +484,6 @@ impl<S: System> AppService<S> {
                 profile.id,
                 ProfileBinding {
                     browser: browser.clone(),
-                    browser_profile: None,
-                    new_window: false,
                 },
             );
             config_changed = true;
@@ -562,14 +507,14 @@ impl<S: System> AppService<S> {
                 ProfileBinding {
                     browser: installed
                         .map_or_else(|| binding.browser.clone(), |info| info.id.clone()),
-                    browser_profile: None,
-                    new_window: false,
                 },
             );
             config_changed = true;
         }
 
-        if is_new || !migrated.is_empty() {
+        // On first run the user picks the folder before anything is written.
+        let first_run = is_new && config.data_path.is_none();
+        if (is_new && !first_run) || !migrated.is_empty() {
             store.save(&document)?;
         }
         if config_changed {
@@ -582,7 +527,6 @@ impl<S: System> AppService<S> {
             config,
             document,
             browsers,
-            browser_profiles,
             system_browser,
             platform,
         })
@@ -619,7 +563,6 @@ impl<S: System> AppService<S> {
             workspace: self.document.workspace.clone(),
             settings: self.document.settings.clone(),
             browsers: self.browsers.clone(),
-            browser_profiles: self.browser_profiles.clone(),
             system_browser: self.system_browser.clone(),
             data_path: self.store.path().display().to_string(),
             data_location: DataLocation {
@@ -631,6 +574,7 @@ impl<S: System> AppService<S> {
                     .map(|folder| folder.display().to_string())
                     .unwrap_or_default(),
             },
+            needs_data_file: self.config.data_path.is_none() && !self.store.path().exists(),
             profiles,
         }
     }
@@ -642,14 +586,8 @@ impl<S: System> AppService<S> {
     /// When the change is invalid or a file cannot be saved, including
     /// [`StoreError::Conflict`] when another device changed the data file.
     pub fn apply(&mut self, command: Command) -> Result<Snapshot> {
-        if let Command::BindProfile {
-            profile,
-            browser,
-            browser_profile,
-            new_window,
-        } = command
-        {
-            self.bind(profile, &browser, browser_profile, new_window)?;
+        if let Command::BindProfile { profile, browser } = command {
+            self.bind(profile, browser.as_ref())?;
             return Ok(self.snapshot());
         }
         let removed_profile = match &command {
@@ -697,15 +635,36 @@ impl<S: System> AppService<S> {
         self.store.path()
     }
 
-    /// Moves the data file to `path`, for example into a synced folder, and
-    /// remembers it in this machine's config. When a Tabstage file is
-    /// already there, `mode` decides whether to load it or overwrite it.
-    /// The old file is left untouched.
+    /// First run: keeps the data file at `path`, or at the default location
+    /// when `None`. A Tabstage file already at `path` is loaded.
     ///
     /// # Errors
     ///
-    /// When the file at `path` or the config cannot be read or written.
+    /// [`AppError::CloudFolder`] for a cloud folder, or when the file or the
+    /// config cannot be read or written.
+    pub fn choose_data_file(&mut self, path: Option<PathBuf>) -> Result<Snapshot> {
+        match path {
+            Some(path) => self.relocate(path, Relocate::UseExisting),
+            None => {
+                self.store.save(&self.document)?;
+                Ok(self.snapshot())
+            }
+        }
+    }
+
+    /// Moves the data file to `path`, a local folder, and remembers it in
+    /// this machine's config. When a Tabstage file is already there, `mode`
+    /// decides whether to load it or overwrite it. The old file is left
+    /// untouched.
+    ///
+    /// # Errors
+    ///
+    /// [`AppError::CloudFolder`] for a cloud folder, or when the file at
+    /// `path` or the config cannot be read or written.
     pub fn relocate(&mut self, path: PathBuf, mode: Relocate) -> Result<Snapshot> {
+        if classify_location(&path, false).is_cloud() {
+            return Err(AppError::CloudFolder(path.display().to_string()));
+        }
         let mut store = FileStore::new(path.clone());
         match (store.load()?, mode) {
             (Some(existing), Relocate::UseExisting) => self.document = existing,
@@ -726,18 +685,17 @@ impl<S: System> AppService<S> {
         Ok(self.store.has_external_change()?)
     }
 
-    /// Lists the installed browsers and their profiles again.
+    /// Lists the installed browsers again.
     ///
     /// # Errors
     ///
     /// When browsers cannot be listed.
     pub fn refresh_browsers(&mut self) -> Result<Snapshot> {
         self.browsers = self.system.installed()?;
-        self.browser_profiles = profiles_of(&self.system, &self.browsers);
         Ok(self.snapshot())
     }
 
-    /// Opens a tab with its group's profile, focusing it if already open.
+    /// Opens a tab with its profile's browser, focusing it if already open.
     ///
     /// # Errors
     ///
@@ -748,12 +706,13 @@ impl<S: System> AppService<S> {
             .workspace
             .find_tab(tab)
             .ok_or(WorkspaceError::TabNotFound(tab))?;
-        let resolved = self.resolve(found.group.profile);
-        let browser = resolved.browser.ok_or(AppError::NoBrowser)?;
+        let browser = self
+            .resolve(found.profile.id)
+            .browser
+            .ok_or(AppError::NoBrowser)?;
         Ok(open_tab(
             browser,
             &found.tab.url,
-            &resolved.options(false),
             self.platform,
             &self.system,
             &self.system,
@@ -766,19 +725,12 @@ impl<S: System> AppService<S> {
     ///
     /// When the folder is unknown, no browser is installed or opening fails.
     pub fn open_folder(&self, folder: FolderId) -> Result<OpenSummary> {
-        let (group, tabs) = self
+        let found = self
             .document
             .workspace
-            .groups()
-            .iter()
-            .find_map(|group| {
-                group.children.iter().find_map(|node| match node {
-                    Node::Folder(found) if found.id == folder => Some((group, &found.tabs)),
-                    _ => None,
-                })
-            })
+            .find_folder(folder)
             .ok_or(WorkspaceError::FolderNotFound(folder))?;
-        self.open_all(group, tabs.iter())
+        self.open_all(found.profile.id, found.folder.tabs.iter())
     }
 
     /// Opens every tab of a group, folders included, in order.
@@ -787,38 +739,56 @@ impl<S: System> AppService<S> {
     ///
     /// When the group is unknown, no browser is installed or opening fails.
     pub fn open_group(&self, group: GroupId) -> Result<OpenSummary> {
-        let group = self
-            .document
-            .workspace
-            .group(group)
-            .ok_or(WorkspaceError::GroupNotFound(group))?;
-        let tabs = group.children.iter().flat_map(|node| match node {
+        let workspace = &self.document.workspace;
+        let (Some(found), Some(profile)) = (workspace.group(group), workspace.group_profile(group))
+        else {
+            return Err(WorkspaceError::GroupNotFound(group).into());
+        };
+        let tabs = found.children.iter().flat_map(|node| match node {
             Node::Tab(tab) => std::slice::from_ref(tab).iter(),
             Node::Folder(folder) => folder.tabs.iter(),
         });
-        self.open_all(group, tabs)
+        self.open_all(profile.id, tabs)
     }
 
-    /// Opens tabs one after another. Only the first can ask for a new window,
-    /// so the rest join it.
+    /// Opens every tab of a profile, groups and folders included, in order.
+    ///
+    /// # Errors
+    ///
+    /// When the profile is unknown, no browser is installed or opening fails.
+    pub fn open_profile(&self, profile: ProfileId) -> Result<OpenSummary> {
+        let found = self
+            .document
+            .workspace
+            .profile(profile)
+            .ok_or(WorkspaceError::ProfileNotFound(profile))?;
+        let tabs = found.items.iter().flat_map(|item| -> Vec<&Tab> {
+            match item {
+                Item::Tab(tab) => vec![tab],
+                Item::Folder(folder) => folder.tabs.iter().collect(),
+                Item::Group(group) => group
+                    .children
+                    .iter()
+                    .flat_map(|node| match node {
+                        Node::Tab(tab) => std::slice::from_ref(tab).iter(),
+                        Node::Folder(folder) => folder.tabs.iter(),
+                    })
+                    .collect(),
+            }
+        });
+        self.open_all(profile, tabs)
+    }
+
+    /// Opens tabs one after another in the profile's browser.
     fn open_all<'a>(
         &self,
-        group: &Group,
+        profile: ProfileId,
         tabs: impl Iterator<Item = &'a Tab>,
     ) -> Result<OpenSummary> {
-        let resolved = self.resolve(group.profile);
-        let browser = resolved.browser.ok_or(AppError::NoBrowser)?;
+        let browser = self.resolve(profile).browser.ok_or(AppError::NoBrowser)?;
         let mut summary = OpenSummary::default();
-        for (index, tab) in tabs.enumerate() {
-            let options = resolved.options(index == 0);
-            match open_tab(
-                browser,
-                &tab.url,
-                &options,
-                self.platform,
-                &self.system,
-                &self.system,
-            )? {
+        for tab in tabs {
+            match open_tab(browser, &tab.url, self.platform, &self.system, &self.system)? {
                 Opened::OpenedNew => summary.opened += 1,
                 Opened::FocusedExisting => summary.focused += 1,
             }
@@ -853,36 +823,23 @@ impl<S: System> AppService<S> {
         }
     }
 
-    fn bind(
-        &mut self,
-        profile: ProfileId,
-        browser: &BrowserId,
-        browser_profile: Option<String>,
-        new_window: bool,
-    ) -> Result<()> {
+    fn bind(&mut self, profile: ProfileId, browser: Option<&BrowserId>) -> Result<()> {
         if self.document.workspace.profile(profile).is_none() {
             return Err(WorkspaceError::ProfileNotFound(profile).into());
         }
-        let browser = find_installed(&self.browsers, browser)
-            .map(|info| info.id.clone())
-            .ok_or_else(|| AppError::UnknownBrowser(browser.clone()))?;
-        if let Some(wanted) = &browser_profile {
-            let known = self
-                .browser_profiles
-                .get(&browser)
-                .is_some_and(|profiles| profiles.iter().any(|p| &p.id == wanted));
-            if !known {
-                return Err(AppError::UnknownBrowserProfile(wanted.clone()));
-            }
-        }
-        let previous = self.config.profiles.insert(
-            profile,
-            ProfileBinding {
-                browser,
-                browser_profile,
-                new_window,
-            },
-        );
+        let binding = browser
+            .map(|browser| {
+                find_installed(&self.browsers, browser)
+                    .map(|info| ProfileBinding {
+                        browser: info.id.clone(),
+                    })
+                    .ok_or_else(|| AppError::UnknownBrowser(browser.clone()))
+            })
+            .transpose()?;
+        let previous = match binding {
+            Some(binding) => self.config.profiles.insert(profile, binding),
+            None => self.config.profiles.remove(&profile),
+        };
         if let Err(error) = self.save_config() {
             match previous {
                 Some(previous) => self.config.profiles.insert(profile, previous),
@@ -906,21 +863,22 @@ impl<S: System> AppService<S> {
                 color,
             } => workspace.add_group(profile, &name, color).map(drop)?,
             Command::RenameGroup { group, name } => workspace.rename_group(group, &name)?,
-            Command::SetGroupProfile { group, profile } => {
-                workspace.set_group_profile(group, profile)?;
-            }
-            Command::MoveGroup { group, index } => workspace.move_group(group, index)?,
+            Command::MoveGroup {
+                group,
+                profile,
+                index,
+            } => workspace.move_group(group, profile, index)?,
             Command::RemoveGroup { group } => workspace.remove_group(group).map(drop)?,
-            Command::AddFolder { group, name } => workspace.add_folder(group, &name).map(drop)?,
+            Command::AddFolder { place, name } => workspace.add_folder(place, &name).map(drop)?,
             Command::RenameFolder { folder, name } => workspace.rename_folder(folder, &name)?,
             Command::SetFolderCollapsed { folder, collapsed } => {
                 workspace.set_folder_collapsed(folder, collapsed)?;
             }
             Command::MoveFolder {
                 folder,
-                group,
+                place,
                 index,
-            } => workspace.move_folder(folder, group, index)?,
+            } => workspace.move_folder(folder, place, index)?,
             Command::RemoveFolder { folder } => workspace.remove_folder(folder).map(drop)?,
             Command::AddTab { place, url, title } => {
                 let url = TabUrl::parse(&url)?;
@@ -929,19 +887,7 @@ impl<S: System> AppService<S> {
             Command::RenameTab { tab, title } => workspace.rename_tab(tab, &title)?,
             Command::RemoveTab { tab } => workspace.remove_tab(tab).map(drop)?,
             Command::MoveTab { tab, place, index } => workspace.move_tab(tab, place, index)?,
-            Command::SetStatus { target, status } => workspace.set_status(target, status)?,
-            Command::AddStatus { label, color } => workspace.add_status(&label, color).map(drop)?,
-            Command::RenameStatus { status, label } => workspace.rename_status(&status, &label)?,
-            Command::SetStatusColor { status, color } => {
-                workspace.set_status_color(&status, color)?;
-            }
-            Command::MoveStatus { status, index } => workspace.move_status(&status, index)?,
-            Command::RemoveStatus {
-                status,
-                replacement,
-            } => workspace
-                .remove_status(&status, replacement.as_ref())
-                .map(drop)?,
+            Command::SetIcon { target, icon } => workspace.set_icon(target, icon)?,
             Command::AddProfile { name } => workspace.add_profile(&name).map(drop)?,
             Command::RenameProfile { profile, name } => workspace.rename_profile(profile, &name)?,
             Command::SetProfileColor { profile, color } => {
@@ -950,37 +896,13 @@ impl<S: System> AppService<S> {
             Command::MoveProfile { profile, index } => workspace.move_profile(profile, index)?,
             Command::RemoveProfile {
                 profile,
-                move_groups_to,
-            } => workspace
-                .remove_profile(profile, move_groups_to)
-                .map(drop)?,
+                move_items_to,
+            } => workspace.remove_profile(profile, move_items_to).map(drop)?,
             // Machine-local: handled in `apply` without touching the document.
             Command::BindProfile { .. } => {}
         }
         Ok(())
     }
-}
-
-/// Profiles of every installed browser that has some.
-fn profiles_of(
-    system: &impl Catalog,
-    browsers: &[BrowserInfo],
-) -> BTreeMap<BrowserId, Vec<BrowserProfile>> {
-    browsers
-        .iter()
-        .filter_map(|browser| match system.profiles(browser) {
-            Ok(profiles) if !profiles.is_empty() => Some((browser.id.clone(), profiles)),
-            Ok(_) => None,
-            Err(error) => {
-                tracing::warn!(
-                    browser = %browser.id,
-                    error = &error as &dyn std::error::Error,
-                    "could not list browser profiles"
-                );
-                None
-            }
-        })
-        .collect()
 }
 
 #[cfg(test)]

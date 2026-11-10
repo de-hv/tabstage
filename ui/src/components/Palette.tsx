@@ -1,22 +1,36 @@
 import { listen } from '@tauri-apps/api/event';
 import { Command } from 'cmdk';
-import { Folder as FolderIcon, Globe } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import type { Snapshot } from '../api/types';
-import { findProfile, profileBrowser } from '../lib/browsers';
+import type { Folder, Group, Profile, Snapshot } from '../api/types';
+import { profileBrowser } from '../lib/browsers';
+import { allTabs } from '../lib/workspace';
 import { BrowserBadge } from './BrowserBadge';
+import { ItemIcon } from './ItemIcon';
 
-/** Emitted by the shell for the global shortcut and the tray item. */
+/** Emitted by the shell for the global shortcut. */
 export const OPEN_PALETTE_EVENT = 'open-palette';
 
 interface Props {
   snapshot: Snapshot;
-  openTab: (tab: string, browserName: string) => void;
+  openTab: (tab: string) => void;
   openFolder: (folder: string) => void;
 }
 
-/** Search across every group; Enter opens the tab in its group's browser. */
+/** Every folder with its profile and group, for the search. */
+function allFolders(snapshot: Snapshot): { folder: Folder; profile: Profile; group?: Group }[] {
+  return snapshot.workspace.profiles.flatMap((profile) =>
+    profile.items.flatMap((item) => {
+      if (item.type === 'folder') return [{ folder: item, profile }];
+      if (item.type === 'group') {
+        return item.children.flatMap((node) => (node.type === 'folder' ? [{ folder: node, profile, group: item }] : []));
+      }
+      return [];
+    }),
+  );
+}
+
+/** Search across every profile; Enter opens the tab in its profile's browser. */
 export function Palette({ snapshot, openTab, openFolder }: Props) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -40,6 +54,21 @@ export function Palette({ snapshot, openTab, openFolder }: Props) {
     action();
   };
 
+  const meta = (profile: Profile, group?: Group, folder?: Folder) => {
+    const browser = profileBrowser(snapshot, profile.id);
+    return (
+      <span className="palette__meta">
+        {[profile.name, group?.name, folder?.name].filter(Boolean).join(' / ')}
+        {browser && (
+          <>
+            <BrowserBadge name={browser.name} kind={browser.kind} />
+            {browser.name}
+          </>
+        )}
+      </span>
+    );
+  };
+
   return (
     <Command.Dialog
       open={isOpen}
@@ -52,54 +81,32 @@ export function Palette({ snapshot, openTab, openFolder }: Props) {
       <Command.Input className="palette__input" placeholder="Search tabs and folders" aria-label="Search tabs" />
       <Command.List className="palette__list">
         <Command.Empty className="palette__empty">No tab matches.</Command.Empty>
-        {snapshot.workspace.groups.map((group) => {
-          const browser = profileBrowser(snapshot, group.profile);
-          const browserName = browser?.name ?? '';
-          const meta = (
-            <span className="palette__meta">
-              {findProfile(snapshot, group.profile)?.name} · {group.name}
-              {browser && (
-                <>
-                  <BrowserBadge name={browser.name} kind={browser.kind} />
-                  {browser.name}
-                </>
-              )}
+        {allFolders(snapshot).map(({ folder, profile, group }) => (
+          <Command.Item
+            key={folder.id}
+            value={`folder ${folder.name} ${group?.name ?? ''} ${profile.name} ${folder.id}`}
+            className="palette__item"
+            onSelect={() => run(() => openFolder(folder.id))}
+          >
+            <ItemIcon icon={folder.icon} kind="folder" />
+            <span className="palette__title">
+              Folder {folder.name} · {folder.tabs.length} tabs
             </span>
-          );
-          return group.children.flatMap((node) => {
-            const tabs = node.type === 'folder' ? node.tabs : [node];
-            const folderItem =
-              node.type === 'folder' ? (
-                <Command.Item
-                  key={node.id}
-                  value={`folder ${node.name} ${group.name} ${node.id}`}
-                  className="palette__item"
-                  onSelect={() => run(() => openFolder(node.id))}
-                >
-                  <FolderIcon className="icon" aria-hidden="true" />
-                  <span className="palette__title">
-                    Folder {node.name} · {node.tabs.length} tabs
-                  </span>
-                  {meta}
-                </Command.Item>
-              ) : null;
-            return [
-              folderItem,
-              ...tabs.map((tab) => (
-                <Command.Item
-                  key={tab.id}
-                  value={`${tab.title} ${tab.url} ${group.name} ${findProfile(snapshot, group.profile)?.name ?? ''} ${tab.id}`}
-                  className="palette__item"
-                  onSelect={() => run(() => openTab(tab.id, browserName))}
-                >
-                  <Globe className="icon" aria-hidden="true" />
-                  <span className="palette__title">{tab.title}</span>
-                  {meta}
-                </Command.Item>
-              )),
-            ];
-          });
-        })}
+            {meta(profile, group)}
+          </Command.Item>
+        ))}
+        {allTabs(snapshot.workspace).map(({ tab, profile, group, folder }) => (
+          <Command.Item
+            key={tab.id}
+            value={`${tab.title} ${tab.url} ${group?.name ?? ''} ${folder?.name ?? ''} ${profile.name} ${tab.id}`}
+            className="palette__item"
+            onSelect={() => run(() => openTab(tab.id))}
+          >
+            <ItemIcon icon={tab.icon} kind="tab" />
+            <span className="palette__title">{tab.title}</span>
+            {meta(profile, group, folder)}
+          </Command.Item>
+        ))}
       </Command.List>
     </Command.Dialog>
   );

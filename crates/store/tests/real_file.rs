@@ -16,14 +16,9 @@ fn upgrades_a_real_data_file() {
     let document = tabstage_store::from_json(&text).expect("parse and upgrade");
 
     for profile in document.workspace.profiles() {
-        let groups = document
-            .workspace
-            .groups()
-            .iter()
-            .filter(|group| group.profile == profile.id)
-            .count();
-        println!("profile {:<20} groups={groups}", profile.name);
+        println!("profile {:<20} items={}", profile.name, profile.items.len());
     }
+    println!("tabs={}", document.workspace.tabs().len());
     for binding in &document.migrated {
         let name = document
             .workspace
@@ -34,6 +29,6 @@ fn upgrades_a_real_data_file() {
     let again = tabstage_store::from_json(&tabstage_store::to_json(&document)).expect("reparse");
     assert_eq!(
         again.workspace, document.workspace,
-        "v2 output reads back the same"
+        "output reads back the same"
     );
 }
