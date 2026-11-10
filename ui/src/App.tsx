@@ -11,11 +11,13 @@ import { Palette } from './components/Palette';
 import { ProfileBoard } from './components/ProfileBoard';
 import { RemoveProfileDialog } from './components/ProfilesEditor';
 import { ResizeHandle, SIDEBAR_DEFAULT, clampWidth } from './components/ResizeHandle';
+import { TabDetail } from './components/TabDetail';
 import { Settings } from './components/Settings';
 import { Sidebar } from './components/Sidebar';
 import { profileBrowser } from './lib/browsers';
 import { countTabs, findFolder, findGroup, findProfile, locate, placeLabel } from './lib/workspace';
 import type { ItemActions, Selection } from './state/selection';
+import { usePreference } from './state/usePreference';
 import { useWorkspace } from './state/useWorkspace';
 
 const WIDTH_KEY = 'tabstage.sidebarWidth';
@@ -29,6 +31,7 @@ export function App() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [removingProfile, setRemovingProfile] = useState<string | null>(null);
   const [width, setWidth] = useState(readWidth);
+  const [showUrls, setShowUrls] = usePreference('tabstage.sidebarUrls', false);
   const { snapshot, error } = workspace;
 
   if (!snapshot) {
@@ -114,6 +117,8 @@ export function App() {
           }}
           apply={apply}
           actions={actions}
+          showUrls={showUrls}
+          onShowUrls={setShowUrls}
         />
         <ResizeHandle
           width={width}
@@ -130,9 +135,18 @@ export function App() {
             relocate={workspace.relocate}
             onRevealDataFile={() => void workspace.revealDataFile()}
             focusProfile={focusProfile}
+            showUrls={showUrls}
+            onShowUrls={setShowUrls}
           />
         ) : (
-          <MainView snapshot={snapshot} shown={shown} apply={apply} actions={actions} onSelect={select} />
+          <MainView
+            snapshot={snapshot}
+            shown={shown}
+            apply={apply}
+            actions={actions}
+            onSelect={select}
+            notify={workspace.notify}
+          />
         )}
         <Palette
           snapshot={snapshot}
@@ -170,14 +184,29 @@ function MainView({
   apply,
   actions,
   onSelect,
+  notify,
 }: {
   snapshot: Snapshot;
   shown: Selection | null;
   apply: ReturnType<typeof useWorkspace>['apply'];
   actions: ItemActions;
   onSelect: (selection: Selection) => void;
+  notify: (text: string) => void;
 }) {
   const { workspace } = snapshot;
+  if (shown?.kind === 'tab' && locate(workspace, shown.id)) {
+    return (
+      <TabDetail
+        key={shown.id}
+        snapshot={snapshot}
+        tab={shown.id}
+        apply={apply}
+        actions={actions}
+        onSelect={onSelect}
+        notify={notify}
+      />
+    );
+  }
   if (shown?.kind === 'group') {
     const group = findGroup(workspace, shown.id);
     if (group) {
@@ -227,7 +256,9 @@ function resolveSelection(snapshot: Snapshot, selection: Selection | null): Sele
         ? findProfile(workspace, selection.id)
         : selection.kind === 'group'
           ? findGroup(workspace, selection.id)
-          : findFolder(workspace, selection.id);
+          : selection.kind === 'folder'
+            ? findFolder(workspace, selection.id)
+            : locate(workspace, selection.id);
     if (exists) return selection;
   }
   const first = workspace.profiles[0];

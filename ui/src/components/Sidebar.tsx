@@ -15,6 +15,7 @@ import { IconPicker } from './IconPicker';
 import { InlineInput } from './InlineInput';
 import { type ItemKind, ItemIcon } from './ItemIcon';
 import { ProfileColorButton } from './ProfileDot';
+import { TabUrl } from './TabUrl';
 
 
 interface Props {
@@ -25,6 +26,9 @@ interface Props {
   onOpenSettings: () => void;
   apply: (command: Command) => Promise<AppError | null>;
   actions: ItemActions;
+  /** Show each tab's URL under its title. */
+  showUrls: boolean;
+  onShowUrls: (show: boolean) => void;
 }
 
 /** Pending inline "new group" or "new folder" field. */
@@ -34,7 +38,8 @@ interface Adding {
 }
 
 /** The tree: profiles, their groups, folders and tabs. Every row has a menu. */
-export function Sidebar({ snapshot, selection, settingsOpen, onSelect, onOpenSettings, apply, actions }: Props) {
+export function Sidebar(props: Props) {
+  const { snapshot, selection, settingsOpen, onSelect, onOpenSettings, apply, actions } = props;
   const tree = useTreeState();
   const [adding, setAdding] = useState<Adding | null>(null);
   const [addingProfile, setAddingProfile] = useState(false);
@@ -49,6 +54,8 @@ export function Sidebar({ snapshot, selection, settingsOpen, onSelect, onOpenSet
     apply,
     actions,
     onOpenSettings,
+    showUrls: props.showUrls,
+    onShowUrls: props.onShowUrls,
     startNew: (place, kind) => {
       if (kind === 'tab') {
         actions.newTab(place);
@@ -113,6 +120,8 @@ interface TreeContext {
   apply: (command: Command) => Promise<AppError | null>;
   actions: ItemActions;
   onOpenSettings: () => void;
+  showUrls: boolean;
+  onShowUrls: (show: boolean) => void;
   startNew: (place: Place, kind: NewKind) => void;
   stopAdding: () => void;
 }
@@ -171,6 +180,8 @@ function ProfileNode({ ctx, profile }: { ctx: TreeContext; profile: Profile }) {
             onColor: row.openLeading,
             onConfigure: () => ctx.actions.configureProfile(profile.id),
             canDelete,
+            showsUrls: ctx.showUrls,
+            onToggleUrls: () => ctx.onShowUrls(!ctx.showUrls),
           })
         }
       />
@@ -299,8 +310,10 @@ function TabNode({ ctx, tab, depth }: { ctx: TreeContext; tab: Tab; depth: numbe
         kind="tab"
         name={tab.title}
         title={`${tab.title}\n${tab.url}`}
-        activateLabel={`Open ${tab.title}`}
-        onActivate={() => ctx.actions.open({ tab: tab.id })}
+        subtitle={ctx.showUrls ? <TabUrl url={tab.url} compact /> : undefined}
+        current={isCurrent(ctx, 'tab', tab.id)}
+        onActivate={() => ctx.onSelect({ kind: 'tab', id: tab.id })}
+        onOpen={() => ctx.actions.open({ tab: tab.id })}
         drag={{ kind: 'tab', tab: tab.id }}
         drop={{ kind: 'before', node: tab.id }}
         onRename={async (title) => !(await ctx.apply({ type: 'renameTab', tab: tab.id, title }))}
@@ -391,12 +404,15 @@ interface RowProps {
   kind: 'profile' | ItemKind;
   name: string;
   title?: string;
+  /** Second line under the name, e.g. a tab's URL. */
+  subtitle?: ReactNode;
   /** Leaf rows (tabs) have no chevron. */
   expanded?: boolean;
   onToggle?: () => void;
   current?: boolean;
   onActivate: () => void;
-  activateLabel?: string;
+  /** Double-click: open in the browser (tabs only). */
+  onOpen?: () => void;
   drag: DragItem;
   drop: DropSpec;
   onRename: (name: string) => Promise<boolean>;
@@ -416,7 +432,7 @@ function Row(props: RowProps) {
 
   return (
     <div
-      className="tree-row"
+      className={props.subtitle ? 'tree-row tree-row--two-line' : 'tree-row'}
       data-kind={kind}
       data-current={current || undefined}
       style={{ '--depth': depth } as CSSProperties}
@@ -460,10 +476,18 @@ function Row(props: RowProps) {
           className="tree-row__name"
           title={props.title ?? name}
           aria-current={current ? 'page' : undefined}
-          aria-label={props.activateLabel}
+          aria-label={props.subtitle ? name : undefined}
           onClick={onActivate}
+          onDoubleClick={props.onOpen}
         >
-          {name}
+          {props.subtitle ? (
+            <>
+              <span className="tree-row__title">{name}</span>
+              {props.subtitle}
+            </>
+          ) : (
+            name
+          )}
         </button>
       )}
       {props.trailing}

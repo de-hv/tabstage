@@ -28,6 +28,8 @@ export interface WorkspaceState {
   inspectDataFolder: (folder: string) => Promise<DataFileInfo | null>;
   relocate: (folder: string, mode: Relocate) => Promise<void>;
   revealDataFile: () => Promise<void>;
+  /** Shows a short notice at the bottom of the window. */
+  notify: (text: string) => void;
 }
 
 /** Loads the snapshot, applies changes and follows changes from other devices. */
@@ -109,5 +111,6 @@ export function useWorkspace(): WorkspaceState {
     },
     relocate: async (folder, mode) => void (await run(() => api.relocate(folder, mode))),
     revealDataFile: () => attempt(api.revealDataFile),
+    notify: show,
   };
 }

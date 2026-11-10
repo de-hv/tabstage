@@ -43,6 +43,17 @@ describe('settings', () => {
     expect(PERSONAL).toBeTruthy();
   });
 
+  it('turns sidebar URLs on and off', async () => {
+    const { user } = await openSettings();
+
+    const toggle = screen.getByRole('checkbox', { name: 'Show URLs under tabs in the sidebar' });
+    expect((toggle as HTMLInputElement).checked).toBe(false);
+    await user.click(toggle);
+
+    expect(localStorage.getItem('tabstage.sidebarUrls')).toBe('true');
+    expect((toggle as HTMLInputElement).checked).toBe(true);
+  });
+
   it('describes the local data file and offers to move it', async () => {
     await openSettings();
 

@@ -4,11 +4,13 @@ import { useState } from 'react';
 import type { Command, Folder, Tab, Workspace } from '../api/types';
 import { folderMenu, type MenuHandlers, tabMenu } from '../lib/menus';
 import type { ItemActions } from '../state/selection';
+import { useClickOrDoubleClick } from '../state/useClickOrDoubleClick';
 import { ActionMenu } from './ActionMenu';
 import { useDrag, useDrop } from './DragDrop';
 import { IconPicker } from './IconPicker';
 import { InlineInput } from './InlineInput';
 import { ItemIcon } from './ItemIcon';
+import { TabUrl } from './TabUrl';
 
 /** What list rows need from the view that shows them. */
 export interface RowContext {
@@ -17,6 +19,7 @@ export interface RowContext {
   canFocusTabs: boolean;
   apply: (command: Command) => Promise<boolean>;
   onSelectFolder: (folder: string) => void;
+  onSelectTab: (tab: string) => void;
 }
 
 function handlers(row: RowContext, own: Omit<MenuHandlers, 'workspace' | 'onMove'>): MenuHandlers {
@@ -29,6 +32,10 @@ export function TabItem({ tab, row }: { tab: Tab; row: RowContext }) {
   const [iconOpen, setIconOpen] = useState(false);
   const drag = useDrag({ kind: 'tab', tab: tab.id });
   const drop = useDrop({ kind: 'before', node: tab.id });
+  const clicks = useClickOrDoubleClick(
+    () => row.onSelectTab(tab.id),
+    () => row.actions.open({ tab: tab.id }),
+  );
   if (renaming) {
     return (
       <InlineInput
@@ -64,12 +71,16 @@ export function TabItem({ tab, row }: { tab: Tab; row: RowContext }) {
           <ItemIcon icon={tab.icon} kind="tab" />
         </button>
       </IconPicker>
-      <button type="button" className="row" title={tab.url} onClick={() => row.actions.open({ tab: tab.id })}>
-        <span className="row__title">
-          {tab.title} <span className="row__host">{hostOf(tab.url)}</span>
-        </span>
+      <button
+        type="button"
+        className="row"
+        title={tab.url}
+        {...clicks}
+      >
+        <span className="row__title row__title--tab">{tab.title}</span>
+        <TabUrl url={tab.url} />
         <span className="row__hint" aria-hidden="true">
-          {row.canFocusTabs ? 'Open or go to tab' : 'Open'}
+          Double-click to open
         </span>
       </button>
       <ActionMenu
@@ -173,12 +184,4 @@ export function FolderHeader({ folder, row }: { folder: Folder; row: RowContext 
       />
     </div>
   );
-}
-
-export function hostOf(url: string): string {
-  try {
-    return new URL(url).host;
-  } catch {
-    return '';
-  }
 }

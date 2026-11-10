@@ -290,11 +290,6 @@
   white-space: nowrap;
 }
 
-.row__host {
-  color: var(--subtext0);
-  font-size: 12px;
-}
-
 .row__count {
   color: var(--subtext0);
   font-size: 12px;
@@ -1222,6 +1217,7 @@ span.tree-row__chevron {
 .column {
   display: flex;
   flex: 0 0 236px;
+  min-width: 0;
   flex-direction: column;
   gap: 6px;
   min-height: 0;
@@ -1326,13 +1322,6 @@ button.column__title:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.card__host {
-  overflow: hidden;
-  color: var(--subtext0);
-  font-size: 11px;
-  text-overflow: ellipsis;
 }
 
 /* Icon picker popover. */
@@ -1564,4 +1553,125 @@ button.column__title:hover {
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+/* Tab detail: path, title, full address and an Open button. */
+
+.tab-detail__title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tab-detail .row-menu__trigger {
+  opacity: 1;
+}
+
+.tab-detail__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 720px;
+}
+
+.tab-detail__label {
+  margin: 0;
+  color: var(--subtext0);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.tab-detail__url {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 6px 8px 12px;
+  border: 1px solid var(--surface0);
+  border-radius: 8px;
+  background: var(--mantle);
+}
+
+.tab-detail__url-text {
+  flex: 1;
+  min-width: 0;
+  padding-top: 3px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.tab-detail__hint {
+  margin: 0;
+  color: var(--subtext0);
+  font-size: 12px;
+}
+
+/* Readable URLs: host dimmed, the middle cut when needed, the end kept. */
+
+.tab-url {
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--subtext0);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.tab-url__head {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tab-url__host {
+  color: var(--overlay1);
+}
+
+.tab-url__tail {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+}
+
+.row__title--tab {
+  flex: 0 1 auto;
+  max-width: 50%;
+}
+
+.row .tab-url {
+  flex: 1;
+}
+
+.palette__title--tab {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tree-row--two-line {
+  min-height: 38px;
+}
+
+.tree-row--two-line .tree-row__name {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: auto;
+  padding: 2px 4px;
+  line-height: 1.25;
+}
+
+.tree-row__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
 }

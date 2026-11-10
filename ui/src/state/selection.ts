@@ -1,7 +1,11 @@
 import type { Icon, Place, Target, Uuid } from '../api/types';
 
-/** What the main area shows: a profile's board, or a group or folder list. */
-export type Selection = { kind: 'profile'; id: Uuid } | { kind: 'group'; id: Uuid } | { kind: 'folder'; id: Uuid };
+/** What the main area shows: a profile's board, a group or folder list, or a tab's detail. */
+export type Selection =
+  | { kind: 'profile'; id: Uuid }
+  | { kind: 'group'; id: Uuid }
+  | { kind: 'folder'; id: Uuid }
+  | { kind: 'tab'; id: Uuid };
 
 /** Something "Open all" or "Delete" applies to. */
 export type AnyTarget = Target | { profile: Uuid };

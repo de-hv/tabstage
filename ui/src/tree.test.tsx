@@ -51,7 +51,7 @@ describe('sidebar tree', () => {
     expect(JSON.parse(localStorage.getItem('tabstage.tree') ?? '{}')).toEqual({ [WORK]: true });
   });
 
-  it('selecting a group or folder shows it as a list; a tab row opens the tab', async () => {
+  it('selecting a group or folder shows it as a list; a tab shows its detail', async () => {
     const { calls, user } = await renderApp();
 
     await user.click(within(sidebar()).getByRole('button', { name: 'In TEST' }));
@@ -60,7 +60,16 @@ describe('sidebar tree', () => {
     await user.click(within(sidebar()).getByRole('button', { name: 'Onboarding' }));
     expect(await screen.findByRole('heading', { name: 'Onboarding' })).toBeTruthy();
 
-    await user.click(within(sidebar()).getByRole('button', { name: 'Open Status page' }));
+    await user.click(within(sidebar()).getByRole('button', { name: 'Status page' }));
+    expect(await screen.findByRole('heading', { name: 'Status page' })).toBeTruthy();
+    expect(calls.some((call) => call.cmd === 'open_tab')).toBe(false);
+  });
+
+  it('a double-click on a tab row opens it in the browser', async () => {
+    const { calls, user } = await renderApp();
+
+    await user.dblClick(within(sidebar()).getByRole('button', { name: 'Status page' }));
+
     expect(calls).toContainEqual({ cmd: 'open_tab', args: { tab: STATUS_TAB } });
   });
 
@@ -69,6 +78,32 @@ describe('sidebar tree', () => {
 
     const name = within(sidebar()).getByRole('button', { name: 'Trabajo · Jira' });
     expect(name.getAttribute('title')).toBe('Trabajo · Jira');
+  });
+});
+
+describe('URLs', () => {
+  it('list rows show the whole path after the title', async () => {
+    const { user } = await renderApp();
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'Trabajo · Jira' }));
+    const list = await screen.findByRole('main', { name: 'Trabajo · Jira' });
+
+    expect(within(list).getByRole('button', { name: /^Grafana/ }).textContent).toContain('grafana.example.com/d/api');
+  });
+
+  it('the sidebar shows titles only until URLs are turned on from a profile menu', async () => {
+    await renderApp();
+    expect(treeRow('Status page').textContent).not.toContain('status.example.com');
+
+    await rightClick('Trabajo');
+    clickMenuItem('Show URLs');
+
+    expect(treeRow('Status page').textContent).toContain('status…');
+    expect(localStorage.getItem('tabstage.sidebarUrls')).toBe('true');
+
+    await rightClick('Trabajo');
+    clickMenuItem('Hide URLs');
+    expect(treeRow('Status page').textContent).not.toContain('status…');
   });
 });
 

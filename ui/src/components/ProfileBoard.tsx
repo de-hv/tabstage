@@ -6,12 +6,13 @@ import { profileOpensIn } from '../lib/browsers';
 import { nextGroupColor } from '../lib/colors';
 import { countTabs } from '../lib/workspace';
 import type { ItemActions, Selection } from '../state/selection';
+import { useClickOrDoubleClick } from '../state/useClickOrDoubleClick';
 import { useDrag, useDrop } from './DragDrop';
 import { InlineInput } from './InlineInput';
 import { ItemIcon } from './ItemIcon';
 import { ProfileDot } from './ProfileDot';
-import { hostOf } from './Rows';
 import { SetupNote } from './SetupNote';
+import { TabUrl } from './TabUrl';
 
 
 interface Props {
@@ -162,6 +163,10 @@ function Card({ node, actions, onSelect }: { node: Node; actions: ItemActions; o
       ? { kind: 'into', place: { folder: node.id } }
       : { kind: 'before', node: node.id },
   );
+  const clicks = useClickOrDoubleClick(
+    () => onSelect({ kind: 'tab', id: node.id }),
+    () => actions.open({ tab: node.id }),
+  );
   if (node.type === 'folder') {
     return (
       <button
@@ -182,15 +187,15 @@ function Card({ node, actions, onSelect }: { node: Node; actions: ItemActions; o
     <button
       type="button"
       className="card"
-      title={node.url}
-      onClick={() => actions.open({ tab: node.id })}
+      title={`${node.url}\nDouble-click to open`}
+      {...clicks}
       {...drag}
       {...drop}
     >
       <ItemIcon icon={node.icon} kind="tab" />
       <span className="card__title">
         {node.title}
-        <span className="card__host">{hostOf(node.url)}</span>
+        <TabUrl url={node.url} />
       </span>
     </button>
   );

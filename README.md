@@ -16,7 +16,9 @@ machines where browser extensions are not allowed.
   a tab or folder to another column to move it along.
 - **Icons:** every group, folder and tab has a default icon; pick your own from emoji, an icon
   set, or up to three characters such as a ticket number or a symbol (★, ✓, →).
-- **No duplicate tabs:** clicking a tab focuses it when it is already open. This works on
+- **Tab details:** a click on a tab shows its path and full address, with a button to open it
+  and one to copy the address. A double-click opens it right away.
+- **No duplicate tabs:** opening a tab focuses it when it is already open. This works on
   macOS for Safari and Chromium browsers (Chrome, Edge, Brave, Vivaldi, Arc) through
   AppleScript. Firefox and Linux browsers do not expose their tabs, so a new tab is opened.
 - **Drag and drop:** move tabs, folders and groups in the tree, the lists and the board. Every
