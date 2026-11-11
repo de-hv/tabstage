@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.2](https://github.com/de-hv/tabstage-desktop/compare/v0.3.1...v0.3.2) (2026-11-11)
+
+
+### Features
+
+* Add ticket ids and notes, edit tab URLs, compact sidebar and indent guides ([55ea00b](https://github.com/de-hv/tabstage-desktop/commit/55ea00bb74cf8a103162292a7a8f48c51c59995e))
+
+
+### Bug Fixes
+
+* Let the window shrink to fit tiling window managers ([44a98c2](https://github.com/de-hv/tabstage-desktop/commit/44a98c29ed2d6eae1ca5e937cdad17a02b1a867f))
+
 ## [0.3.1](https://github.com/de-hv/tabstage-desktop/compare/v0.3.0...v0.3.1) (2026-11-10)
 
 
