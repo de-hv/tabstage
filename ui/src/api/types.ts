@@ -29,12 +29,20 @@ export interface Tab {
   url: string;
   title: string;
   icon?: Icon;
+  /** Ticket key in Jira or a similar tracker, such as `PROJ-123`. */
+  ticketId?: string;
+  /** Free-form note; may span several lines. */
+  note?: string;
 }
 
 export interface Folder {
   id: Uuid;
   name: string;
   icon?: Icon;
+  /** Ticket key in Jira or a similar tracker, such as `PROJ-123`. */
+  ticketId?: string;
+  /** Free-form note; may span several lines. */
+  note?: string;
   collapsed: boolean;
   tabs: Tab[];
 }
@@ -47,6 +55,10 @@ export interface Group {
   name: string;
   color: AccentColor;
   icon?: Icon;
+  /** Ticket key in Jira or a similar tracker, such as `PROJ-123`. */
+  ticketId?: string;
+  /** Free-form note; may span several lines. */
+  note?: string;
   children: Node[];
 }
 
@@ -136,9 +148,11 @@ export type Command =
   | { type: 'removeFolder'; folder: Uuid }
   | { type: 'addTab'; place: Place; url: string; title: string }
   | { type: 'renameTab'; tab: Uuid; title: string }
+  | { type: 'setTabUrl'; tab: Uuid; url: string }
   | { type: 'removeTab'; tab: Uuid }
   | { type: 'moveTab'; tab: Uuid; place: Place; index: number }
   | { type: 'setIcon'; target: Target; icon: Icon | null }
+  | { type: 'setDetails'; target: Target; ticketId: string; note: string }
   | { type: 'addProfile'; name: string }
   | { type: 'renameProfile'; profile: Uuid; name: string }
   | { type: 'setProfileColor'; profile: Uuid; color: number }

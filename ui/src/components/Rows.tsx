@@ -94,6 +94,7 @@ export function TabItem({ tab, row }: { tab: Tab; row: RowContext }) {
             onOpen: () => row.actions.open({ tab: tab.id }),
             onRename: () => setRenaming(true),
             onIcon: () => setIconOpen(true),
+            onDetails: () => row.actions.editDetails({ tab: tab.id }),
             onDelete: () => row.actions.requestDelete({ tab: tab.id }),
           }),
         )}
@@ -178,6 +179,7 @@ export function FolderHeader({ folder, row }: { folder: Folder; row: RowContext 
             onOpen: () => row.actions.open({ folder: folder.id }),
             onRename: () => setRenaming(true),
             onIcon: () => setIconOpen(true),
+            onDetails: () => row.actions.editDetails({ folder: folder.id }),
             onDelete: () => row.actions.requestDelete({ folder: folder.id }),
           }),
         )}

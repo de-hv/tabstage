@@ -18,5 +18,7 @@ export interface ItemActions {
   /** Deletes, asking first when it holds tabs. */
   requestDelete: (target: AnyTarget) => void;
   setIcon: (target: Target, icon: Icon | null) => void;
+  /** Opens the dialog for the name, ticket id and note of a group, folder or tab. */
+  editDetails: (target: Target) => void;
   configureProfile: (profile: Uuid) => void;
 }

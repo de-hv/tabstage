@@ -373,6 +373,60 @@ fn invalid_url_is_rejected_and_nothing_changes() {
     assert_eq!(fs::read_to_string(fixture.path()).expect("file"), before);
 }
 
+#[test]
+fn set_tab_url_saves_a_valid_url_and_rejects_an_invalid_one() {
+    let fixture = Fixture::new();
+    let mut service = fixture.start(FakeSystem::new(None));
+    let group = add_group(&mut service, "Work");
+    let tab = add_tab(&mut service, Place::Group(group), "https://a.dev/");
+
+    service
+        .apply(Command::SetTabUrl {
+            tab,
+            url: " https://b.dev/x ".into(),
+        })
+        .expect("set url");
+    let before = fs::read_to_string(fixture.path()).expect("file");
+    assert!(before.contains("https://b.dev/x"));
+
+    let result = service.apply(Command::SetTabUrl {
+        tab,
+        url: "ftp://b.dev".into(),
+    });
+
+    assert_eq!(result.map(drop).map_err(|e| e.code()), Err("invalidUrl"));
+    assert_eq!(fs::read_to_string(fixture.path()).expect("file"), before);
+}
+
+#[test]
+fn set_details_is_saved_to_the_file() {
+    let fixture = Fixture::new();
+    let mut service = fixture.start(FakeSystem::new(None));
+    let group = add_group(&mut service, "Work");
+
+    service
+        .apply(Command::SetDetails {
+            target: Target::Group(group),
+            ticket_id: "PROJ-7".into(),
+            note: "line 1\nline 2".into(),
+        })
+        .expect("details");
+
+    let file = fs::read_to_string(fixture.path()).expect("file");
+    assert!(file.contains("PROJ-7"));
+    let group = service.document.workspace.group(group).expect("g");
+    assert_eq!(group.note.as_deref(), Some("line 1\nline 2"));
+}
+
+#[test]
+fn set_details_command_reads_camel_case_json() {
+    let command: Command = serde_json::from_str(
+        r#"{"type":"setDetails","target":{"tab":"6f0c5e8e-3f0a-4d43-9a54-6c1b8d1a2b3c"},"ticketId":"A-1","note":""}"#,
+    )
+    .expect("command");
+    assert!(matches!(command, Command::SetDetails { ref ticket_id, .. } if ticket_id == "A-1"));
+}
+
 // ---- hierarchy ----------------------------------------------------------
 
 #[test]
