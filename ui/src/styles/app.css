@@ -2,7 +2,9 @@
 
 .app {
   display: grid;
-  grid-template-columns: var(--sidebar-width, 248px) auto minmax(0, 1fr);
+  /* The sidebar gives way in a narrow window (a tiling window manager can make
+     it smaller than the saved width), so the content keeps at least half. */
+  grid-template-columns: min(var(--sidebar-width, 248px), 50vw) auto minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
 }
