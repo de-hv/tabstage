@@ -15,8 +15,8 @@
         "title": "Tabstage",
         "width": 980,
         "height": 640,
-        "minWidth": 640,
-        "minHeight": 420,
+        "minWidth": 360,
+        "minHeight": 320,
         "dragDropEnabled": false
       }
     ],
