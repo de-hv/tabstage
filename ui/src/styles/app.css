@@ -1608,6 +1608,27 @@ button.column__title:hover {
   font-size: 12px;
 }
 
+/* Address editor in the tab detail */
+
+.url-editor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.url-editor__input {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+.url-editor__actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
 /* Readable URLs: host dimmed, the middle cut when needed, the end kept. */
 
 .tab-url {
@@ -1676,4 +1697,165 @@ button.column__title:hover {
   align-items: center;
   gap: 8px;
   cursor: pointer;
+}
+
+/* Ticket id and note: a chip before the name and a marker with the note as
+   its tooltip, in the sidebar; a summary in the main views. */
+
+.ticket {
+  flex: none;
+  max-width: 50%;
+  margin-right: 6px;
+  padding: 0 5px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface0);
+  color: var(--c-blue);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+.tree-row__name > .tree-row__title {
+  display: block;
+}
+
+.tree-row--two-line .tree-row__title,
+.tree-row__name > .tree-row__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: var(--overlay1);
+  cursor: help;
+}
+
+.note-icon .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.details-dialog__ticket {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.details-dialog__note {
+  height: auto;
+  min-height: 96px;
+  padding: 6px 8px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.details-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 720px;
+}
+
+.details-summary__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+}
+
+.details-summary__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.details-summary__item dd {
+  margin: 0;
+}
+
+.details-summary__ticket {
+  align-self: flex-start;
+  padding: 1px 8px;
+  border-radius: 5px;
+  background: var(--surface0);
+  color: var(--c-blue);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+.details-summary__note {
+  padding: 8px 12px;
+  border: 1px solid var(--surface0);
+  border-radius: 8px;
+  background: var(--mantle);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+/* Indent guides (Settings → Sidebar, on by default): a line under each
+   parent's chevron, down through its children. */
+
+.sidebar[data-guides] .tree-row {
+  position: relative;
+}
+
+.sidebar[data-guides] .tree-row::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  bottom: 0;
+  left: 0;
+  width: var(--indent);
+  background: repeating-linear-gradient(
+    to right,
+    transparent 0 8px,
+    var(--surface1) 8px 9px,
+    transparent 9px 14px
+  );
+  pointer-events: none;
+}
+
+/* Compact sidebar: shorter rows and smaller text. */
+
+.sidebar[data-compact] .tree-row {
+  min-height: 22px;
+  font-size: 12px;
+}
+
+.sidebar[data-compact] .tree-row[data-kind='profile'] {
+  min-height: 24px;
+  margin-top: 2px;
+}
+
+.sidebar[data-compact] .tree-row__name {
+  height: 20px;
+}
+
+.sidebar[data-compact] .tree-row--two-line {
+  min-height: 30px;
+}
+
+.sidebar[data-compact] .tree-row--two-line .tree-row__name {
+  height: auto;
+  padding: 1px 4px;
+}
+
+.sidebar[data-compact] .tree-row__icon,
+.sidebar[data-compact] .tree-row__chevron {
+  height: 18px;
+}
+
+.sidebar[data-compact] .ticket {
+  font-size: 10px;
+  line-height: 14px;
 }

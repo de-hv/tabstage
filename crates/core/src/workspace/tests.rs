@@ -367,6 +367,50 @@ fn add_tab_to_unknown_place_fails() {
 }
 
 #[test]
+fn set_tab_url_changes_the_url_and_keeps_a_custom_title() {
+    let (mut workspace, profile, _, _) = work();
+    let id = workspace
+        .add_tab(Place::Profile(profile), url("https://a.dev"), "Docs")
+        .expect("tab");
+
+    workspace
+        .set_tab_url(id, url("https://b.dev/x"))
+        .expect("set url");
+
+    let tab = &workspace.find_tab(id).expect("t").tab;
+    assert_eq!(tab.url.as_str(), "https://b.dev/x");
+    assert_eq!(tab.title, "Docs");
+}
+
+#[test]
+fn set_tab_url_updates_a_title_that_was_the_old_url() {
+    let (mut workspace, profile, _, _) = work();
+    let id = workspace
+        .add_tab(Place::Profile(profile), url("https://a.dev"), "")
+        .expect("tab");
+
+    workspace
+        .set_tab_url(id, url("https://b.dev/"))
+        .expect("set url");
+
+    assert_eq!(
+        workspace.find_tab(id).expect("t").tab.title,
+        "https://b.dev/"
+    );
+}
+
+#[test]
+fn set_tab_url_of_unknown_tab_fails() {
+    let (mut workspace, _, _, _) = work();
+    let missing = TabId::new();
+
+    assert_eq!(
+        workspace.set_tab_url(missing, url("https://a.dev")),
+        Err(WorkspaceError::TabNotFound(missing))
+    );
+}
+
+#[test]
 fn rename_tab_trims_and_falls_back_to_url() {
     let (mut workspace, profile, _, _) = work();
     let id = workspace
@@ -608,4 +652,88 @@ mod props {
             prop_assert_eq!(workspace.validate(), Ok(()));
         }
     }
+}
+
+#[test]
+fn set_details_trims_keeps_line_breaks_and_clears_blank_values() {
+    let (mut workspace, profile, _, _) = work();
+    let tab = workspace
+        .add_tab(Place::Profile(profile), url("https://a.dev"), "a")
+        .expect("tab");
+
+    workspace
+        .set_details(Target::Tab(tab), " PROJ-1 ", "\n line 1\nline 2 \n")
+        .expect("details");
+    let found = &workspace.find_tab(tab).expect("t").tab;
+    assert_eq!(found.ticket_id.as_deref(), Some("PROJ-1"));
+    assert_eq!(found.note.as_deref(), Some("line 1\nline 2"));
+
+    workspace
+        .set_details(Target::Tab(tab), "", "  ")
+        .expect("clear");
+    let found = &workspace.find_tab(tab).expect("t").tab;
+    assert_eq!(found.ticket_id, None);
+    assert_eq!(found.note, None);
+}
+
+#[test]
+fn set_details_works_on_groups_and_folders_and_caps_the_ticket() {
+    let (mut workspace, profile, _, _) = work();
+    let group = workspace
+        .add_group(profile, "G", AccentColor::Blue)
+        .expect("group");
+    let folder = workspace
+        .add_folder(Place::Group(group), "F")
+        .expect("folder");
+
+    workspace
+        .set_details(Target::Group(group), &"x".repeat(100), "g")
+        .expect("group");
+    workspace
+        .set_details(Target::Folder(folder), "F-1", "f")
+        .expect("folder");
+
+    let group = workspace.group(group).expect("g");
+    assert_eq!(
+        group.ticket_id.as_ref().map(String::len),
+        Some(MAX_TICKET_ID_LEN)
+    );
+    assert_eq!(group.note.as_deref(), Some("g"));
+    assert_eq!(
+        workspace
+            .find_folder(folder)
+            .expect("f")
+            .folder
+            .ticket_id
+            .as_deref(),
+        Some("F-1")
+    );
+}
+
+#[test]
+fn set_details_of_unknown_target_fails() {
+    let (mut workspace, _, _, _) = work();
+    let missing = TabId::new();
+
+    assert_eq!(
+        workspace.set_details(Target::Tab(missing), "A-1", ""),
+        Err(WorkspaceError::TabNotFound(missing))
+    );
+}
+
+#[test]
+fn details_are_left_out_of_the_json_when_empty() {
+    let (mut workspace, profile, _, _) = work();
+    let tab = workspace
+        .add_tab(Place::Profile(profile), url("https://a.dev"), "a")
+        .expect("tab");
+    let plain = serde_json::to_string(&workspace).expect("json");
+    assert!(!plain.contains("ticketId"));
+
+    workspace
+        .set_details(Target::Tab(tab), "A-1", "n")
+        .expect("details");
+    let json = serde_json::to_string(&workspace).expect("json");
+    assert!(json.contains(r#""ticketId":"A-1""#));
+    assert!(json.contains(r#""note":"n""#));
 }

@@ -1,11 +1,11 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { appliedCommands } from './test/ipc';
+import { appError, appliedCommands } from './test/ipc';
 import { GRAFANA_TAB, STATUS_TAB, clickMenuItem, renderApp, sidebar } from './test/render';
 
-async function showTab(name: string) {
-  const rendered = await renderApp();
+async function showTab(name: string, handlers: Parameters<typeof renderApp>[0] = {}) {
+  const rendered = await renderApp(handlers);
   await rendered.user.click(within(sidebar()).getByRole('button', { name: `Expand ${'Trabajo · Jira'}` }));
   await rendered.user.click(within(sidebar()).getByRole('button', { name }));
   const detail = await screen.findByRole('main', { name });
@@ -29,6 +29,46 @@ describe('tab detail', () => {
     await user.click(within(detail).getByRole('button', { name: 'Open in Google Chrome' }));
 
     expect(calls).toContainEqual({ cmd: 'open_tab', args: { tab: GRAFANA_TAB } });
+  });
+
+  it('edits the address', async () => {
+    const { calls, detail, user } = await showTab('Grafana · latencia API');
+
+    await user.click(within(detail).getByRole('button', { name: 'Edit address' }));
+    const field = within(detail).getByRole('textbox', { name: 'Address' });
+    await user.clear(field);
+    await user.type(field, 'https://grafana.example.com/d/db{Enter}');
+
+    expect(appliedCommands(calls)).toEqual([
+      { type: 'setTabUrl', tab: GRAFANA_TAB, url: 'https://grafana.example.com/d/db' },
+    ]);
+    await waitFor(() => expect(within(detail).queryByRole('textbox', { name: 'Address' })).toBeNull());
+  });
+
+  it('keeps the field open and explains an invalid address', async () => {
+    const { detail, user } = await showTab('Grafana · latencia API', {
+      apply: () => {
+        throw appError('invalidUrl');
+      },
+    });
+
+    await user.click(within(detail).getByRole('button', { name: 'Edit address' }));
+    const field = within(detail).getByRole('textbox', { name: 'Address' });
+    await user.clear(field);
+    await user.type(field, 'grafana{Enter}');
+
+    expect((await within(detail).findByRole('alert')).textContent).toContain('http:// or https://');
+    expect((field as HTMLInputElement).value).toBe('grafana');
+  });
+
+  it('cancels editing the address with Escape without saving', async () => {
+    const { calls, detail, user } = await showTab('Grafana · latencia API');
+
+    await user.click(within(detail).getByRole('button', { name: 'Edit address' }));
+    await user.keyboard('x{Escape}');
+
+    expect(within(detail).queryByRole('textbox', { name: 'Address' })).toBeNull();
+    expect(appliedCommands(calls)).toEqual([]);
   });
 
   it('copies the address', async () => {

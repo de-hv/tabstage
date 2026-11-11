@@ -14,6 +14,7 @@ import { type DropSpec, useDrag, useDrop } from './DragDrop';
 import { IconPicker } from './IconPicker';
 import { InlineInput } from './InlineInput';
 import { type ItemKind, ItemIcon } from './ItemIcon';
+import { NoteIcon, TicketChip, withTicket } from './Meta';
 import { ProfileColorButton } from './ProfileDot';
 import { TabUrl } from './TabUrl';
 
@@ -29,6 +30,11 @@ interface Props {
   /** Show each tab's URL under its title. */
   showUrls: boolean;
   onShowUrls: (show: boolean) => void;
+  /** Tighter rows. */
+  compact: boolean;
+  onCompact: (compact: boolean) => void;
+  /** Lines that show which items belong to each parent. */
+  indentGuides: boolean;
 }
 
 /** Pending inline "new group" or "new folder" field. */
@@ -56,6 +62,8 @@ export function Sidebar(props: Props) {
     onOpenSettings,
     showUrls: props.showUrls,
     onShowUrls: props.onShowUrls,
+    compact: props.compact,
+    onCompact: props.onCompact,
     startNew: (place, kind) => {
       if (kind === 'tab') {
         actions.newTab(place);
@@ -69,7 +77,12 @@ export function Sidebar(props: Props) {
   };
 
   return (
-    <nav className="sidebar" aria-label="Library">
+    <nav
+      className="sidebar"
+      aria-label="Library"
+      data-compact={props.compact || undefined}
+      data-guides={props.indentGuides || undefined}
+    >
       <div className="sidebar__scroll">
         <ul className="tree-list">
           {workspace.profiles.map((profile) => (
@@ -122,6 +135,8 @@ interface TreeContext {
   onOpenSettings: () => void;
   showUrls: boolean;
   onShowUrls: (show: boolean) => void;
+  compact: boolean;
+  onCompact: (compact: boolean) => void;
   startNew: (place: Place, kind: NewKind) => void;
   stopAdding: () => void;
 }
@@ -182,6 +197,8 @@ function ProfileNode({ ctx, profile }: { ctx: TreeContext; profile: Profile }) {
             canDelete,
             showsUrls: ctx.showUrls,
             onToggleUrls: () => ctx.onShowUrls(!ctx.showUrls),
+            isCompact: ctx.compact,
+            onToggleCompact: () => ctx.onCompact(!ctx.compact),
           })
         }
       />
@@ -222,6 +239,8 @@ function GroupNode({ ctx, group, depth }: { ctx: TreeContext; group: Group; dept
         depth={depth}
         kind="group"
         name={group.name}
+        ticketId={group.ticketId}
+        note={group.note}
         expanded={expanded}
         onToggle={() => ctx.tree.set(group.id, !expanded)}
         current={isCurrent(ctx, 'group', group.id)}
@@ -241,6 +260,7 @@ function GroupNode({ ctx, group, depth }: { ctx: TreeContext; group: Group; dept
               onOpen: () => ctx.actions.open({ group: group.id }),
               onRename: row.rename,
               onIcon: row.openLeading,
+              onDetails: () => ctx.actions.editDetails({ group: group.id }),
               onDelete: () => ctx.actions.requestDelete({ group: group.id }),
             }),
           )
@@ -267,6 +287,8 @@ function FolderNode({ ctx, folder, depth }: { ctx: TreeContext; folder: Folder; 
         depth={depth}
         kind="folder"
         name={folder.name}
+        ticketId={folder.ticketId}
+        note={folder.note}
         expanded={expanded}
         onToggle={() => ctx.tree.set(folder.id, !expanded)}
         current={isCurrent(ctx, 'folder', folder.id)}
@@ -286,6 +308,7 @@ function FolderNode({ ctx, folder, depth }: { ctx: TreeContext; folder: Folder; 
               onOpen: () => ctx.actions.open({ folder: folder.id }),
               onRename: row.rename,
               onIcon: row.openLeading,
+              onDetails: () => ctx.actions.editDetails({ folder: folder.id }),
               onDelete: () => ctx.actions.requestDelete({ folder: folder.id }),
             }),
           )
@@ -309,6 +332,8 @@ function TabNode({ ctx, tab, depth }: { ctx: TreeContext; tab: Tab; depth: numbe
         depth={depth}
         kind="tab"
         name={tab.title}
+        ticketId={tab.ticketId}
+        note={tab.note}
         title={`${tab.title}\n${tab.url}`}
         subtitle={ctx.showUrls ? <TabUrl url={tab.url} compact /> : undefined}
         current={isCurrent(ctx, 'tab', tab.id)}
@@ -328,6 +353,7 @@ function TabNode({ ctx, tab, depth }: { ctx: TreeContext; tab: Tab; depth: numbe
               onOpen: () => ctx.actions.open({ tab: tab.id }),
               onRename: row.rename,
               onIcon: row.openLeading,
+              onDetails: () => ctx.actions.editDetails({ tab: tab.id }),
               onDelete: () => ctx.actions.requestDelete({ tab: tab.id }),
             }),
           )
@@ -403,6 +429,10 @@ interface RowProps {
   depth: number;
   kind: 'profile' | ItemKind;
   name: string;
+  /** Shown as a chip before the name. */
+  ticketId?: string;
+  /** Shown as an icon with the note as its tooltip. */
+  note?: string;
   title?: string;
   /** Second line under the name, e.g. a tab's URL. */
   subtitle?: ReactNode;
@@ -476,20 +506,29 @@ function Row(props: RowProps) {
           className="tree-row__name"
           title={props.title ?? name}
           aria-current={current ? 'page' : undefined}
-          aria-label={props.subtitle ? name : undefined}
+          aria-label={props.subtitle || props.ticketId ? withTicket(name, props.ticketId) : undefined}
           onClick={onActivate}
           onDoubleClick={props.onOpen}
         >
           {props.subtitle ? (
             <>
-              <span className="tree-row__title">{name}</span>
+              <span className="tree-row__title">
+                <TicketChip ticketId={props.ticketId} />
+                {name}
+              </span>
               {props.subtitle}
             </>
+          ) : props.ticketId ? (
+            <span className="tree-row__title">
+              <TicketChip ticketId={props.ticketId} />
+              {name}
+            </span>
           ) : (
             name
           )}
         </button>
       )}
+      <NoteIcon note={props.note} />
       {props.trailing}
       <ActionMenu
         label={`Options for ${name}`}

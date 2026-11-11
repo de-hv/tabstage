@@ -13,6 +13,7 @@ import { InlineInput } from './InlineInput';
 import { ItemIcon } from './ItemIcon';
 import { ProfileDot } from './ProfileDot';
 import type { RowContext } from './Rows';
+import { DetailsSummary } from './DetailsSummary';
 import { SetupNote } from './SetupNote';
 import { Tree } from './Tree';
 
@@ -56,6 +57,7 @@ export function ContainerView({ snapshot, shown, apply, actions, onSelect }: Pro
     onOpen: () => actions.open(target),
     onRename: () => setRenaming(true),
     onIcon: () => setIconOpen(true),
+    onDetails: () => actions.editDetails(target),
     onMove: (command: Command) => void apply(command),
     onDelete: () => actions.requestDelete(target),
   };
@@ -145,6 +147,8 @@ export function ContainerView({ snapshot, shown, apply, actions, onSelect }: Pro
       </header>
 
       {profile && <SetupNote snapshot={snapshot} profile={profile} onConfigure={() => actions.configureProfile(profile.id)} />}
+
+      <DetailsSummary ticketId={item.ticketId} note={item.note} onEdit={() => actions.editDetails(target)} />
 
       {adding === 'tab' && (
         <AddTabForm

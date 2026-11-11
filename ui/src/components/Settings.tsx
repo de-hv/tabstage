@@ -16,6 +16,10 @@ interface Props {
   focusProfile?: string | null;
   showUrls: boolean;
   onShowUrls: (show: boolean) => void;
+  compact: boolean;
+  onCompact: (compact: boolean) => void;
+  indentGuides: boolean;
+  onIndentGuides: (show: boolean) => void;
 }
 
 interface Pending {
@@ -32,6 +36,10 @@ export function Settings({
   focusProfile = null,
   showUrls,
   onShowUrls,
+  compact,
+  onCompact,
+  indentGuides,
+  onIndentGuides,
 }: Props) {
   const [pending, setPending] = useState<Pending | null>(null);
 
@@ -67,6 +75,14 @@ export function Settings({
         <label className="checkbox">
           <input type="checkbox" checked={showUrls} onChange={(event) => onShowUrls(event.target.checked)} />
           Show URLs under tabs in the sidebar
+        </label>
+        <label className="checkbox">
+          <input type="checkbox" checked={indentGuides} onChange={(event) => onIndentGuides(event.target.checked)} />
+          Show indent guides
+        </label>
+        <label className="checkbox">
+          <input type="checkbox" checked={compact} onChange={(event) => onCompact(event.target.checked)} />
+          Compact sidebar
         </label>
       </section>
 

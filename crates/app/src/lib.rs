@@ -121,6 +121,13 @@ pub enum Command {
         /// New title; the URL is used when blank.
         title: String,
     },
+    /// Change a tab's URL.
+    SetTabUrl {
+        /// Tab to change.
+        tab: TabId,
+        /// URL as typed by the user.
+        url: String,
+    },
     /// Remove a tab.
     RemoveTab {
         /// Tab to remove.
@@ -141,6 +148,15 @@ pub enum Command {
         target: Target,
         /// The icon, or `None` for the default one.
         icon: Option<Icon>,
+    },
+    /// Set the ticket id and note of a group, folder or tab.
+    SetDetails {
+        /// What gets the details.
+        target: Target,
+        /// Ticket key such as `PROJ-123`; blank clears it.
+        ticket_id: String,
+        /// Free-form note; blank clears it.
+        note: String,
     },
     /// Add a profile at the end.
     AddProfile {
@@ -885,9 +901,18 @@ impl<S: System> AppService<S> {
                 workspace.add_tab(place, url, &title).map(drop)?;
             }
             Command::RenameTab { tab, title } => workspace.rename_tab(tab, &title)?,
+            Command::SetTabUrl { tab, url } => {
+                let url = TabUrl::parse(&url)?;
+                workspace.set_tab_url(tab, url)?;
+            }
             Command::RemoveTab { tab } => workspace.remove_tab(tab).map(drop)?,
             Command::MoveTab { tab, place, index } => workspace.move_tab(tab, place, index)?,
             Command::SetIcon { target, icon } => workspace.set_icon(target, icon)?,
+            Command::SetDetails {
+                target,
+                ticket_id,
+                note,
+            } => workspace.set_details(target, &ticket_id, &note)?,
             Command::AddProfile { name } => workspace.add_profile(&name).map(drop)?,
             Command::RenameProfile { profile, name } => workspace.rename_profile(profile, &name)?,
             Command::SetProfileColor { profile, color } => {

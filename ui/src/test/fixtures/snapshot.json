@@ -104,6 +104,7 @@
                     "url": "https://status.example.com/incidents/77"
                   }
                 ],
+                "ticketId": "INC-77",
                 "type": "folder"
               },
               {
@@ -118,6 +119,8 @@
                   "value": "book-open"
                 },
                 "id": "00000000-0000-0000-0000-000000000b05",
+                "note": "Run after the deploy window\nPing #ops when done",
+                "ticketId": "OPS-31",
                 "title": "Runbook de despliegue",
                 "type": "tab",
                 "url": "https://wiki.example.com/runbook"

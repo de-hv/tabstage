@@ -1,4 +1,4 @@
-import { Copy, ExternalLink } from 'lucide-react';
+import { Copy, ExternalLink, Pencil } from 'lucide-react';
 import { useState } from 'react';
 
 import type { AppError, Command, Snapshot, Tab } from '../api/types';
@@ -11,7 +11,9 @@ import { IconPicker } from './IconPicker';
 import { InlineInput } from './InlineInput';
 import { ItemIcon } from './ItemIcon';
 import { ProfileDot } from './ProfileDot';
+import { DetailsSummary } from './DetailsSummary';
 import { SetupNote } from './SetupNote';
+import { UrlEditor } from './UrlEditor';
 
 interface Props {
   snapshot: Snapshot;
@@ -22,11 +24,12 @@ interface Props {
   notify: (text: string) => void;
 }
 
-/** A tab's details: where it lives, its full address and a button to open it. */
+/** A tab's details: where it lives, its full (editable) address and a button to open it. */
 export function TabDetail({ snapshot, tab: id, apply, actions, onSelect, notify }: Props) {
   const [renaming, setRenaming] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [iconOpen, setIconOpen] = useState(false);
+  const [editingUrl, setEditingUrl] = useState(false);
   const { workspace } = snapshot;
   const at = locate(workspace, id);
   const container = at?.folder ? at.folder.tabs : at?.group ? at.group.children : at?.profile.items;
@@ -119,6 +122,7 @@ export function TabDetail({ snapshot, tab: id, apply, actions, onSelect, notify 
               onRename: () => setRenaming(true),
               onIcon: () => setIconOpen(true),
               onMove: (command) => void apply(command),
+              onDetails: () => actions.editDetails({ tab: tab.id }),
               onDelete: () => actions.requestDelete({ tab: tab.id }),
             })}
           />
@@ -127,16 +131,36 @@ export function TabDetail({ snapshot, tab: id, apply, actions, onSelect, notify 
 
       <SetupNote snapshot={snapshot} profile={profile} onConfigure={() => actions.configureProfile(profile.id)} />
 
+      <DetailsSummary ticketId={tab.ticketId} note={tab.note} onEdit={() => actions.editDetails({ tab: tab.id })} />
+
       <section className="tab-detail__section" aria-labelledby="tab-address">
         <h2 id="tab-address" className="tab-detail__label">
           Address
         </h2>
-        <div className="tab-detail__url">
-          <span className="tab-detail__url-text">{tab.url}</span>
-          <button type="button" className="icon-button" aria-label="Copy address" title="Copy address" onClick={() => void copy()}>
-            <Copy className="icon" aria-hidden="true" />
-          </button>
-        </div>
+        {editingUrl ? (
+          <UrlEditor
+            key={tab.id}
+            initial={tab.url}
+            onSubmit={(url) => apply({ type: 'setTabUrl', tab: tab.id, url })}
+            onDone={() => setEditingUrl(false)}
+          />
+        ) : (
+          <div className="tab-detail__url">
+            <span className="tab-detail__url-text">{tab.url}</span>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Edit address"
+              title="Edit address"
+              onClick={() => setEditingUrl(true)}
+            >
+              <Pencil className="icon" aria-hidden="true" />
+            </button>
+            <button type="button" className="icon-button" aria-label="Copy address" title="Copy address" onClick={() => void copy()}>
+              <Copy className="icon" aria-hidden="true" />
+            </button>
+          </div>
+        )}
         <p className="tab-detail__hint">
           {canFocus ? "If it's already open, Open takes you to that tab. " : ''}A double-click on the tab anywhere opens
           it too.

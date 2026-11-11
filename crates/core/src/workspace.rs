@@ -29,6 +29,12 @@ pub struct Tab {
     /// Custom icon; the UI shows the default tab icon without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<Icon>,
+    /// Ticket key in Jira or a similar tracker, such as `PROJ-123`.
+    #[serde(default, rename = "ticketId", skip_serializing_if = "Option::is_none")]
+    pub ticket_id: Option<String>,
+    /// Free-form note; may span several lines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// A named folder of tabs. Folders do not nest.
@@ -41,6 +47,12 @@ pub struct Folder {
     /// Custom icon; the UI shows the default folder icon without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<Icon>,
+    /// Ticket key in Jira or a similar tracker, such as `PROJ-123`.
+    #[serde(default, rename = "ticketId", skip_serializing_if = "Option::is_none")]
+    pub ticket_id: Option<String>,
+    /// Free-form note; may span several lines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
     /// Whether the folder is shown collapsed.
     #[serde(default)]
     pub collapsed: bool,
@@ -71,6 +83,12 @@ pub struct Group {
     /// Custom icon; the UI shows the default group icon without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<Icon>,
+    /// Ticket key in Jira or a similar tracker, such as `PROJ-123`.
+    #[serde(default, rename = "ticketId", skip_serializing_if = "Option::is_none")]
+    pub ticket_id: Option<String>,
+    /// Free-form note; may span several lines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
     /// Tabs and folders in display order.
     #[serde(default)]
     pub children: Vec<Node>,
@@ -340,6 +358,8 @@ impl Workspace {
             name,
             color,
             icon: None,
+            ticket_id: None,
+            note: None,
             children: Vec::new(),
         }));
         Ok(id)
@@ -417,6 +437,8 @@ impl Workspace {
             id,
             name,
             icon: None,
+            ticket_id: None,
+            note: None,
             collapsed: false,
             tabs: Vec::new(),
         };
@@ -527,6 +549,8 @@ impl Workspace {
             url,
             title,
             icon: None,
+            ticket_id: None,
+            note: None,
         };
         self.insert_tab(place, usize::MAX, tab)?;
         Ok(id)
@@ -540,6 +564,21 @@ impl Workspace {
     pub fn rename_tab(&mut self, id: TabId, title: &str) -> Result<()> {
         let tab = self.tab_mut(id)?;
         tab.title = tab_title(title, &tab.url);
+        Ok(())
+    }
+
+    /// Changes a tab's URL. A title that was only the old URL (the fallback
+    /// for a blank title) follows the new one.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::TabNotFound`].
+    pub fn set_tab_url(&mut self, id: TabId, url: TabUrl) -> Result<()> {
+        let tab = self.tab_mut(id)?;
+        if tab.title == tab.url.as_str() {
+            url.as_str().clone_into(&mut tab.title);
+        }
+        tab.url = url;
         Ok(())
     }
 
@@ -578,6 +617,35 @@ impl Workspace {
             Target::Folder(id) => self.folder_mut(id)?.icon = icon,
             Target::Tab(id) => self.tab_mut(id)?.icon = icon,
         }
+        Ok(())
+    }
+
+    /// Sets the ticket id and note of a group, folder or tab. Both are
+    /// trimmed (the note keeps its inner line breaks); a blank one is
+    /// cleared.
+    ///
+    /// # Errors
+    ///
+    /// The not-found error of `target`.
+    pub fn set_details(&mut self, target: Target, ticket_id: &str, note: &str) -> Result<()> {
+        let ticket_id = clean_detail(ticket_id, MAX_TICKET_ID_LEN);
+        let note = clean_detail(note, MAX_NOTE_LEN);
+        let (slot_ticket, slot_note) = match target {
+            Target::Group(id) => {
+                let group = self.group_mut(id)?;
+                (&mut group.ticket_id, &mut group.note)
+            }
+            Target::Folder(id) => {
+                let folder = self.folder_mut(id)?;
+                (&mut folder.ticket_id, &mut folder.note)
+            }
+            Target::Tab(id) => {
+                let tab = self.tab_mut(id)?;
+                (&mut tab.ticket_id, &mut tab.note)
+            }
+        };
+        *slot_ticket = ticket_id;
+        *slot_note = note;
         Ok(())
     }
 
@@ -818,6 +886,17 @@ fn tab_title(raw: &str, url: &TabUrl) -> String {
         "" => url.as_str().to_owned(),
         trimmed => trimmed.to_owned(),
     }
+}
+
+/// Longest ticket id kept, in characters.
+pub const MAX_TICKET_ID_LEN: usize = 64;
+/// Longest note kept, in characters.
+pub const MAX_NOTE_LEN: usize = 5000;
+
+/// Trims a ticket id or note and caps its length; `None` when blank.
+fn clean_detail(raw: &str, max: usize) -> Option<String> {
+    let trimmed = raw.trim();
+    (!trimmed.is_empty()).then(|| trimmed.chars().take(max).collect())
 }
 
 /// Trims a name and rejects it when blank.

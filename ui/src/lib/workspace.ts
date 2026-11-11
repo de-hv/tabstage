@@ -1,4 +1,4 @@
-import type { Folder, Group, Item, Place, Profile, Tab, Uuid, Workspace } from '../api/types';
+import type { Folder, Group, Item, Place, Profile, Tab, Target, Uuid, Workspace } from '../api/types';
 
 /** Where a group, folder or tab sits: its container and its index there. */
 export interface Location {
@@ -116,4 +116,25 @@ export function placeLabel(workspace: Workspace, place: Place): string {
   if (!at) return '';
   const own = 'group' in place ? findGroup(workspace, id)?.name : findFolder(workspace, id)?.name;
   return [at.profile.name, at.group?.id !== id ? at.group?.name : undefined, own].filter(Boolean).join(' / ');
+}
+
+/** The editable fields of a group, folder or tab, for the details dialog. */
+export interface TargetDetails {
+  kind: 'group' | 'folder' | 'tab';
+  name: string;
+  ticketId?: string;
+  note?: string;
+}
+
+export function targetDetails(workspace: Workspace, target: Target): TargetDetails | null {
+  if ('group' in target) {
+    const group = findGroup(workspace, target.group);
+    return group ? { kind: 'group', name: group.name, ticketId: group.ticketId, note: group.note } : null;
+  }
+  if ('folder' in target) {
+    const folder = findFolder(workspace, target.folder);
+    return folder ? { kind: 'folder', name: folder.name, ticketId: folder.ticketId, note: folder.note } : null;
+  }
+  const tab = allTabs(workspace).find((ref) => ref.tab.id === target.tab)?.tab;
+  return tab ? { kind: 'tab', name: tab.title, ticketId: tab.ticketId, note: tab.note } : null;
 }

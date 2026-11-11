@@ -2,14 +2,17 @@ import {
   ExternalLink,
   FolderInput,
   FolderPlus,
+  FoldVertical,
   Globe,
   Layers,
   Link,
+  NotebookPen,
   Palette,
   Pencil,
   Settings,
   Smile,
   Trash2,
+  UnfoldVertical,
 } from 'lucide-react';
 
 import type { Command, Workspace } from '../api/types';
@@ -25,6 +28,8 @@ export interface MenuHandlers {
   onOpen: () => void;
   onRename: () => void;
   onIcon: () => void;
+  /** Edit the name, ticket id and note; groups, folders and tabs only. */
+  onDetails?: () => void;
   onMove: (command: Command) => void;
   onDelete: () => void;
 }
@@ -54,6 +59,9 @@ const icon = (handlers: MenuHandlers, separated = false): MenuEntry => ({
   onSelect: handlers.onIcon,
 });
 
+const details = (handlers: MenuHandlers): MenuEntry[] =>
+  handlers.onDetails ? [{ label: 'Edit details…', icon: NotebookPen, onSelect: handlers.onDetails }] : [];
+
 const remove = (handlers: MenuHandlers, label = 'Delete…'): MenuEntry => ({
   label,
   icon: Trash2,
@@ -70,6 +78,9 @@ export function profileMenu(
     /** Whether the sidebar shows URLs under tabs, and how to flip it. */
     showsUrls: boolean;
     onToggleUrls: () => void;
+    /** Whether the sidebar is compact, and how to flip it. */
+    isCompact: boolean;
+    onToggleCompact: () => void;
   },
 ): MenuEntry[] {
   return [
@@ -81,6 +92,11 @@ export function profileMenu(
     { label: 'Change color…', icon: Palette, onSelect: handlers.onColor },
     { label: 'Choose browser…', icon: Settings, onSelect: handlers.onConfigure },
     { label: handlers.showsUrls ? 'Hide URLs' : 'Show URLs', icon: Link, onSelect: handlers.onToggleUrls },
+    {
+      label: handlers.isCompact ? 'Comfortable sidebar' : 'Compact sidebar',
+      icon: handlers.isCompact ? UnfoldVertical : FoldVertical,
+      onSelect: handlers.onToggleCompact,
+    },
     ...(handlers.canDelete ? [remove(handlers)] : []),
   ];
 }
@@ -92,6 +108,7 @@ export function groupMenu(group: string, handlers: MenuHandlers): MenuEntry[] {
     { label: 'Open all', icon: ExternalLink, separated: true, onSelect: handlers.onOpen },
     icon(handlers),
     rename(handlers),
+    ...details(handlers),
     moves({ kind: 'group', group }, handlers),
     remove(handlers),
   ];
@@ -103,6 +120,7 @@ export function folderMenu(folder: string, handlers: MenuHandlers): MenuEntry[] 
     { label: 'Open all', icon: ExternalLink, separated: true, onSelect: handlers.onOpen },
     icon(handlers),
     rename(handlers),
+    ...details(handlers),
     moves({ kind: 'folder', folder }, handlers),
     remove(handlers),
   ];
@@ -113,6 +131,7 @@ export function tabMenu(tab: string, handlers: MenuHandlers): MenuEntry[] {
     { label: 'Open', icon: ExternalLink, onSelect: handlers.onOpen },
     icon(handlers, true),
     rename(handlers),
+    ...details(handlers),
     moves({ kind: 'tab', tab }, handlers),
     remove(handlers, 'Delete'),
   ];

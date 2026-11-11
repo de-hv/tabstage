@@ -1,10 +1,11 @@
 import { type CSSProperties, useState } from 'react';
 
-import type { Place, Snapshot } from './api/types';
+import type { Place, Snapshot, Target } from './api/types';
 import { Banner } from './components/Banner';
 import { ConfirmDelete, type PendingDelete } from './components/ConfirmDelete';
 import { ContainerView } from './components/ContainerView';
 import { DataFileDialog } from './components/DataFileDialog';
+import { DetailsDialog } from './components/DetailsDialog';
 import { DragProvider } from './components/DragDrop';
 import { NewTabDialog } from './components/NewTabDialog';
 import { Palette } from './components/Palette';
@@ -15,7 +16,7 @@ import { TabDetail } from './components/TabDetail';
 import { Settings } from './components/Settings';
 import { Sidebar } from './components/Sidebar';
 import { profileBrowser } from './lib/browsers';
-import { countTabs, findFolder, findGroup, findProfile, locate, placeLabel } from './lib/workspace';
+import { countTabs, findFolder, findGroup, findProfile, locate, placeLabel, targetDetails } from './lib/workspace';
 import type { ItemActions, Selection } from './state/selection';
 import { usePreference } from './state/usePreference';
 import { useWorkspace } from './state/useWorkspace';
@@ -32,6 +33,9 @@ export function App() {
   const [removingProfile, setRemovingProfile] = useState<string | null>(null);
   const [width, setWidth] = useState(readWidth);
   const [showUrls, setShowUrls] = usePreference('tabstage.sidebarUrls', false);
+  const [compact, setCompact] = usePreference('tabstage.sidebarCompact', false);
+  const [indentGuides, setIndentGuides] = usePreference('tabstage.indentGuides', true);
+  const [editingDetails, setEditingDetails] = useState<Target | null>(null);
   const { snapshot, error } = workspace;
 
   if (!snapshot) {
@@ -85,6 +89,7 @@ export function App() {
       else setPendingDelete({ name: found.name, tabCount: tabs, run });
     },
     setIcon: (target, icon) => void apply({ type: 'setIcon', target, icon }),
+    editDetails: setEditingDetails,
     configureProfile: (profile) => {
       setFocusProfile(profile);
       setSettingsOpen(true);
@@ -119,6 +124,9 @@ export function App() {
           actions={actions}
           showUrls={showUrls}
           onShowUrls={setShowUrls}
+          compact={compact}
+          onCompact={setCompact}
+          indentGuides={indentGuides}
         />
         <ResizeHandle
           width={width}
@@ -137,6 +145,10 @@ export function App() {
             focusProfile={focusProfile}
             showUrls={showUrls}
             onShowUrls={setShowUrls}
+            compact={compact}
+            onCompact={setCompact}
+            indentGuides={indentGuides}
+            onIndentGuides={setIndentGuides}
           />
         ) : (
           <MainView
@@ -158,6 +170,12 @@ export function App() {
           placeName={newTabPlace ? placeLabel(snapshot.workspace, newTabPlace) : ''}
           apply={apply}
           onClose={() => setNewTabPlace(null)}
+        />
+        <DetailsDialog
+          target={editingDetails}
+          details={editingDetails ? targetDetails(snapshot.workspace, editingDetails) : null}
+          apply={apply}
+          onClose={() => setEditingDetails(null)}
         />
         <ConfirmDelete pending={pendingDelete} onClose={() => setPendingDelete(null)} />
         <RemoveProfileDialog
