@@ -2,121 +2,51 @@ import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { appliedCommands } from './test/ipc';
-import {
-  GRAFANA_TAB,
-  IN_TEST,
-  ONBOARDING,
-  QA,
-  STAGING_TAB,
-  STATUS_TAB,
-  TRABAJO,
-  WORK,
-  drag,
-  renderApp,
-  sidebar,
-  treeRow,
-} from './test/render';
+import { DONE, ONBOARDING, REMOVE_MAP, TRABAJO, drag, renderApp } from './test/render';
 
-const board = () => screen.getByRole('list', { name: 'Board of Trabajo' });
+const board = () => screen.getByRole('list', { name: 'Status board' });
 const column = (name: string) => within(board()).getByRole('listitem', { name });
-const card = (name: RegExp) => {
-  const button = within(board()).getByRole('button', { name });
-  return button;
-};
 
-describe('profile board', () => {
-  it('has a column for loose items and one per group, like statuses', async () => {
+describe('status board', () => {
+  it('has a column per status in workflow order, then "No status", with the tickets in them', async () => {
     await renderApp();
 
-    const names = Array.from(board().children, (column) => column.getAttribute('aria-label'));
-    expect(names).toEqual(['Loose in Trabajo', 'Trabajo · Jira', 'In TEST']);
-    expect(within(column('Loose in Trabajo')).getByRole('button', { name: /Onboarding/ })).toBeTruthy();
-    expect(within(column('In TEST')).getByRole('button', { name: /Staging dashboard/ })).toBeTruthy();
+    const names = within(board())
+      .getAllByRole('listitem')
+      .map((item) => item.getAttribute('aria-label'))
+      .filter(Boolean);
+    expect(names).toEqual(['In review', 'In TEST', 'Done', 'No status']);
+    expect(within(column('In TEST')).getByText('Carrier Commissions')).toBeTruthy();
+    expect(within(column('In TEST')).getByTitle('1 sub-tickets, 1 in this status')).toBeTruthy();
+    expect(within(column('Done')).getByText('Drop tickets here')).toBeTruthy();
   });
 
-  it('cards show the readable URL, not just the domain', async () => {
-    await renderApp();
-
-    const grafana = card(/Grafana/);
-    expect(grafana.textContent).toContain('grafana.example.com');
-    expect(grafana.textContent).toContain('/d/api');
-    expect(grafana.textContent).not.toContain('https://');
-  });
-
-  it('moving a card to another column moves it to that group', async () => {
+  it('changes a ticket’s status by dragging its card to another column', async () => {
     const { calls } = await renderApp();
 
-    drag(card(/Grafana/), column('In TEST'));
+    drag(within(column('No status')).getByText('Onboarding wiki').closest('.card')!, column('Done'));
 
-    expect(appliedCommands(calls)).toEqual([{ type: 'moveTab', tab: GRAFANA_TAB, place: { group: IN_TEST }, index: 1 }]);
+    expect(appliedCommands(calls)).toEqual([
+      { type: 'moveTicket', ticket: ONBOARDING, place: { profile: TRABAJO }, index: 2, lane: { status: DONE } },
+    ]);
   });
 
-  it('a card can leave its group for the loose column', async () => {
-    const { calls } = await renderApp();
-
-    drag(card(/Staging dashboard/), column('Loose in Trabajo'));
-
-    expect(appliedCommands(calls)).toEqual([{ type: 'moveTab', tab: STAGING_TAB, place: { profile: TRABAJO }, index: 4 }]);
-  });
-
-  it('folders move between columns too', async () => {
-    const { calls } = await renderApp();
-
-    drag(card(/Onboarding/), column('Trabajo · Jira'));
-
-    expect(appliedCommands(calls)).toEqual([{ type: 'moveFolder', folder: ONBOARDING, place: { group: WORK }, index: 4 }]);
-  });
-
-  it('clicking a tab card shows its detail; a double-click opens it', async () => {
+  it('adds a ticket in a column and lists the notes below', async () => {
     const { calls, user } = await renderApp();
 
-    await user.click(card(/Status page/));
-    expect(await screen.findByRole('heading', { name: 'Status page' })).toBeTruthy();
-    expect(calls.some((call) => call.cmd === 'open_tab')).toBe(false);
+    await user.click(within(column('Done')).getByRole('button', { name: 'New ticket in Done' }));
+    await user.type(screen.getByRole('textbox', { name: 'Ticket title' }), 'Ship it{Enter}');
 
-    await user.click(within(sidebar()).getByRole('button', { name: 'Trabajo' }));
-    await user.dblClick(card(/Status page/));
-    expect(calls).toContainEqual({ cmd: 'open_tab', args: { tab: STATUS_TAB } });
+    expect(appliedCommands(calls)[0]).toMatchObject({ type: 'addTicket', title: 'Ship it', status: DONE });
+    expect(within(screen.getByRole('region', { name: 'Notes' })).getByText('Standup notes')).toBeTruthy();
   });
 
-  it('clicking a folder card shows the folder', async () => {
+  it('shows a ticket when its card is clicked', async () => {
     const { user } = await renderApp();
 
-    await user.click(card(/Onboarding/));
-    expect(await screen.findByRole('heading', { name: 'Onboarding' })).toBeTruthy();
-  });
+    await user.click(within(column('In review')).getByText('Remove map'));
 
-  it('opens every tab of the profile', async () => {
-    const { calls, user } = await renderApp();
-
-    await user.click(screen.getByRole('button', { name: 'Open all' }));
-
-    expect(calls).toContainEqual({ cmd: 'open_profile', args: { profile: TRABAJO } });
-  });
-});
-
-describe('dragging in the sidebar', () => {
-  it('drops a tab on a profile to take it out of every group', async () => {
-    const { calls } = await renderApp();
-
-    drag(treeRow('Status page'), treeRow('QA'));
-
-    expect(appliedCommands(calls)).toEqual([{ type: 'moveTab', tab: STATUS_TAB, place: { profile: QA }, index: 1 }]);
-  });
-
-  it('drops a folder on a group to put it inside', async () => {
-    const { calls } = await renderApp();
-
-    drag(treeRow('Onboarding'), treeRow('In TEST'));
-
-    expect(appliedCommands(calls)).toEqual([{ type: 'moveFolder', folder: ONBOARDING, place: { group: IN_TEST }, index: 1 }]);
-  });
-
-  it('reorders groups by dropping one on another', async () => {
-    const { calls } = await renderApp();
-
-    drag(treeRow('In TEST'), treeRow('Trabajo · Jira'));
-
-    expect(appliedCommands(calls)).toEqual([{ type: 'moveGroup', group: IN_TEST, profile: TRABAJO, index: 0 }]);
+    expect(await screen.findByRole('main', { name: 'Remove map' })).toBeTruthy();
+    expect(REMOVE_MAP).toBeTruthy();
   });
 });

@@ -1,164 +1,113 @@
-import type { ContainerColor, Folder, Group, Item, Place, Profile, Tab, Target, Uuid, Workspace } from '../api/types';
-
-/** Where a group, folder or tab sits: its container and its index there. */
-export interface Location {
-  profile: Profile;
-  /** The group that holds it (directly, or through its folder). */
-  group?: Group;
-  /** The folder that holds it (tabs only). */
-  folder?: Folder;
-  /** The list it is in. */
-  place: Place;
-  index: number;
-}
-
-/** A tab with what contains it. */
-export interface TabRef {
-  tab: Tab;
-  profile: Profile;
-  group?: Group;
-  folder?: Folder;
-}
-
-export function locate(workspace: Workspace, id: Uuid): Location | null {
-  for (const profile of workspace.profiles) {
-    for (const [index, item] of profile.items.entries()) {
-      if (item.id === id) return { profile, place: { profile: profile.id }, index };
-      if (item.type === 'folder') {
-        const inFolder = item.tabs.findIndex((tab) => tab.id === id);
-        if (inFolder !== -1) return { profile, folder: item, place: { folder: item.id }, index: inFolder };
-      }
-      if (item.type === 'group') {
-        for (const [childIndex, node] of item.children.entries()) {
-          if (node.id === id) return { profile, group: item, place: { group: item.id }, index: childIndex };
-          if (node.type === 'folder') {
-            const inFolder = node.tabs.findIndex((tab) => tab.id === id);
-            if (inFolder !== -1) {
-              return { profile, group: item, folder: node, place: { folder: node.id }, index: inFolder };
-            }
-          }
-        }
-      }
-    }
-  }
-  return null;
-}
+import type { Link, LinkOwner, Note, Profile, Status, Target, Ticket, Uuid, Workspace } from '../api/types';
 
 export function findProfile(workspace: Workspace, id: Uuid): Profile | undefined {
   return workspace.profiles.find((profile) => profile.id === id);
 }
 
-/** Every group, profile by profile. */
-export function allGroups(workspace: Workspace): Group[] {
-  return workspace.profiles.flatMap((profile) =>
-    profile.items.flatMap((item) => (item.type === 'group' ? [item] : [])),
-  );
+/** A ticket or sub-ticket with its profile and, for a sub-ticket, its parent. */
+export interface TicketRef {
+  profile: Profile;
+  parent?: Ticket;
+  ticket: Ticket;
 }
 
-export function findGroup(workspace: Workspace, id: Uuid): Group | undefined {
-  return allGroups(workspace).find((group) => group.id === id);
-}
-
-export function findFolder(workspace: Workspace, id: Uuid): Folder | undefined {
+export function findTicket(workspace: Workspace, id: Uuid): TicketRef | null {
   for (const profile of workspace.profiles) {
-    for (const item of profile.items) {
-      if (item.type === 'folder' && item.id === id) return item;
-      if (item.type === 'group') {
-        const node = item.children.find((child) => child.id === id);
-        if (node?.type === 'folder') return node;
-      }
+    for (const ticket of profile.tickets) {
+      if (ticket.id === id) return { profile, ticket };
+      const child = ticket.children?.find((candidate) => candidate.id === id);
+      if (child) return { profile, parent: ticket, ticket: child };
     }
   }
-  return undefined;
+  return null;
 }
 
-/** Every tab with its containers, in display order. */
-export function allTabs(workspace: Workspace): TabRef[] {
+export function findNote(workspace: Workspace, id: Uuid): { profile: Profile; note: Note } | null {
+  for (const profile of workspace.profiles) {
+    const note = profile.notes.find((candidate) => candidate.id === id);
+    if (note) return { profile, note };
+  }
+  return null;
+}
+
+/** A link with its profile and the ticket or note that holds it. */
+export interface LinkRef {
+  profile: Profile;
+  owner: LinkOwner;
+  link: Link;
+  index: number;
+}
+
+export function findLink(workspace: Workspace, id: Uuid): LinkRef | null {
+  for (const profile of workspace.profiles) {
+    for (const ticket of profile.tickets) {
+      for (const holder of [ticket, ...(ticket.children ?? [])]) {
+        const index = (holder.links ?? []).findIndex((link) => link.id === id);
+        if (index !== -1) return { profile, owner: { ticket: holder.id }, link: holder.links![index]!, index };
+      }
+    }
+    for (const note of profile.notes) {
+      const index = (note.links ?? []).findIndex((link) => link.id === id);
+      if (index !== -1) return { profile, owner: { note: note.id }, link: note.links![index]!, index };
+    }
+  }
+  return null;
+}
+
+export function findStatus(workspace: Workspace, id: Uuid | undefined | null): Status | undefined {
+  return id ? workspace.statuses.find((status) => status.id === id) : undefined;
+}
+
+/** The tickets and sub-tickets of every profile, in order. */
+export function allTickets(workspace: Workspace): TicketRef[] {
   return workspace.profiles.flatMap((profile) =>
-    profile.items.flatMap((item): TabRef[] => {
-      if (item.type === 'tab') return [{ tab: item, profile }];
-      if (item.type === 'folder') return item.tabs.map((tab) => ({ tab, profile, folder: item }));
-      return item.children.flatMap((node): TabRef[] =>
-        node.type === 'tab'
-          ? [{ tab: node, profile, group: item }]
-          : node.tabs.map((tab) => ({ tab, profile, group: item, folder: node })),
-      );
-    }),
+    profile.tickets.flatMap((ticket) => [
+      { profile, ticket },
+      ...(ticket.children ?? []).map((child) => ({ profile, parent: ticket, ticket: child })),
+    ]),
   );
 }
 
-/** How many tabs something holds, folders and groups included. */
-export function countTabs(item: Profile | Item | Group | Folder | Tab): number {
-  if ('items' in item) return item.items.reduce((total, child) => total + countTabs(child), 0);
-  if ('children' in item) return item.children.reduce((total, node) => total + countTabs(node), 0);
-  if ('tabs' in item) return item.tabs.length;
-  return 1;
-}
-
-/** The list a place stands for, or `null` when it does not exist. */
-export function listLength(workspace: Workspace, place: Place): number | null {
-  if ('profile' in place) return findProfile(workspace, place.profile)?.items.length ?? null;
-  if ('group' in place) return findGroup(workspace, place.group)?.children.length ?? null;
-  return findFolder(workspace, place.folder)?.tabs.length ?? null;
-}
-
-export function samePlace(a: Place, b: Place): boolean {
-  if ('profile' in a) return 'profile' in b && a.profile === b.profile;
-  if ('group' in a) return 'group' in b && a.group === b.group;
-  return 'folder' in b && a.folder === b.folder;
-}
-
-/** "Cliente / In TEST / Sprint" for a place, for menus. */
-export function placeLabel(workspace: Workspace, place: Place): string {
-  if ('profile' in place) return findProfile(workspace, place.profile)?.name ?? '';
-  const id = 'group' in place ? place.group : place.folder;
-  const at = locate(workspace, id);
-  if (!at) return '';
-  const own = 'group' in place ? findGroup(workspace, id)?.name : findFolder(workspace, id)?.name;
-  return [at.profile.name, at.group?.id !== id ? at.group?.name : undefined, own].filter(Boolean).join(' / ');
+/** A status lane of a profile: the tickets with that status, in order. */
+export interface Lane {
+  /** `null` for "No status". */
+  status: Status | null;
+  tickets: Ticket[];
 }
 
 /**
- * The color a group or folder shows: its own, its parent's when it chose
- * "parent", else none (`undefined`), which is the default.
+ * A profile's tickets by status, in workflow order, with "No status" last.
+ * A ticket whose status no longer exists counts as having none.
  */
-export function resolveColor(own: ContainerColor | undefined, parent: number | undefined): number | undefined {
-  if (typeof own === 'number') return own;
-  return own === 'parent' ? parent : undefined;
+export function lanes(workspace: Workspace, profile: Profile): Lane[] {
+  const known = new Set(workspace.statuses.map((status) => status.id));
+  const result: Lane[] = workspace.statuses.map((status) => ({
+    status,
+    tickets: profile.tickets.filter((ticket) => ticket.status === status.id),
+  }));
+  result.push({ status: null, tickets: profile.tickets.filter((ticket) => !ticket.status || !known.has(ticket.status)) });
+  return result;
 }
 
-/**
- * The color an item shows, as a profile color index, or `undefined` for no
- * color. A profile shows its own (its dot); a group or folder the one it
- * chose; a tab, which has none of its own, its group's or folder's. A tab
- * directly in a profile has none.
- */
-export function effectiveColor(workspace: Workspace, id: Uuid): number | undefined {
-  const profile = findProfile(workspace, id);
-  if (profile) return profile.color;
-  const at = locate(workspace, id);
-  if (!at) return undefined;
-  const group = at.group ?? findGroup(workspace, id);
-  const folder = at.folder ?? findFolder(workspace, id);
-  const groupColor = group ? resolveColor(group.color, at.profile.color) : undefined;
-  if (folder) return resolveColor(folder.color, group ? groupColor : at.profile.color);
-  return groupColor;
-}
-
-/** Whether an item's ticket can open: it has one and its profile has a ticket URL. */
-export function hasTicketLink(workspace: Workspace, id: Uuid, ticketId: string | undefined): boolean {
-  return Boolean(ticketId && locate(workspace, id)?.profile.ticketUrl);
+/** Index in `profile.tickets` to insert at so a ticket lands at the end of a lane, or before `before`. */
+export function laneIndex(profile: Profile, lane: Lane, before?: Uuid): number {
+  if (before) {
+    const index = profile.tickets.findIndex((ticket) => ticket.id === before);
+    if (index !== -1) return index;
+  }
+  const last = lane.tickets.at(-1);
+  return last ? profile.tickets.findIndex((ticket) => ticket.id === last.id) + 1 : profile.tickets.length;
 }
 
 /** The id a target points at. */
 export function targetId(target: Target): Uuid {
-  return 'group' in target ? target.group : 'folder' in target ? target.folder : target.tab;
+  return 'ticket' in target ? target.ticket : 'note' in target ? target.note : target.link;
 }
 
 export function sameTarget(a: Target, b: Target): boolean {
-  if ('group' in a) return 'group' in b && a.group === b.group;
-  if ('folder' in a) return 'folder' in b && a.folder === b.folder;
-  return 'tab' in b && a.tab === b.tab;
+  if ('ticket' in a) return 'ticket' in b && a.ticket === b.ticket;
+  if ('note' in a) return 'note' in b && a.note === b.note;
+  return 'link' in b && a.link === b.link;
 }
 
 /** Position of an item in the "Pinned" section, or -1. */
@@ -168,26 +117,52 @@ export function pinnedIndex(workspace: Workspace, target: Target): number {
 
 /** A pinned item with what the sidebar shows of it. */
 export type PinnedItem = { target: Target; profile: Profile } & (
-  | { kind: 'group'; item: Group }
-  | { kind: 'folder'; item: Folder }
-  | { kind: 'tab'; item: Tab }
+  | { kind: 'ticket'; item: Ticket; status?: Status }
+  | { kind: 'note'; item: Note }
+  | { kind: 'link'; item: Link }
 );
 
 /** The pinned items that still exist, in order. */
 export function pinnedItems(workspace: Workspace): PinnedItem[] {
   return (workspace.pinned ?? []).flatMap((target): PinnedItem[] => {
-    const at = locate(workspace, targetId(target));
-    if (!at) return [];
-    const { profile } = at;
-    if ('group' in target) {
-      const item = findGroup(workspace, target.group);
-      return item ? [{ target, profile, kind: 'group', item }] : [];
+    if ('ticket' in target) {
+      const found = findTicket(workspace, target.ticket);
+      return found
+        ? [{ target, profile: found.profile, kind: 'ticket', item: found.ticket, status: findStatus(workspace, found.ticket.status) }]
+        : [];
     }
-    if ('folder' in target) {
-      const item = findFolder(workspace, target.folder);
-      return item ? [{ target, profile, kind: 'folder', item }] : [];
+    if ('note' in target) {
+      const found = findNote(workspace, target.note);
+      return found ? [{ target, profile: found.profile, kind: 'note', item: found.note }] : [];
     }
-    const item = allTabs(workspace).find((ref) => ref.tab.id === target.tab)?.tab;
-    return item ? [{ target, profile, kind: 'tab', item }] : [];
+    const found = findLink(workspace, target.link);
+    return found ? [{ target, profile: found.profile, kind: 'link', item: found.link }] : [];
   });
+}
+
+/** The notes that mention a ticket's key, in any profile. */
+export function mentionsOf(workspace: Workspace, key: string | undefined): { profile: Profile; note: Note }[] {
+  if (!key) return [];
+  const pattern = new RegExp(`(^|[^A-Za-z0-9-])${escapeRegExp(key)}(?![A-Za-z0-9-])`, 'i');
+  return workspace.profiles.flatMap((profile) =>
+    profile.notes.filter((note) => pattern.test(note.body ?? '')).map((note) => ({ profile, note })),
+  );
+}
+
+/** Tickets with a key, by key in upper case, for linking keys in notes. */
+export function ticketsByKey(workspace: Workspace): Map<string, Ticket> {
+  const keys = new Map<string, Ticket>();
+  for (const { ticket } of allTickets(workspace)) {
+    if (ticket.key && !keys.has(ticket.key.toUpperCase())) keys.set(ticket.key.toUpperCase(), ticket);
+  }
+  return keys;
+}
+
+export function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** How many links a ticket holds, its sub-tickets' included. */
+export function countLinks(ticket: Ticket): number {
+  return (ticket.links?.length ?? 0) + (ticket.children ?? []).reduce((total, child) => total + (child.links?.length ?? 0), 0);
 }

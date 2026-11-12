@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyFormat, plainText, toggleTask } from './markdown';
+import { applyFormat, linkTicketKeys, parseTicketLine, plainText, toggleTask } from './markdown';
 
 describe('toggleTask', () => {
   const note = '- [x] Deploy\n```\n- [ ] not a task\n```\n  * [ ] Ping QA\n1. [X] Numbered';
@@ -43,5 +43,27 @@ describe('applyFormat', () => {
     const lists = applyFormat('one\ntwo', 1, 6, 'task');
     expect(lists.text).toBe('- [ ] one\n- [ ] two');
     expect(applyFormat(lists.text, 0, lists.text.length, 'task').text).toBe('one\ntwo');
+  });
+});
+
+describe('linkTicketKeys', () => {
+  const keys = new Map([['CAR-6210', 't1']]);
+
+  it('links known keys, case-insensitively, outside code and links', () => {
+    expect(linkTicketKeys('Ask about car-6210 and CAR-1', keys)).toBe(
+      'Ask about [car-6210](tabstage://ticket/t1) and CAR-1',
+    );
+    expect(linkTicketKeys('`CAR-6210` [CAR-6210](https://x.dev/CAR-6210) https://x.dev/CAR-6210', keys)).toBe(
+      '`CAR-6210` [CAR-6210](https://x.dev/CAR-6210) https://x.dev/CAR-6210',
+    );
+    expect(linkTicketKeys('```\nCAR-6210\n```', keys)).toBe('```\nCAR-6210\n```');
+  });
+});
+
+describe('parseTicketLine', () => {
+  it('takes a leading key as the key and the rest as the title', () => {
+    expect(parseTicketLine('- [ ] car-6210: Decouple status')).toEqual({ key: 'CAR-6210', title: 'Decouple status' });
+    expect(parseTicketLine('CAR-1')).toEqual({ key: 'CAR-1', title: 'CAR-1' });
+    expect(parseTicketLine('## Ship the **map**')).toEqual({ title: 'Ship the map' });
   });
 });

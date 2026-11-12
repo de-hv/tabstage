@@ -1,5 +1,6 @@
-//! Upgrades older data files to the current format, at the JSON level, before
-//! they are parsed.
+//! Upgrades data files from versions 1 to 3 to version 4, at the JSON level,
+//! so the importer of files from before tickets reads one shape (see
+//! `legacy.rs`).
 //!
 //! Version 1 stored a browser on each group (`{"kind":"default"}` or
 //! `{"kind":"specific","browser":id}`) and a synced `settings.defaultBrowser`.
@@ -10,10 +11,6 @@
 //!
 //! Version 3 nests groups inside their profile (`profile.items`), so a
 //! profile can also hold folders and tabs directly, and drops statuses.
-//!
-//! Version 4 colors groups and folders with the profile palette, and only
-//! when chosen: without one they use their parent's. The accent name each
-//! version 3 group carried was never shown, so it is dropped.
 
 use serde_json::{Map, Value, json};
 use tabstage_core::{BrowserId, DEFAULT_PROFILE_NAME, ProfileColor, ProfileId};
@@ -114,29 +111,6 @@ pub(crate) fn upgrade_v1(file: &mut Value) -> Vec<MigratedBinding> {
 
 /// Turns a version 2 file into a version 3 file in place: each profile gets
 /// its groups as `items`, and statuses are dropped.
-/// Drops the accent name (`"color": "blue"`) of every version 3 group, so
-/// groups take their profile's color.
-pub(crate) fn upgrade_v3(file: &mut Value) {
-    let Some(profiles) = file
-        .pointer_mut("/workspace/profiles")
-        .and_then(Value::as_array_mut)
-    else {
-        return;
-    };
-    for item in profiles
-        .iter_mut()
-        .filter_map(|profile| profile.get_mut("items").and_then(Value::as_array_mut))
-        .flatten()
-        .filter_map(Value::as_object_mut)
-    {
-        if item.get("type").and_then(Value::as_str) == Some("group")
-            && item.get("color").is_some_and(Value::is_string)
-        {
-            item.remove("color");
-        }
-    }
-}
-
 pub(crate) fn upgrade_v2(file: &mut Value) {
     let Some(workspace) = file.get_mut("workspace").and_then(Value::as_object_mut) else {
         return;
@@ -388,21 +362,5 @@ mod tests {
                 .len(),
             2
         );
-    }
-
-    #[test]
-    fn version_3_groups_drop_their_accent_name() {
-        let mut file = json!({
-            "workspace": { "profiles": [{ "id": PROFILE_A, "name": "A", "color": 0, "items": [
-                { "type": "group", "id": "g", "name": "G", "color": "blue", "children": [] },
-                { "type": "folder", "id": "f", "name": "F", "tabs": [] }
-            ]}]}
-        });
-
-        upgrade_v3(&mut file);
-
-        let items = &file["workspace"]["profiles"][0]["items"];
-        assert!(items[0].get("color").is_none());
-        assert_eq!(items[1]["name"], "F");
     }
 }

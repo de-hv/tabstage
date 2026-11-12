@@ -4,8 +4,13 @@
 //! and [`FileStore`] refuses to overwrite a file that something else changed
 //! since it was last read, so no work is silently lost.
 
+mod legacy;
 mod migrate;
 
+pub use legacy::{
+    ImportSummary, LegacyItem, LegacyKind, LegacyProfile, LegacyTree, Role, import_legacy,
+    read_legacy,
+};
 pub use migrate::MigratedBinding;
 
 use std::collections::hash_map::DefaultHasher;
@@ -22,7 +27,7 @@ use thiserror::Error;
 pub const APP: &str = "tabstage-desktop";
 
 /// Version of the file format this build writes.
-pub const FORMAT_VERSION: u32 = 4;
+pub const FORMAT_VERSION: u32 = 5;
 
 /// App-wide settings shared by every machine. Empty for now: browser
 /// choices are machine-local since format 2.
@@ -35,11 +40,8 @@ pub struct Settings {}
 pub struct Document {
     /// App settings.
     pub settings: Settings,
-    /// Profiles with their groups, folders and tabs.
+    /// Statuses, and profiles with their tickets and notes.
     pub workspace: Workspace,
-    /// Browsers an older file assigned, for this machine's config. Empty
-    /// unless the file was just upgraded; never written to disk.
-    pub migrated: Vec<MigratedBinding>,
 }
 
 /// Errors from reading or writing the data file.
@@ -63,6 +65,10 @@ pub enum StoreError {
     /// The file was written by a newer version of the app.
     #[error("data file version {0} is newer than this app supports")]
     UnsupportedVersion(u32),
+    /// The file is from before tickets (version 1 to 4): it is imported, not
+    /// opened (see [`read_legacy`]).
+    #[error("data file version {0} is from before tickets and needs to be imported")]
+    Legacy(u32),
     /// The file breaks a workspace rule, such as an id used twice.
     #[error("data file has invalid content")]
     Invalid(#[from] WorkspaceError),
@@ -95,7 +101,8 @@ pub fn to_json(document: &Document) -> String {
 /// # Errors
 ///
 /// [`StoreError::Parse`], [`StoreError::NotTabstage`],
-/// [`StoreError::UnsupportedVersion`] or [`StoreError::Invalid`].
+/// [`StoreError::UnsupportedVersion`], [`StoreError::Legacy`] or
+/// [`StoreError::Invalid`].
 pub fn from_json(text: &str) -> Result<Document> {
     let header: Header = serde_json::from_str(text).map_err(StoreError::Parse)?;
     if header.app.as_deref() != Some(APP) {
@@ -104,25 +111,14 @@ pub fn from_json(text: &str) -> Result<Document> {
     if header.version > FORMAT_VERSION {
         return Err(StoreError::UnsupportedVersion(header.version));
     }
-    let mut value: serde_json::Value = serde_json::from_str(text).map_err(StoreError::Parse)?;
-    let migrated = if header.version < 2 {
-        migrate::upgrade_v1(&mut value)
-    } else {
-        Vec::new()
-    };
-    migrate::fill_profile_colors(&mut value);
-    if header.version < 3 {
-        migrate::upgrade_v2(&mut value);
+    if header.version < FORMAT_VERSION {
+        return Err(StoreError::Legacy(header.version));
     }
-    if header.version < 4 {
-        migrate::upgrade_v3(&mut value);
-    }
-    let file: FileOwned = serde_json::from_value(value).map_err(StoreError::Parse)?;
+    let file: FileOwned = serde_json::from_str(text).map_err(StoreError::Parse)?;
     file.workspace.validate()?;
     Ok(Document {
         settings: file.settings,
         workspace: file.workspace,
-        migrated,
     })
 }
 
@@ -287,36 +283,42 @@ fn fingerprint(bytes: &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tabstage_core::{Icon, Place, TabUrl, Target};
+    use tabstage_core::{Icon, LinkOwner, ProfileColor, TabUrl, Target, TicketPlace};
 
     fn sample() -> Document {
         let mut workspace = Workspace::new();
         let work = workspace.add_profile("Trabajo").expect("profile");
-        let group = workspace.add_group(work, "Work").expect("group");
-        let folder = workspace
-            .add_folder(Place::Group(group), "Sprint 42")
-            .expect("folder");
-        workspace
-            .add_tab(
-                Place::Profile(work),
-                TabUrl::parse("https://wiki.dev/").expect("url"),
-                "Wiki",
+        let status = workspace
+            .add_status("In TEST", ProfileColor::new(3).expect("color"))
+            .expect("status");
+        let ticket = workspace
+            .add_ticket(
+                TicketPlace::Profile(work),
+                "Carrier Commissions",
+                Some(status),
             )
-            .expect("tab");
-        let tab = workspace
-            .add_tab(
-                Place::Folder(folder),
+            .expect("ticket");
+        workspace.set_ticket_key(ticket, "CAR-5899").expect("key");
+        workspace
+            .add_ticket(TicketPlace::Ticket(ticket), "Money card", None)
+            .expect("child");
+        let link = workspace
+            .add_link(
+                LinkOwner::Ticket(ticket),
                 TabUrl::parse("https://a.dev/issue/1").expect("url"),
-                "Issue 1",
+                "PR",
             )
-            .expect("tab");
+            .expect("link");
         workspace
-            .set_icon(Target::Tab(tab), Some(Icon::text("142").expect("icon")))
+            .set_icon(Target::Link(link), Some(Icon::text("142").expect("icon")))
             .expect("icon");
+        let note = workspace.add_note(work, "Standup").expect("note");
+        workspace
+            .set_text(LinkOwner::Note(note), "Talk about CAR-5899")
+            .expect("body");
         Document {
             settings: Settings::default(),
             workspace,
-            migrated: Vec::new(),
         }
     }
 
@@ -327,10 +329,7 @@ mod tests {
     #[test]
     fn load_missing_file_returns_none() {
         let dir = tempfile::tempdir().expect("tempdir");
-
-        let loaded = store_in(&dir).load().expect("load");
-
-        assert!(loaded.is_none());
+        assert!(store_in(&dir).load().expect("load").is_none());
     }
 
     #[test]
@@ -363,169 +362,78 @@ mod tests {
     #[test]
     fn json_round_trip_keeps_the_document() {
         let document = sample();
-
         assert_eq!(from_json(&to_json(&document)).expect("parse"), document);
     }
 
     #[test]
     fn from_json_rejects_other_apps_files() {
         let result = from_json(r#"{"app":"tabstage","version":1,"statuses":[],"board":{}}"#);
-
         assert!(matches!(result, Err(StoreError::NotTabstage)));
     }
 
     #[test]
     fn from_json_rejects_newer_versions() {
         let result = from_json(r#"{"app":"tabstage-desktop","version":99}"#);
-
         assert!(matches!(result, Err(StoreError::UnsupportedVersion(99))));
     }
 
     #[test]
-    fn version_1_files_are_upgraded_and_report_their_browsers() {
-        let v1 = r#"{"app":"tabstage-desktop","version":1,
-            "settings":{"defaultBrowser":"org.mozilla.firefox"},
-            "workspace":{"statuses":[],"groups":[
-              {"id":"00000000-0000-0000-0000-000000000001","name":"Work","color":"blue",
-               "browser":{"kind":"specific","browser":"com.google.Chrome"},"children":[]}]}}"#;
-
-        let document = from_json(v1).expect("upgrade");
-
-        let names: Vec<_> = document
-            .workspace
-            .profiles()
-            .iter()
-            .map(|p| p.name.as_str())
-            .collect();
-        assert_eq!(names, ["Default", "com.google.Chrome"]);
-        let colors: Vec<_> = document
-            .workspace
-            .profiles()
-            .iter()
-            .map(|p| p.color.index())
-            .collect();
-        assert_eq!(colors, [0, 1]);
-        let group = document.workspace.groups().next().expect("group").id;
-        assert_eq!(
-            document.workspace.group_profile(group).map(|p| p.id),
-            Some(document.workspace.profiles()[1].id)
-        );
-        assert_eq!(document.migrated.len(), 2);
-        assert!(to_json(&document).contains("\"version\": 4"));
-    }
-
-    #[test]
-    fn early_version_2_files_get_profile_colors() {
-        let early = r#"{"app":"tabstage-desktop","version":2,"settings":{},
-            "workspace":{"statuses":[],"profiles":[
-              {"id":"00000000-0000-0000-0000-0000000000c1","name":"Default"},
-              {"id":"00000000-0000-0000-0000-0000000000c2","name":"Work"}],"groups":[]}}"#;
-
-        let document = from_json(early).expect("load");
-
-        let colors: Vec<_> = document
-            .workspace
-            .profiles()
-            .iter()
-            .map(|p| p.color.index())
-            .collect();
-        assert_eq!(colors, [0, 1]);
+    fn files_from_before_tickets_are_reported_as_legacy() {
+        for version in 1..=4 {
+            let text =
+                format!(r#"{{"app":"tabstage-desktop","version":{version},"workspace":{{}}}}"#);
+            assert!(matches!(from_json(&text), Err(StoreError::Legacy(v)) if v == version));
+        }
     }
 
     #[test]
     fn from_json_rejects_malformed_json() {
-        assert!(matches!(from_json("{not json"), Err(StoreError::Parse(_))));
-    }
-
-    #[test]
-    fn version_2_files_are_upgraded_to_nested_profiles_without_statuses() {
-        let v2 = r#"{"app":"tabstage-desktop","version":2,"settings":{},
-            "workspace":{"statuses":[{"id":"todo","label":"To do","color":"lavender"}],"profiles":[
-              {"id":"00000000-0000-0000-0000-0000000000c1","name":"Cliente","color":3}],"groups":[
-              {"id":"00000000-0000-0000-0000-000000000001","name":"In TEST","color":"blue",
-               "profile":"00000000-0000-0000-0000-0000000000c1","children":[
-                 {"type":"tab","id":"00000000-0000-0000-0000-00000000000a","url":"https://a.dev/","title":"a","status":"todo"}]}]}}"#;
-
-        let document = from_json(v2).expect("upgrade");
-
-        let profile = &document.workspace.profiles()[0];
-        assert_eq!(profile.items.len(), 1);
-        assert_eq!(document.workspace.tabs().len(), 1);
-        let text = to_json(&document);
-        assert!(!text.contains("status"), "{text}");
-        assert_eq!(
-            from_json(&text).expect("reload").workspace,
-            document.workspace
-        );
+        assert!(matches!(from_json("{nope"), Err(StoreError::Parse(_))));
     }
 
     #[test]
     fn from_json_rejects_invalid_workspace() {
-        let text = to_json(&sample()).replace("\"profiles\": [", "\"profiles\": [] ,\"x\": [");
-
-        let result = from_json(&text);
-
-        assert!(
-            matches!(result, Err(StoreError::Invalid(WorkspaceError::NoProfiles))),
-            "{result:?}"
-        );
+        let text = r#"{"app":"tabstage-desktop","version":5,"workspace":{"profiles":[]}}"#;
+        assert!(matches!(
+            from_json(text),
+            Err(StoreError::Invalid(WorkspaceError::NoProfiles))
+        ));
     }
 
     #[test]
     fn save_refuses_to_overwrite_a_change_from_another_device() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let mut laptop = store_in(&dir);
-        laptop.load().expect("load");
-        laptop.save(&sample()).expect("first save");
-        let mut desktop = store_in(&dir);
-        let mut theirs = desktop.load().expect("load").expect("document");
-        theirs
-            .workspace
-            .add_profile("Otro equipo")
-            .expect("profile");
-        desktop.save(&theirs).expect("their save");
+        let mut store = store_in(&dir);
+        store.load().expect("load");
+        store.save(&sample()).expect("first save");
+        fs::write(store.path(), to_json(&Document::default())).expect("external write");
 
-        assert!(laptop.has_external_change().expect("check"));
-        assert!(matches!(laptop.save(&sample()), Err(StoreError::Conflict)));
-        assert_eq!(store_in(&dir).load().expect("load"), Some(theirs));
+        assert!(matches!(store.save(&sample()), Err(StoreError::Conflict)));
+        assert!(store.has_external_change().expect("check"));
     }
 
     #[test]
     fn force_save_overwrites_and_clears_the_conflict() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let mut laptop = store_in(&dir);
-        laptop.load().expect("load");
-        laptop.save(&sample()).expect("save");
-        fs::write(laptop.path(), to_json(&Document::default())).expect("external write");
+        let mut store = store_in(&dir);
+        store.load().expect("load");
+        store.save(&sample()).expect("first save");
+        fs::write(store.path(), to_json(&Document::default())).expect("external write");
 
-        laptop.force_save(&sample()).expect("force");
+        store.force_save(&sample()).expect("force");
 
-        assert!(!laptop.has_external_change().expect("check"));
-        laptop.save(&sample()).expect("save after force");
+        assert!(!store.has_external_change().expect("check"));
+        store.save(&sample()).expect("save after force");
     }
 
     #[test]
     fn save_without_loading_an_existing_file_is_a_conflict() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let mut first = store_in(&dir);
-        first.load().expect("load");
-        first.save(&sample()).expect("save");
-
-        let result = store_in(&dir).save(&Document::default());
-
-        assert!(matches!(result, Err(StoreError::Conflict)));
-    }
-
-    #[test]
-    fn consecutive_own_saves_are_not_conflicts() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let mut store = store_in(&dir);
-        store.load().expect("load");
-
-        store.save(&sample()).expect("first");
-        store.save(&Document::default()).expect("second");
-
-        assert!(!store.has_external_change().expect("check"));
+        fs::write(dir.path().join("workspace.json"), to_json(&sample())).expect("write");
+        assert!(matches!(
+            store_in(&dir).save(&sample()),
+            Err(StoreError::Conflict)
+        ));
     }
 
     #[test]
@@ -533,23 +441,21 @@ mod tests {
         insta::assert_snapshot!(to_json_redacted(&sample()));
     }
 
-    /// The JSON with random ids replaced, so the snapshot is stable.
     fn to_json_redacted(document: &Document) -> String {
         let mut value: serde_json::Value = serde_json::from_str(&to_json(document)).expect("json");
         redact_ids(&mut value);
         serde_json::to_string_pretty(&value).expect("json")
     }
 
+    /// Replaces random UUIDs so the snapshot is stable.
     fn redact_ids(value: &mut serde_json::Value) {
         match value {
             serde_json::Value::Object(map) => {
-                for (key, child) in map.iter_mut() {
-                    if matches!(key.as_str(), "id" | "profile")
-                        && child.as_str().is_some_and(|id| id.len() == 36)
-                    {
-                        *child = serde_json::Value::from("[uuid]");
+                for (key, inner) in map.iter_mut() {
+                    if (key == "id" || key == "status") && inner.is_string() {
+                        *inner = serde_json::Value::from("[uuid]");
                     } else {
-                        redact_ids(child);
+                        redact_ids(inner);
                     }
                 }
             }

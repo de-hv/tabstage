@@ -1,90 +1,92 @@
 import { describe, expect, it } from 'vitest';
 
 import { snapshotFixture } from '../test/ipc';
-import { allGroups, allTabs, countTabs, effectiveColor, locate, pinnedIndex, pinnedItems, placeLabel } from './workspace';
-
-const TRABAJO = '00000000-0000-0000-0000-0000000000c1';
-const JIRA = '00000000-0000-0000-0000-0000000000a1';
-const SPRINT = '00000000-0000-0000-0000-0000000000f1';
-const ONBOARDING = '00000000-0000-0000-0000-0000000000f3';
-const LOGIN = '00000000-0000-0000-0000-000000000b01';
-const WIKI = '00000000-0000-0000-0000-000000000b08';
-const STATUS_PAGE = '00000000-0000-0000-0000-000000000b09';
+import {
+  CARRIER,
+  DONE,
+  IN_TEST,
+  MONEY,
+  ONBOARDING,
+  PR_LINK,
+  REMOVE_MAP,
+  REVIEW,
+  STAGING_LINK,
+  STANDUP,
+  TRABAJO,
+} from '../test/render';
+import {
+  countLinks,
+  findLink,
+  findTicket,
+  laneIndex,
+  lanes,
+  mentionsOf,
+  pinnedIndex,
+  pinnedItems,
+  ticketsByKey,
+} from './workspace';
 
 const workspace = () => snapshotFixture().workspace;
+const trabajo = () => workspace().profiles[0]!;
 
-describe('locate', () => {
-  it('finds items at every level with their containers', () => {
-    expect(locate(workspace(), JIRA)).toMatchObject({ place: { profile: TRABAJO }, index: 0 });
-    expect(locate(workspace(), STATUS_PAGE)).toMatchObject({ place: { profile: TRABAJO }, index: 3 });
-    expect(locate(workspace(), SPRINT)).toMatchObject({ place: { group: JIRA }, index: 0 });
-    expect(locate(workspace(), LOGIN)?.group?.id).toBe(JIRA);
-    expect(locate(workspace(), WIKI)).toMatchObject({ place: { folder: ONBOARDING }, index: 0 });
-    expect(locate(workspace(), WIKI)?.group).toBeUndefined();
-    expect(locate(workspace(), 'missing')).toBeNull();
+describe('lookups', () => {
+  it('finds tickets, sub-tickets and links with what holds them', () => {
+    expect(findTicket(workspace(), MONEY)).toMatchObject({ profile: { id: TRABAJO }, parent: { id: CARRIER } });
+    expect(findTicket(workspace(), CARRIER)?.parent).toBeUndefined();
+    expect(findLink(workspace(), STAGING_LINK)).toMatchObject({ owner: { ticket: MONEY }, index: 0 });
+    expect(findLink(workspace(), 'nope')).toBeNull();
+    expect(countLinks(findTicket(workspace(), CARRIER)!.ticket)).toBe(2);
+  });
+
+  it('finds the notes that mention a key, whole words only', () => {
+    expect(mentionsOf(workspace(), 'CAR-6163').map(({ note }) => note.id)).toEqual([STANDUP]);
+    expect(mentionsOf(workspace(), 'CAR-616')).toEqual([]);
+    expect(mentionsOf(workspace(), undefined)).toEqual([]);
+  });
+
+  it('maps keys in upper case to their tickets', () => {
+    const keys = ticketsByKey(workspace());
+    expect(keys.get('CAR-6020')?.id).toBe(MONEY);
+    expect(keys.size).toBe(3);
   });
 });
 
-describe('collections', () => {
-  it('lists groups and tabs across profiles', () => {
-    expect(allGroups(workspace()).map((group) => group.name)).toEqual([
-      'Trabajo · Jira',
-      'In TEST',
-      'Investigación',
-      'Docs Rust',
+describe('lanes', () => {
+  it('sorts a profile’s tickets by status, in workflow order, with "No status" last', () => {
+    const result = lanes(workspace(), trabajo()).map((lane) => [lane.status?.id ?? null, lane.tickets.map((t) => t.id)]);
+    expect(result).toEqual([
+      [REVIEW, [REMOVE_MAP]],
+      [IN_TEST, [CARRIER]],
+      [DONE, []],
+      [null, [ONBOARDING]],
     ]);
-    expect(allTabs(workspace())).toHaveLength(9);
   });
 
-  it('counts tabs inside folders, groups and profiles', () => {
-    const [trabajo] = workspace().profiles;
-    expect(trabajo && countTabs(trabajo)).toBe(8);
-    expect(trabajo?.items[0] && countTabs(trabajo.items[0])).toBe(5);
+  it('treats a status that no longer exists as none', () => {
+    const changed = workspace();
+    changed.statuses = changed.statuses.filter((status) => status.id !== REVIEW);
+    const none = lanes(changed, changed.profiles[0]!).at(-1)!;
+    expect(none.tickets.map((t) => t.id)).toEqual([REMOVE_MAP, ONBOARDING]);
   });
-});
 
-describe('placeLabel', () => {
-  it('names a place by its path', () => {
-    expect(placeLabel(workspace(), { profile: TRABAJO })).toBe('Trabajo');
-    expect(placeLabel(workspace(), { group: JIRA })).toBe('Trabajo / Trabajo · Jira');
-    expect(placeLabel(workspace(), { folder: SPRINT })).toBe('Trabajo / Trabajo · Jira / Sprint 42');
-    expect(placeLabel(workspace(), { folder: ONBOARDING })).toBe('Trabajo / Onboarding');
-  });
-});
-
-describe('effectiveColor', () => {
-  const IN_TEST = '00000000-0000-0000-0000-0000000000a4';
-  const INCIDENTS = '00000000-0000-0000-0000-0000000000f2';
-  const STAGING = '00000000-0000-0000-0000-000000000b07';
-  const INCIDENT_TAB = '00000000-0000-0000-0000-000000000b03';
-
-  it('is the chosen color, the parent one when asked for, else none', () => {
-    const workspace = snapshotFixture().workspace;
-    expect(effectiveColor(workspace, TRABAJO)).toBe(0);
-    expect(effectiveColor(workspace, JIRA)).toBeUndefined();
-    expect(effectiveColor(workspace, SPRINT)).toBeUndefined();
-    expect(effectiveColor(workspace, STATUS_PAGE)).toBeUndefined();
-    expect(effectiveColor(workspace, '00000000-0000-0000-0000-0000000000a2')).toBe(1);
-    expect(effectiveColor(workspace, IN_TEST)).toBe(3);
-    expect(effectiveColor(workspace, STAGING)).toBe(3);
-    expect(effectiveColor(workspace, INCIDENTS)).toBe(15);
-    expect(effectiveColor(workspace, INCIDENT_TAB)).toBe(15);
-    expect(effectiveColor(workspace, ONBOARDING)).toBeUndefined();
-    expect(effectiveColor(workspace, WIKI)).toBeUndefined();
-    expect(effectiveColor(workspace, 'missing')).toBeUndefined();
+  it('gives the index to insert at the end of a lane or before a ticket', () => {
+    const profile = trabajo();
+    const [review, test, done] = lanes(workspace(), profile);
+    expect(laneIndex(profile, review!)).toBe(2);
+    expect(laneIndex(profile, test!)).toBe(1);
+    expect(laneIndex(profile, done!)).toBe(3);
+    expect(laneIndex(profile, review!, CARRIER)).toBe(0);
   });
 });
 
-describe('pinnedItems', () => {
-  it('lists pinned items that still exist, in order, with their profile', () => {
-    const workspace = { ...snapshotFixture().workspace };
-    workspace.pinned = [{ tab: STATUS_PAGE }, { group: 'gone' }, { folder: SPRINT }];
-    const pinned = pinnedItems(workspace);
-    expect(pinned.map((entry) => [entry.kind, entry.item.id, entry.profile.id])).toEqual([
-      ['tab', STATUS_PAGE, TRABAJO],
-      ['folder', SPRINT, TRABAJO],
+describe('pinned', () => {
+  it('lists pinned items that still exist, in order', () => {
+    const changed = { ...workspace(), pinned: [{ link: PR_LINK }, { ticket: 'gone' }, { ticket: MONEY }] };
+    expect(pinnedItems(changed).map((entry) => [entry.kind, entry.item.id])).toEqual([
+      ['link', PR_LINK],
+      ['ticket', MONEY],
     ]);
-    expect(pinnedIndex(workspace, { folder: SPRINT })).toBe(2);
-    expect(pinnedIndex(workspace, { tab: SPRINT })).toBe(-1);
+    expect(pinnedIndex(changed, { ticket: MONEY })).toBe(2);
+    expect(pinnedIndex(changed, { note: MONEY })).toBe(-1);
   });
 });

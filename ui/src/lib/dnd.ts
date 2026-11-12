@@ -1,85 +1,153 @@
-import type { Command, Place, Target, Workspace } from '../api/types';
-import { listLength, type Location, locate, pinnedIndex, placeLabel, samePlace } from './workspace';
+import type { Command, Target, Uuid, Workspace } from '../api/types';
+import { findLink, findNote, findProfile, findTicket, laneIndex, lanes, pinnedIndex } from './workspace';
 
 /** What is being dragged. */
 export type DragItem =
-  | { kind: 'tab'; tab: string }
-  | { kind: 'folder'; folder: string }
-  | { kind: 'group'; group: string }
-  | { kind: 'profile'; profile: string };
+  | { kind: 'ticket'; ticket: Uuid }
+  | { kind: 'note'; note: Uuid }
+  | { kind: 'link'; link: Uuid }
+  | { kind: 'profile'; profile: Uuid };
 
 /** Where it is dropped. */
 export type DropTarget =
-  /** On a group, folder or tab row: take that row's place. */
-  | { kind: 'before'; node: string }
-  /** On a profile, group or folder (header, sidebar row or board column): go to its end. */
-  | { kind: 'into'; place: Place }
-  /** The space after a list: go to its end, also from within the same list. */
-  | { kind: 'end'; place: Place }
+  /** A status lane of a profile (`status: null` is "No status"): a ticket goes there, before `before` or at the end. */
+  | { kind: 'lane'; profile: Uuid; status: Uuid | null; before?: Uuid }
+  /** Before a sub-ticket, as a sibling. */
+  | { kind: 'beforeSubTicket'; ticket: Uuid }
+  /** A ticket or note row: a link goes into it, at the end. */
+  | { kind: 'linksOf'; owner: { ticket: Uuid } | { note: Uuid } }
+  /** Before a link, in the same ticket or note. */
+  | { kind: 'beforeLink'; link: Uuid }
+  /** Before a note, or at the end of a profile's notes. */
+  | { kind: 'notes'; profile: Uuid; before?: Uuid }
+  /** A profile row: a ticket or note moves to it, a profile moves to its place. */
+  | { kind: 'profile'; profile: Uuid }
   /** The "Pinned" section: pin it, or reorder it, before `before` or at the end. */
   | { kind: 'pinned'; before?: Target };
 
-/**
- * The index to send for "put it at `index` of `place`": the Rust side removes
- * the item first, so a move down the same list lands one slot earlier.
- * `null` when the item would stay where it is.
- */
-function finalIndex(from: Location, place: Place, index: number): number | null {
-  if (!samePlace(from.place, place)) return index;
-  const adjusted = from.index < index ? index - 1 : index;
-  return adjusted === from.index ? null : adjusted;
-}
-
-/** Where a drop puts things, or `null` for a target that does not exist. */
-function destination(workspace: Workspace, target: DropTarget): { place: Place; index: number } | null {
-  if (target.kind === 'into' || target.kind === 'end') {
-    const length = listLength(workspace, target.place);
-    return length === null ? null : { place: target.place, index: length };
+/** The target a dragged ticket, note or link stands for. */
+export function dragTarget(item: DragItem): Target | null {
+  switch (item.kind) {
+    case 'ticket':
+      return { ticket: item.ticket };
+    case 'note':
+      return { note: item.note };
+    case 'link':
+      return { link: item.link };
+    case 'profile':
+      return null;
   }
-  if (target.kind === 'pinned') return null;
-  const at = locate(workspace, target.node);
-  return at ? { place: at.place, index: at.index } : null;
 }
 
 /** The command a drop means, or `null` when it would change nothing. */
 export function dropCommand(item: DragItem, target: DropTarget, workspace: Workspace): Command | null {
   if (target.kind === 'pinned') return dropPinned(item, target.before, workspace);
-  if (item.kind === 'profile') return dropProfile(item.profile, target, workspace);
-  const id = item.kind === 'tab' ? item.tab : item.kind === 'folder' ? item.folder : item.group;
-  if (target.kind === 'before' && target.node === id) return null;
-  const from = locate(workspace, id);
-  const to = destination(workspace, target);
-  if (!from || !to) return null;
-  // Dropping on its own container is not a "move to the end".
-  if (target.kind === 'into' && samePlace(from.place, to.place)) return null;
-  const index = finalIndex(from, to.place, to.index);
-  if (index === null) return null;
   switch (item.kind) {
-    case 'tab':
-      return { type: 'moveTab', tab: item.tab, place: to.place, index };
-    case 'folder':
-      // Folders do not nest.
-      return 'folder' in to.place ? null : { type: 'moveFolder', folder: item.folder, place: to.place, index };
-    case 'group':
-      // Groups only live directly in a profile.
-      return 'profile' in to.place
-        ? { type: 'moveGroup', group: item.group, profile: to.place.profile, index }
-        : null;
+    case 'ticket':
+      return dropTicket(item.ticket, target, workspace);
+    case 'note':
+      return dropNote(item.note, target, workspace);
+    case 'link':
+      return dropLink(item.link, target, workspace);
+    case 'profile':
+      return dropProfile(item.profile, target, workspace);
   }
 }
 
-/** The target a dragged group, folder or tab stands for. */
-export function dragTarget(item: DragItem): Target | null {
-  switch (item.kind) {
-    case 'tab':
-      return { tab: item.tab };
-    case 'folder':
-      return { folder: item.folder };
-    case 'group':
-      return { group: item.group };
-    case 'profile':
-      return null;
+function dropTicket(id: Uuid, target: DropTarget, workspace: Workspace): Command | null {
+  const from = findTicket(workspace, id);
+  if (!from) return null;
+  if (target.kind === 'lane') {
+    if (target.before === id) return null;
+    const profile = findProfile(workspace, target.profile);
+    const lane = profile && lanes(workspace, profile).find((candidate) => (candidate.status?.id ?? null) === target.status);
+    if (!profile || !lane) return null;
+    let index = laneIndex(profile, lane, target.before);
+    const fromIndex = from.parent || from.profile.id !== profile.id ? -1 : profile.tickets.findIndex((t) => t.id === id);
+    // The Rust side removes the ticket first, so a move down lands one slot earlier.
+    if (fromIndex !== -1 && fromIndex < index) index -= 1;
+    const sameStatus = (from.ticket.status ?? null) === target.status;
+    if (fromIndex === index && sameStatus) return null;
+    return {
+      type: 'moveTicket',
+      ticket: id,
+      place: { profile: profile.id },
+      index,
+      ...(sameStatus && !from.parent ? {} : { lane: { status: target.status } }),
+    };
   }
+  if (target.kind === 'beforeSubTicket') {
+    if (target.ticket === id || (from.ticket.children?.length ?? 0) > 0) return null;
+    const to = findTicket(workspace, target.ticket);
+    if (!to?.parent) return null;
+    const siblings = to.parent.children ?? [];
+    let index = siblings.findIndex((child) => child.id === target.ticket);
+    if (from.parent?.id === to.parent.id) {
+      const fromIndex = siblings.findIndex((child) => child.id === id);
+      if (fromIndex < index) index -= 1;
+      if (fromIndex === index) return null;
+    }
+    return { type: 'moveTicket', ticket: id, place: { ticket: to.parent.id }, index };
+  }
+  if (target.kind === 'profile') {
+    if (from.profile.id === target.profile && !from.parent) return null;
+    const profile = findProfile(workspace, target.profile);
+    return profile ? { type: 'moveTicket', ticket: id, place: { profile: profile.id }, index: profile.tickets.length } : null;
+  }
+  return null;
+}
+
+function dropNote(id: Uuid, target: DropTarget, workspace: Workspace): Command | null {
+  const from = findNote(workspace, id);
+  if (!from) return null;
+  const profileId = target.kind === 'notes' || target.kind === 'profile' ? target.profile : null;
+  const profile = profileId ? findProfile(workspace, profileId) : undefined;
+  if (!profile) return null;
+  let index = profile.notes.length;
+  if (target.kind === 'notes' && target.before) {
+    if (target.before === id) return null;
+    index = profile.notes.findIndex((note) => note.id === target.before);
+    if (index === -1) return null;
+  } else if (target.kind === 'profile' && from.profile.id === profile.id) {
+    return null;
+  }
+  if (from.profile.id === profile.id) {
+    const fromIndex = profile.notes.findIndex((note) => note.id === id);
+    if (fromIndex < index) index -= 1;
+    if (fromIndex === index) return null;
+  }
+  return { type: 'moveNote', note: id, profile: profile.id, index };
+}
+
+function dropLink(id: Uuid, target: DropTarget, workspace: Workspace): Command | null {
+  const from = findLink(workspace, id);
+  if (!from) return null;
+  if (target.kind === 'linksOf') {
+    const owner = target.owner;
+    const sameOwner = JSON.stringify(owner) === JSON.stringify(from.owner);
+    if (sameOwner) return null;
+    const links =
+      'ticket' in owner ? findTicket(workspace, owner.ticket)?.ticket.links : findNote(workspace, owner.note)?.note.links;
+    return { type: 'moveLink', link: id, owner, index: links?.length ?? 0 };
+  }
+  if (target.kind === 'beforeLink') {
+    if (target.link === id) return null;
+    const to = findLink(workspace, target.link);
+    if (!to) return null;
+    let index = to.index;
+    if (JSON.stringify(to.owner) === JSON.stringify(from.owner)) {
+      if (from.index < index) index -= 1;
+      if (from.index === index) return null;
+    }
+    return { type: 'moveLink', link: id, owner: to.owner, index };
+  }
+  return null;
+}
+
+function dropProfile(profile: Uuid, target: DropTarget, workspace: Workspace): Command | null {
+  if (target.kind !== 'profile' || target.profile === profile) return null;
+  const index = workspace.profiles.findIndex((candidate) => candidate.id === target.profile);
+  return index === -1 ? null : { type: 'moveProfile', profile, index };
 }
 
 /** Pins what is dropped on the "Pinned" section, or moves it there when it already is. */
@@ -91,44 +159,6 @@ function dropPinned(item: DragItem, before: Target | undefined, workspace: Works
   const count = workspace.pinned?.length ?? 0;
   const to = before ? pinnedIndex(workspace, before) : count;
   if (to === -1) return null;
-  // The Rust side removes the item first, so a move down lands one slot earlier.
   const index = from < to ? to - 1 : to;
   return index === from ? null : { type: 'movePinned', target, index };
-}
-
-function dropProfile(profile: string, target: DropTarget, workspace: Workspace): Command | null {
-  if (target.kind === 'pinned' || target.kind === 'before' || !('profile' in target.place) || target.place.profile === profile) return null;
-  const onto = target.place.profile;
-  const index = workspace.profiles.findIndex((candidate) => candidate.id === onto);
-  return index === -1 ? null : { type: 'moveProfile', profile, index };
-}
-
-/** A "Move to…" menu entry: a keyboard way to do what dragging does. */
-export interface MoveDestination {
-  label: string;
-  command: Command;
-}
-
-/** Every place, profile by profile, in tree order. */
-function allPlaces(workspace: Workspace): Place[] {
-  return workspace.profiles.flatMap((profile) => [
-    { profile: profile.id },
-    ...profile.items.flatMap((item): Place[] => {
-      if (item.type === 'folder') return [{ folder: item.id }];
-      if (item.type === 'tab') return [];
-      return [
-        { group: item.id },
-        ...item.children.flatMap((node): Place[] => (node.type === 'folder' ? [{ folder: node.id }] : [])),
-      ];
-    }),
-  ]);
-}
-
-/** Where an item can be moved from its menu; its current place is left out. */
-export function moveDestinations(item: DragItem, workspace: Workspace): MoveDestination[] {
-  if (item.kind === 'profile') return [];
-  return allPlaces(workspace).flatMap((place) => {
-    const command = dropCommand(item, { kind: 'into', place }, workspace);
-    return command ? [{ label: placeLabel(workspace, place), command }] : [];
-  });
 }

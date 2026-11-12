@@ -1,14 +1,13 @@
-import { emit } from '@tauri-apps/api/event';
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import type { Snapshot } from './api/types';
 import { appliedCommands, snapshotFixture } from './test/ipc';
 import {
-  INCIDENTS,
-  IN_TEST,
-  STATUS_TAB,
-  WORK,
+  CARRIER,
+  ONBOARDING,
+  PR_LINK,
+  STANDUP,
   clickMenuItem,
   drag,
   renderApp,
@@ -17,203 +16,122 @@ import {
   treeRow,
 } from './test/render';
 
-async function expandWork(user: Awaited<ReturnType<typeof renderApp>>['user']) {
-  await user.click(within(sidebar()).getByRole('button', { name: 'Expand Trabajo · Jira' }));
-}
-
-describe('colors', () => {
-  it('shows no color by default: only chosen colors tint the rows inside', async () => {
+describe('collapsible sidebar', () => {
+  it('collapses to a rail and expands again, from the header and with ⌘\\', async () => {
     const { user } = await renderApp();
-    await expandWork(user);
-    await user.click(within(sidebar()).getByRole('button', { name: 'Expand In TEST' }));
+    await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
+    expect(localStorage.getItem('tabstage.sidebarCollapsed')).toBe('true');
+    expect(screen.queryByRole('separator', { name: 'Resize sidebar' })).toBeNull();
+    expect(within(sidebar()).getByRole('button', { name: 'Trabajo' })).toBeTruthy();
 
-    // A profile's color is its dot; it does not tint its rows.
-    expect(treeRow('Trabajo · Jira').hasAttribute('data-tinted')).toBe(false);
-    expect(treeRow('Trabajo · Jira').hasAttribute('data-own')).toBe(false);
-    expect(treeRow('Runbook de despliegue').hasAttribute('data-tinted')).toBe(false);
-    expect(treeRow('Incidentes').style.getPropertyValue('--own')).toBe('var(--profile-15)');
-    expect(treeRow('In TEST').style.getPropertyValue('--own')).toBe('var(--profile-3)');
-    expect(treeRow('Staging dashboard').style.getPropertyValue('--parent')).toBe('var(--profile-3)');
-  });
+    await user.click(screen.getByRole('button', { name: 'Expand sidebar' }));
+    expect(screen.getByRole('separator', { name: 'Resize sidebar' })).toBeTruthy();
 
-  it('uses the parent color when a group asks for it', async () => {
-    const { user } = await renderApp();
-    await user.click(within(sidebar()).getByRole('button', { name: 'Expand Investigación' }));
-
-    expect(treeRow('Investigación').style.getPropertyValue('--own')).toBe('var(--profile-1)');
-    expect(treeRow('HTTP caching · MDN').style.getPropertyValue('--parent')).toBe('var(--profile-1)');
-  });
-
-  it('picks a color, the parent one, or none from the menu', async () => {
-    const { calls } = await renderApp();
-
-    await rightClick('In TEST');
-    clickMenuItem('Change color…');
-    const picker = await screen.findByRole('menu', { name: 'Color of In TEST' });
-    fireEvent.click(within(picker).getByRole('menuitemradio', { name: 'Teal' }));
-    await rightClick('In TEST');
-    clickMenuItem('Change color…');
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Use parent color (Trabajo)' }));
-    await rightClick('In TEST');
-    clickMenuItem('Change color…');
-    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'No color' }));
-    await rightClick('Trabajo · Jira');
-    clickMenuItem('Change color…');
-    expect(
-      (await screen.findByRole('menuitemradio', { name: 'No color' })).getAttribute('aria-checked'),
-    ).toBe('true');
-
-    expect(appliedCommands(calls)).toEqual([
-      { type: 'setColor', target: { group: IN_TEST }, color: 10 },
-      { type: 'setColor', target: { group: IN_TEST }, color: 'parent' },
-      { type: 'setColor', target: { group: IN_TEST }, color: 'none' },
-    ]);
-  });
-
-  it('offers no color for tabs', async () => {
-    await renderApp();
-    await rightClick('Status page');
-    expect(screen.queryByRole('menuitem', { name: 'Change color…' })).toBeNull();
+    await user.keyboard('{Meta>}\\{/Meta}');
+    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeTruthy();
   });
 });
 
 describe('pinned', () => {
-  const withPinned = (): Snapshot => {
-    const snapshot = snapshotFixture();
-    snapshot.workspace.pinned = [{ tab: STATUS_TAB }, { group: IN_TEST }];
-    return snapshot;
-  };
+  const withPinned = (): Snapshot => ({ ...snapshotFixture(), workspace: { ...snapshotFixture().workspace, pinned: [{ link: PR_LINK }, { note: STANDUP }] } });
 
-  it('pins and unpins from the menu', async () => {
-    const { calls } = await renderApp();
-    expect(within(sidebar()).queryByRole('region', { name: 'Pinned' })).toBeNull();
+  it('pins from the menu and with ⌘P on the shown ticket', async () => {
+    const { calls, user } = await renderApp();
 
-    await rightClick('Status page');
+    await rightClick('Onboarding wiki');
     clickMenuItem('Pin to top');
-
-    expect(appliedCommands(calls)).toEqual([{ type: 'pin', target: { tab: STATUS_TAB } }]);
-  });
-
-  it('lists pinned items: a tab opens with a click, a group is shown, and each can be unpinned', async () => {
-    const { calls, user } = await renderApp({ snapshot: withPinned, apply: withPinned });
-    const pinned = within(sidebar()).getByRole('region', { name: 'Pinned' });
-
-    await user.click(within(pinned).getByRole('button', { name: 'Status page' }));
-    expect(calls).toContainEqual({ cmd: 'open_tab', args: { tab: STATUS_TAB } });
-
-    await user.click(within(pinned).getByRole('button', { name: 'In TEST' }));
-    expect(await screen.findByRole('main', { name: 'In TEST' })).toBeTruthy();
-
-    await user.click(within(pinned).getByRole('button', { name: 'Unpin In TEST' }));
-    expect(appliedCommands(calls)).toContainEqual({ type: 'unpin', target: { group: IN_TEST } });
-
-    await rightClick('Status page');
-    expect(screen.getByRole('menuitem', { name: 'Unpin' })).toBeTruthy();
-  });
-
-  it('pins by dragging onto the section and reorders by dragging within it', async () => {
-    const { calls } = await renderApp({ snapshot: withPinned, apply: withPinned });
-    const pinned = within(within(sidebar()).getByRole('region', { name: 'Pinned' }));
-    const rows = pinned
-      .getAllByRole('listitem').map((item) => item.querySelector<HTMLElement>('.tree-row')!);
-
-    drag(rows[1]!, rows[0]!);
-    drag(treeRow('Trabajo · Jira'), pinned.getByRole('button', { name: 'Pinned' }).parentElement!);
+    await user.click(within(sidebar()).getByText('Carrier Commissions'));
+    await screen.findByRole('main', { name: 'Carrier Commissions' });
+    await user.keyboard('{Meta>}p{/Meta}');
 
     expect(appliedCommands(calls)).toEqual([
-      { type: 'movePinned', target: { group: IN_TEST }, index: 0 },
-      { type: 'pin', target: { group: WORK } },
+      { type: 'pin', target: { ticket: ONBOARDING } },
+      { type: 'pin', target: { ticket: CARRIER } },
     ]);
   });
 
-  it('toggles the pin of the shown item with Cmd+P', async () => {
-    const { calls, user } = await renderApp();
-    await user.click(within(sidebar()).getByRole('button', { name: 'Status page' }));
-    await screen.findByRole('main', { name: 'Status page' });
+  it('lists pinned items: a link opens, a note is shown, each can be unpinned', async () => {
+    const { calls, user } = await renderApp({ snapshot: withPinned, apply: withPinned });
+    const pinned = within(within(sidebar()).getByRole('region', { name: 'Pinned' }));
 
-    await user.keyboard('{Meta>}p{/Meta}');
+    await user.click(pinned.getByRole('button', { name: 'PR #2214' }));
+    expect(calls).toContainEqual({ cmd: 'open_link', args: { link: PR_LINK } });
+    await user.click(pinned.getByRole('button', { name: 'Standup notes' }));
+    expect(await screen.findByRole('main', { name: 'Standup notes' })).toBeTruthy();
+    await user.click(pinned.getByRole('button', { name: 'Unpin Standup notes' }));
+    expect(appliedCommands(calls)).toContainEqual({ type: 'unpin', target: { note: STANDUP } });
+  });
 
-    expect(appliedCommands(calls)).toEqual([{ type: 'pin', target: { tab: STATUS_TAB } }]);
+  it('pins by dragging onto the section', async () => {
+    const { calls } = await renderApp({ snapshot: withPinned, apply: withPinned });
+    const head = within(sidebar()).getByRole('button', { name: 'Pinned' }).parentElement!;
+
+    drag(treeRow('Onboarding wiki'), head);
+
+    expect(appliedCommands(calls)).toEqual([{ type: 'pin', target: { ticket: ONBOARDING } }]);
   });
 
   it('shows pinned items in the collapsed rail', async () => {
     const { calls, user } = await renderApp({ snapshot: withPinned });
     await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
 
-    await user.click(within(sidebar()).getByRole('button', { name: 'Pinned: Status page' }));
-    expect(calls).toContainEqual({ cmd: 'open_tab', args: { tab: STATUS_TAB } });
+    await user.click(within(sidebar()).getByRole('button', { name: 'Pinned: PR #2214' }));
+    expect(calls).toContainEqual({ cmd: 'open_link', args: { link: PR_LINK } });
   });
 });
 
-describe('ticket links', () => {
-  it('saves a profile ticket URL in settings and explains a wrong one', async () => {
-    const { calls, user } = await renderApp();
-    await user.click(screen.getByRole('button', { name: 'Settings' }));
-    const card = screen.getByRole('article', { name: 'Profile Personal' });
-    const field = within(card).getByRole('textbox', { name: 'Ticket URL for Personal' });
+describe('note text size', () => {
+  it('grows and shrinks within limits, resets, and is remembered', async () => {
+    const { user } = await renderApp();
+    await user.click(within(sidebar()).getByText('Onboarding wiki'));
+    const note = within(await screen.findByRole('main', { name: 'Onboarding wiki' })).getByRole('region', { name: 'Note' });
+    const scale = () => note.style.getPropertyValue('--note-scale');
+    expect(scale()).toBe('1');
 
-    await user.type(field, 'linear.app/x/issue{Enter}');
-    expect(within(card).getByRole('alert').textContent).toBe('Start with https:// or http://');
-
-    await user.clear(field);
-    await user.click(within(card).getByRole('button', { name: 'Linear' }));
-    expect((field as HTMLInputElement).value).toBe('https://linear.app/your-team/issue/{ticket}');
-    fireEvent.keyDown(field, { key: 'Enter' });
-
-    await waitFor(() =>
-      expect(appliedCommands(calls)).toEqual([
-        {
-          type: 'setTicketUrl',
-          profile: '00000000-0000-0000-0000-0000000000c2',
-          url: 'https://linear.app/your-team/issue/{ticket}',
-        },
-      ]),
-    );
-  });
-
-  it('opens a ticket from the menu and from the quick search', async () => {
-    const { calls, user } = await renderApp();
-    await expandWork(user);
-
-    await rightClick('Incidentes');
-    clickMenuItem('Open ticket');
-    expect(calls).toContainEqual({ cmd: 'open_ticket', args: { target: { folder: INCIDENTS } } });
-
-    await act(async () => {
-      await emit('open-palette');
-    });
-    await user.type(await screen.findByRole('combobox', { name: 'Search tabs' }), 'ticket:INC');
-    await user.click(await screen.findByRole('option', { name: /Open ticket INC-77/ }));
-    expect(calls.filter((call) => call.cmd === 'open_ticket')).toHaveLength(2);
+    await user.click(within(note).getByRole('button', { name: 'Larger text' }));
+    await user.click(within(note).getByRole('button', { name: 'Larger text' }));
+    expect(scale()).toBe('1.2');
+    expect(localStorage.getItem('tabstage.noteTextSize')).toBe('120');
+    await user.click(within(note).getByRole('button', { name: 'Text size 120%, reset' }));
+    expect(scale()).toBe('1');
   });
 });
 
 describe('drag sources', () => {
-  // WebKit (the macOS app) does not start a drag on a <button>, so the part
-  // of a row or card a drag starts from must not be one.
+  // WebKit (the macOS app) does not start a drag on a <button>.
   it('are not buttons, yet work as buttons from the keyboard', async () => {
     const { user } = await renderApp();
 
-    const name = within(treeRow('Status page')).getByRole('button', { name: 'Status page' });
-    expect(name.tagName).not.toBe('BUTTON');
-    for (const card of document.querySelectorAll('[draggable="true"]')) {
-      expect(card.tagName).not.toBe('BUTTON');
-      expect(card.querySelector(':scope > button.card, :scope > button.row, :scope > button.column__title')).toBeNull();
+    for (const element of document.querySelectorAll('[draggable="true"]')) {
+      expect(element.tagName).not.toBe('BUTTON');
+      expect(element.querySelector(':scope > button.card, :scope > button.tree-row__name')).toBeNull();
     }
-
+    const name = within(treeRow('Onboarding wiki')).getByRole('button', { name: 'Onboarding wiki' });
+    expect(name.tagName).not.toBe('BUTTON');
     name.focus();
     await user.keyboard('{Enter}');
-    expect(await screen.findByRole('main', { name: 'Status page' })).toBeTruthy();
+    expect(await screen.findByRole('main', { name: 'Onboarding wiki' })).toBeTruthy();
   });
 });
 
-describe('move to menu', () => {
-  it('keeps long destinations on one line with the full name as a tooltip', async () => {
+describe('custom icons', () => {
+  it('picks an emoji for a ticket', async () => {
+    const { calls, user } = await renderApp();
+
+    fireEvent.click(within(sidebar()).getByRole('button', { name: 'Icon of Onboarding wiki' }));
+    const picker = await screen.findByRole('dialog', { name: 'Icon of Onboarding wiki' });
+    await user.type(within(picker).getByRole('textbox', { name: 'Search emoji' }), 'rocket');
+    await user.click(await within(picker).findByRole('button', { name: 'rocket' }));
+
+    await waitFor(() =>
+      expect(appliedCommands(calls)).toEqual([
+        { type: 'setIcon', target: { ticket: ONBOARDING }, icon: { kind: 'emoji', value: '🚀' } },
+      ]),
+    );
+  });
+
+  it('shows a ticket’s custom icon', async () => {
     await renderApp();
-    await rightClick('Status page');
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to…' }));
-    const item = await screen.findByRole('menuitem', { name: 'Trabajo / Trabajo · Jira' });
-    expect(item.getAttribute('title')).toBe('Trabajo / Trabajo · Jira');
-    expect(item.querySelector('.menu__item-label')).toBeTruthy();
+    expect(within(sidebar()).getByRole('button', { name: 'Icon of Carrier Commissions' }).textContent).toBe('🧪');
   });
 });

@@ -1,13 +1,14 @@
 import { listen } from '@tauri-apps/api/event';
 import { Command } from 'cmdk';
-import { Ticket } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import type { Folder, Group, Profile, Snapshot, Target } from '../api/types';
+import type { Link, Profile, Snapshot } from '../api/types';
 import { profileBrowser } from '../lib/browsers';
-import { allTabs } from '../lib/workspace';
+import { allTickets, findStatus } from '../lib/workspace';
+import type { Selection } from '../state/selection';
 import { BrowserBadge } from './BrowserBadge';
 import { ItemIcon } from './ItemIcon';
+import { StatusPill } from './StatusPill';
 import { TabUrl } from './TabUrl';
 
 /** Emitted by the shell for the global shortcut. */
@@ -22,57 +23,26 @@ export function openPalette() {
 
 interface Props {
   snapshot: Snapshot;
-  openTab: (tab: string) => void;
-  openFolder: (folder: string) => void;
-  /** Opens an item's ticket with its profile's ticket URL. */
-  openTicket: (target: Target) => void;
+  /** Shows a ticket or note. */
+  onSelect: (selection: Selection) => void;
+  /** Opens a link in its profile's browser. */
+  openLink: (link: string) => void;
 }
 
-interface TicketEntry {
-  ticketId: string;
-  name: string;
-  target: Target;
-  profile: Profile;
+/** Every link with the profile and the ticket or note that holds it. */
+function allLinks(snapshot: Snapshot): { link: Link; profile: Profile; owner: string }[] {
+  return snapshot.workspace.profiles.flatMap((profile) => [
+    ...profile.tickets.flatMap((ticket) =>
+      [ticket, ...(ticket.children ?? [])].flatMap((holder) =>
+        (holder.links ?? []).map((link) => ({ link, profile, owner: holder.key ? `${holder.key} ${holder.title}` : holder.title })),
+      ),
+    ),
+    ...profile.notes.flatMap((note) => (note.links ?? []).map((link) => ({ link, profile, owner: note.title }))),
+  ]);
 }
 
-/** Every group, folder and tab whose ticket can open: it has one and its profile a ticket URL. */
-function allTickets(snapshot: Snapshot): TicketEntry[] {
-  const entries: TicketEntry[] = [];
-  for (const profile of snapshot.workspace.profiles) {
-    if (!profile.ticketUrl) continue;
-    const add = (ticketId: string | undefined, name: string, target: Target) => {
-      if (ticketId) entries.push({ ticketId, name, target, profile });
-    };
-    const visit = (item: Folder | Group | { type: 'tab'; id: string; title: string; ticketId?: string }) => {
-      if ('title' in item) add(item.ticketId, item.title, { tab: item.id });
-      else if ('children' in item) {
-        add(item.ticketId, item.name, { group: item.id });
-        item.children.forEach(visit);
-      } else {
-        add(item.ticketId, item.name, { folder: item.id });
-        item.tabs.forEach((tab) => add(tab.ticketId, tab.title, { tab: tab.id }));
-      }
-    };
-    profile.items.forEach(visit);
-  }
-  return entries;
-}
-
-/** Every folder with its profile and group, for the search. */
-function allFolders(snapshot: Snapshot): { folder: Folder; profile: Profile; group?: Group }[] {
-  return snapshot.workspace.profiles.flatMap((profile) =>
-    profile.items.flatMap((item) => {
-      if (item.type === 'folder') return [{ folder: item, profile }];
-      if (item.type === 'group') {
-        return item.children.flatMap((node) => (node.type === 'folder' ? [{ folder: node, profile, group: item }] : []));
-      }
-      return [];
-    }),
-  );
-}
-
-/** Search across every profile; Enter opens the tab in its profile's browser. */
-export function Palette({ snapshot, openTab, openFolder, openTicket }: Props) {
+/** Search across every profile: tickets (also by key and status), notes and links. */
+export function Palette({ snapshot, onSelect, openLink }: Props) {
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
@@ -98,11 +68,11 @@ export function Palette({ snapshot, openTab, openFolder, openTicket }: Props) {
     action();
   };
 
-  const meta = (profile: Profile, group?: Group, folder?: Folder) => {
+  const meta = (profile: Profile, ...path: (string | undefined)[]) => {
     const browser = profileBrowser(snapshot, profile.id);
     return (
       <span className="palette__meta">
-        {[profile.name, group?.name, folder?.name].filter(Boolean).join(' / ')}
+        {[profile.name, ...path].filter(Boolean).join(' / ')}
         {browser && (
           <>
             <BrowserBadge name={browser.name} kind={browser.kind} />
@@ -117,55 +87,60 @@ export function Palette({ snapshot, openTab, openFolder, openTicket }: Props) {
     <Command.Dialog
       open={isOpen}
       onOpenChange={setIsOpen}
-      label="Search tabs"
+      label="Search"
       className="palette"
       overlayClassName="dialog__overlay"
       contentClassName="palette__content"
     >
-      <Command.Input className="palette__input" placeholder="Search tabs, folders and ticket:IDs" aria-label="Search tabs" />
+      <Command.Input className="palette__input" placeholder="Search tickets, notes and links" aria-label="Search" />
       <Command.List className="palette__list">
-        <Command.Empty className="palette__empty">No tab matches.</Command.Empty>
-        {allTickets(snapshot).map(({ ticketId, name, target, profile }) => (
+        <Command.Empty className="palette__empty">Nothing matches.</Command.Empty>
+        {allTickets(snapshot.workspace).map(({ ticket, parent, profile }) => {
+          const status = findStatus(snapshot.workspace, ticket.status);
+          return (
+            <Command.Item
+              key={ticket.id}
+              value={`${ticket.key ?? ''} ${ticket.title} ${status?.name ?? ''} ${parent?.title ?? ''} ${profile.name} ${ticket.id}`}
+              className="palette__item"
+              onSelect={() => run(() => onSelect({ kind: 'ticket', id: ticket.id }))}
+            >
+              <ItemIcon icon={ticket.icon} kind="ticket" />
+              <span className="palette__title">
+                {ticket.key && <span className="ticket">{ticket.key}</span>}
+                {ticket.title}
+              </span>
+              {status && <StatusPill name={status.name} color={status.color} />}
+              {meta(profile, parent?.title)}
+            </Command.Item>
+          );
+        })}
+        {snapshot.workspace.profiles.flatMap((profile) =>
+          profile.notes.map((note) => (
+            <Command.Item
+              key={note.id}
+              value={`note ${note.title} ${profile.name} ${note.id}`}
+              className="palette__item"
+              onSelect={() => run(() => onSelect({ kind: 'note', id: note.id }))}
+            >
+              <ItemIcon icon={note.icon} kind="note" />
+              <span className="palette__title">{note.title}</span>
+              {meta(profile, 'Notes')}
+            </Command.Item>
+          )),
+        )}
+        {allLinks(snapshot).map(({ link, profile, owner }) => (
           <Command.Item
-            key={`ticket-${Object.values(target)[0]}`}
-            value={`ticket:${ticketId} ${ticketId} ${name} ${profile.name} ${Object.values(target)[0]}`}
+            key={link.id}
+            value={`${link.title} ${link.url} ${owner} ${profile.name} ${link.id}`}
             className="palette__item"
-            onSelect={() => run(() => openTicket(target))}
+            onSelect={() => run(() => openLink(link.id))}
           >
-            <Ticket className="icon" aria-hidden="true" />
-            <span className="palette__title">
-              Open ticket {ticketId} · {name}
-            </span>
-            {meta(profile)}
-          </Command.Item>
-        ))}
-        {allFolders(snapshot).map(({ folder, profile, group }) => (
-          <Command.Item
-            key={folder.id}
-            value={`folder ${folder.name} ${group?.name ?? ''} ${profile.name} ${folder.id}`}
-            className="palette__item"
-            onSelect={() => run(() => openFolder(folder.id))}
-          >
-            <ItemIcon icon={folder.icon} kind="folder" />
-            <span className="palette__title">
-              Folder {folder.name} · {folder.tabs.length} tabs
-            </span>
-            {meta(profile, group)}
-          </Command.Item>
-        ))}
-        {allTabs(snapshot.workspace).map(({ tab, profile, group, folder }) => (
-          <Command.Item
-            key={tab.id}
-            value={`${tab.title} ${tab.url} ${group?.name ?? ''} ${folder?.name ?? ''} ${profile.name} ${tab.id}`}
-            className="palette__item"
-            onSelect={() => run(() => openTab(tab.id))}
-          >
-            <ItemIcon icon={tab.icon} kind="tab" />
+            <ItemIcon icon={link.icon} kind="link" />
             <span className="palette__title palette__title--tab">
-              {tab.title}
-              <TabUrl url={tab.url} />
+              {link.title}
+              <TabUrl url={link.url} />
             </span>
-            {meta(profile, group, folder)}
+            {meta(profile, owner)}
           </Command.Item>
         ))}
       </Command.List>

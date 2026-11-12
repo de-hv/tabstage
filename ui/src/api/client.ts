@@ -1,6 +1,17 @@
 import { invoke } from '@tauri-apps/api/core';
 
-import type { AppError, Command, DataFileInfo, OpenSummary, Opened, Relocate, Snapshot, Target, Uuid } from './types';
+import type {
+  AppError,
+  Command,
+  DataFileInfo,
+  ImportPreview,
+  OpenSummary,
+  Opened,
+  Relocate,
+  Role,
+  Snapshot,
+  Uuid,
+} from './types';
 
 /** Typed wrappers around the IPC commands in src-tauri/src/commands.rs. */
 export const api = {
@@ -10,12 +21,17 @@ export const api = {
   forceSave: () => invoke<Snapshot>('force_save'),
   hasExternalChange: () => invoke<boolean>('has_external_change'),
   refreshBrowsers: () => invoke<Snapshot>('refresh_browsers'),
-  openTab: (tab: Uuid) => invoke<Opened>('open_tab', { tab }),
-  openTicket: (target: Target) => invoke<Opened>('open_ticket', { target }),
+  openLink: (link: Uuid) => invoke<Opened>('open_link', { link }),
+  openTicket: (ticket: Uuid) => invoke<Opened>('open_ticket', { ticket }),
+  openTicketAll: (ticket: Uuid) => invoke<OpenSummary>('open_ticket_all', { ticket }),
+  openNote: (note: Uuid) => invoke<OpenSummary>('open_note', { note }),
   openUrl: (profile: Uuid, url: string) => invoke<Opened>('open_url', { profile, url }),
-  openFolder: (folder: Uuid) => invoke<OpenSummary>('open_folder', { folder }),
-  openGroup: (group: Uuid) => invoke<OpenSummary>('open_group', { group }),
-  openProfile: (profile: Uuid) => invoke<OpenSummary>('open_profile', { profile }),
+  /** `path: null` reads the file set aside at startup. */
+  previewImport: (path: string | null, roles: Record<string, Role>) =>
+    invoke<ImportPreview>('preview_import', { path, roles }),
+  importLegacy: (path: string | null, roles: Record<string, Role>) =>
+    invoke<Snapshot>('import_legacy', { path, roles }),
+  dismissImport: () => invoke<Snapshot>('dismiss_import'),
   /** First run: `null` keeps the data file in the default location. */
   chooseDataFile: (folder: string | null) => invoke<Snapshot>('choose_data_file', { folder }),
   inspectDataFolder: (folder: string) => invoke<DataFileInfo>('inspect_data_folder', { folder }),

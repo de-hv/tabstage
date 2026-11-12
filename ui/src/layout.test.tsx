@@ -65,13 +65,3 @@ describe('first run', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
   });
 });
-
-describe('no statuses', () => {
-  it('has no status chips, status view or status settings', async () => {
-    const { user } = await renderApp();
-
-    expect(screen.queryByText(/By status/)).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Settings' }));
-    expect(screen.queryByRole('heading', { name: 'Statuses' })).toBeNull();
-  });
-});

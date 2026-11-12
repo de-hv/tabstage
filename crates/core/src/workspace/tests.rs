@@ -1,895 +1,355 @@
 use super::*;
 
-fn first_profile(workspace: &Workspace) -> ProfileId {
-    workspace.profiles()[0].id
-}
-
 fn url(raw: &str) -> TabUrl {
     TabUrl::parse(raw).expect("valid test url")
 }
 
-/// Ids of the items of a profile, in order, as strings.
-fn item_ids(workspace: &Workspace, profile: ProfileId) -> Vec<String> {
+fn color(index: u8) -> ProfileColor {
+    ProfileColor::new(index).expect("color")
+}
+
+fn first_profile(workspace: &Workspace) -> ProfileId {
+    workspace.profiles()[0].id
+}
+
+/// A profile with a status "In TEST" and a ticket in it.
+fn work() -> (Workspace, ProfileId, StatusId, TicketId) {
+    let mut workspace = Workspace::new();
+    let profile = first_profile(&workspace);
+    let status = workspace.add_status("In TEST", color(0)).expect("status");
+    let ticket = workspace
+        .add_ticket(
+            TicketPlace::Profile(profile),
+            "Carrier Commissions",
+            Some(status),
+        )
+        .expect("ticket");
+    (workspace, profile, status, ticket)
+}
+
+fn titles(workspace: &Workspace, profile: ProfileId) -> Vec<String> {
     workspace
         .profile(profile)
         .expect("profile")
-        .items
+        .tickets
         .iter()
-        .map(|item| match item {
-            Item::Group(group) => group.id.to_string(),
-            Item::Folder(folder) => folder.id.to_string(),
-            Item::Tab(tab) => tab.id.to_string(),
-        })
+        .map(|ticket| ticket.title.clone())
         .collect()
 }
-
-fn child_ids(workspace: &Workspace, group: GroupId) -> Vec<String> {
-    workspace
-        .group(group)
-        .expect("group")
-        .children
-        .iter()
-        .map(|node| match node {
-            Node::Tab(tab) => tab.id.to_string(),
-            Node::Folder(folder) => folder.id.to_string(),
-        })
-        .collect()
-}
-
-fn folder_tab_ids(workspace: &Workspace, folder: FolderId) -> Vec<TabId> {
-    let found = workspace.find_folder(folder).expect("folder");
-    found.folder.tabs.iter().map(|tab| tab.id).collect()
-}
-
-/// A profile with a group "Work" that holds a folder "Sprint".
-fn work() -> (Workspace, ProfileId, GroupId, FolderId) {
-    let mut workspace = Workspace::new();
-    let profile = first_profile(&workspace);
-    let group = workspace.add_group(profile, "Work").expect("add group");
-    let folder = workspace
-        .add_folder(Place::Group(group), "Sprint")
-        .expect("add folder");
-    (workspace, profile, group, folder)
-}
-
-// ---- profiles -----------------------------------------------------------
 
 #[test]
-fn new_workspace_has_one_empty_profile() {
+fn a_new_workspace_has_one_empty_profile_and_no_statuses() {
     let workspace = Workspace::new();
-
     assert_eq!(workspace.profiles().len(), 1);
-    assert_eq!(workspace.profiles()[0].name, DEFAULT_PROFILE_NAME);
-    assert!(workspace.profiles()[0].items.is_empty());
-    assert_eq!(workspace.groups().count(), 0);
+    assert!(workspace.statuses().is_empty());
+    assert!(workspace.validate().is_ok());
 }
 
-#[test]
-fn add_profile_trims_name_and_appends() {
-    let mut workspace = Workspace::new();
-
-    let id = workspace.add_profile("  Cliente ").expect("add");
-
-    assert_eq!(workspace.profiles().len(), 2);
-    assert_eq!(
-        workspace.profile(id).map(|p| p.name.as_str()),
-        Some("Cliente")
-    );
-    assert_eq!(workspace.add_profile("  "), Err(WorkspaceError::EmptyName));
-}
+// ---- statuses -------------------------------------------------------------
 
 #[test]
-fn new_profiles_get_a_color_no_other_profile_uses() {
+fn statuses_keep_their_order_and_can_be_changed() {
     let mut workspace = Workspace::new();
-    let first = workspace.profiles()[0].color;
+    let review = workspace.add_status("In review", color(1)).expect("review");
+    let test = workspace.add_status(" In TEST ", color(2)).expect("test");
+    assert_eq!(workspace.status(test).expect("test").name, "In TEST");
 
-    let second = workspace.add_profile("B").expect("add");
-    let second = workspace.profile(second).expect("profile").color;
-
-    assert_ne!(first, second);
-}
-
-#[test]
-fn rename_recolor_and_move_profiles() {
-    let mut workspace = Workspace::new();
-    let first = first_profile(&workspace);
-    let second = workspace.add_profile("Second").expect("add");
-    let color = ProfileColor::new(7).expect("color");
-
-    workspace.rename_profile(first, "Work").expect("rename");
-    workspace.set_profile_color(first, color).expect("color");
-    workspace.move_profile(second, 0).expect("move");
+    workspace.move_status(test, 0).expect("move");
+    workspace.rename_status(review, "Review").expect("rename");
+    workspace.set_status_color(review, color(5)).expect("color");
 
     let names: Vec<_> = workspace
-        .profiles()
+        .statuses()
         .iter()
-        .map(|p| p.name.as_str())
+        .map(|s| s.name.as_str())
         .collect();
-    assert_eq!(names, ["Second", "Work"]);
-    assert_eq!(workspace.profile(first).expect("p").color, color);
+    assert_eq!(names, ["In TEST", "Review"]);
+    assert_eq!(workspace.status(review).expect("review").color, color(5));
+    assert_eq!(
+        workspace.add_status(" ", color(0)),
+        Err(WorkspaceError::EmptyName)
+    );
 }
 
 #[test]
-fn removing_a_profile_appends_its_items_to_the_target() {
-    let (mut workspace, first, group, _) = work();
-    let second = workspace.add_profile("Second").expect("add");
-    let kept = workspace
-        .add_tab(Place::Profile(second), url("https://kept.dev"), "")
-        .expect("tab");
-    let moved = workspace
-        .add_tab(Place::Profile(first), url("https://moved.dev"), "")
-        .expect("tab");
+fn removing_a_status_leaves_its_tickets_and_sub_tickets_without_one() {
+    let (mut workspace, _, status, ticket) = work();
+    let child = workspace
+        .add_ticket(TicketPlace::Ticket(ticket), "Story", Some(status))
+        .expect("child");
+
+    workspace.remove_status(status).expect("remove");
+
+    assert_eq!(
+        workspace.ticket(ticket).expect("ticket").ticket.status,
+        None
+    );
+    assert_eq!(workspace.ticket(child).expect("child").ticket.status, None);
+    assert!(workspace.validate().is_ok());
+}
+
+// ---- tickets --------------------------------------------------------------
+
+#[test]
+fn tickets_take_a_key_an_address_a_status_and_a_note() {
+    let (mut workspace, _, status, ticket) = work();
+
+    workspace.set_ticket_key(ticket, " CAR-5899 ").expect("key");
+    workspace
+        .set_ticket_address(ticket, Some(url("https://jira.dev/browse/CAR-5899")))
+        .expect("address");
+    workspace
+        .set_text(LinkOwner::Ticket(ticket), "  ## Steps\n- [ ] QA  ")
+        .expect("note");
+    workspace
+        .set_ticket_status(ticket, None)
+        .expect("no status");
+    workspace
+        .set_ticket_status(ticket, Some(status))
+        .expect("status");
+
+    let found = workspace.ticket(ticket).expect("ticket").ticket;
+    assert_eq!(found.key.as_deref(), Some("CAR-5899"));
+    assert_eq!(found.note.as_deref(), Some("## Steps\n- [ ] QA"));
+    assert_eq!(found.status, Some(status));
+    assert_eq!(
+        workspace.ticket_address(ticket).map(TabUrl::as_str),
+        Ok("https://jira.dev/browse/CAR-5899")
+    );
+    let missing = StatusId::new();
+    assert_eq!(
+        workspace.set_ticket_status(ticket, Some(missing)),
+        Err(WorkspaceError::StatusNotFound(missing))
+    );
+}
+
+#[test]
+fn a_ticket_without_its_own_address_has_none_to_open() {
+    let (workspace, _, _, ticket) = work();
+    assert_eq!(
+        workspace.ticket_address(ticket),
+        Err(WorkspaceError::NoTicketLink)
+    );
+}
+
+#[test]
+fn sub_tickets_go_one_level_deep() {
+    let (mut workspace, profile, _, ticket) = work();
+    let child = workspace
+        .add_ticket(TicketPlace::Ticket(ticket), "CAR-6020", None)
+        .expect("child");
+
+    let found = workspace.ticket(child).expect("child");
+    assert_eq!(found.parent.map(|parent| parent.id), Some(ticket));
+    assert_eq!(
+        workspace.add_ticket(TicketPlace::Ticket(child), "Too deep", None),
+        Err(WorkspaceError::NestedTicket)
+    );
+    // A ticket with sub-tickets cannot become one.
+    let other = workspace
+        .add_ticket(TicketPlace::Profile(profile), "Other", None)
+        .expect("other");
+    assert_eq!(
+        workspace.move_ticket(ticket, TicketPlace::Ticket(other), 0),
+        Err(WorkspaceError::NestedTicket)
+    );
+    assert_eq!(
+        workspace.move_ticket(other, TicketPlace::Ticket(other), 0),
+        Err(WorkspaceError::NestedTicket)
+    );
+}
+
+#[test]
+fn tickets_move_within_a_profile_out_of_a_parent_and_across_profiles() {
+    let (mut workspace, profile, _, ticket) = work();
+    let second = workspace
+        .add_ticket(TicketPlace::Profile(profile), "Second", None)
+        .expect("second");
+    let child = workspace
+        .add_ticket(TicketPlace::Ticket(ticket), "Child", None)
+        .expect("child");
+
+    workspace
+        .move_ticket(second, TicketPlace::Profile(profile), 0)
+        .expect("reorder");
+    assert_eq!(
+        titles(&workspace, profile),
+        ["Second", "Carrier Commissions"]
+    );
+
+    workspace
+        .move_ticket(child, TicketPlace::Profile(profile), 1)
+        .expect("promote");
+    assert_eq!(
+        titles(&workspace, profile),
+        ["Second", "Child", "Carrier Commissions"]
+    );
+
+    let other = workspace.add_profile("Personal").expect("profile");
+    workspace
+        .move_ticket(second, TicketPlace::Profile(other), 0)
+        .expect("across");
+    assert_eq!(titles(&workspace, other), ["Second"]);
+}
+
+#[test]
+fn removing_a_ticket_removes_its_sub_tickets_and_unpins_them() {
+    let (mut workspace, _, _, ticket) = work();
+    let child = workspace
+        .add_ticket(TicketPlace::Ticket(ticket), "Child", None)
+        .expect("child");
+    let link = workspace
+        .add_link(LinkOwner::Ticket(child), url("https://a.dev"), "")
+        .expect("link");
+    workspace.pin(Target::Ticket(child)).expect("pin child");
+    workspace.pin(Target::Link(link)).expect("pin link");
+
+    workspace.remove_ticket(ticket).expect("remove");
+
+    assert!(workspace.ticket(child).is_none());
+    assert!(workspace.pinned().is_empty());
+}
+
+// ---- notes and links --------------------------------------------------------
+
+#[test]
+fn notes_hold_a_body_and_links() {
+    let mut workspace = Workspace::new();
+    let profile = first_profile(&workspace);
+    let note = workspace.add_note(profile, "Standup notes").expect("note");
+    workspace
+        .set_text(LinkOwner::Note(note), "Talk about CAR-6210")
+        .expect("body");
+    let link = workspace
+        .add_link(LinkOwner::Note(note), url("https://board.dev"), " ")
+        .expect("link");
+
+    let (_, found) = workspace.note(note).expect("note");
+    assert_eq!(found.body.as_deref(), Some("Talk about CAR-6210"));
+    assert_eq!(found.links[0].title, "https://board.dev/");
+    assert_eq!(
+        workspace.link(link).map(|found| found.owner),
+        Some(LinkOwner::Note(note))
+    );
+}
+
+#[test]
+fn links_move_between_tickets_and_notes_and_can_be_renamed() {
+    let (mut workspace, profile, _, ticket) = work();
+    let note = workspace.add_note(profile, "Notes").expect("note");
+    let link = workspace
+        .add_link(LinkOwner::Ticket(ticket), url("https://pr.dev/1"), "PR")
+        .expect("link");
+
+    workspace
+        .move_link(link, LinkOwner::Note(note), 0)
+        .expect("move");
+    workspace.rename(Target::Link(link), "").expect("rename");
+    workspace
+        .set_link_url(link, url("https://pr.dev/2"))
+        .expect("url");
+
+    assert!(
+        workspace
+            .ticket(ticket)
+            .expect("ticket")
+            .ticket
+            .links
+            .is_empty()
+    );
+    let found = workspace.link(link).expect("link");
+    assert_eq!(found.owner, LinkOwner::Note(note));
+    assert_eq!(found.link.title, "https://pr.dev/1");
+    assert_eq!(found.link.url.as_str(), "https://pr.dev/2");
+}
+
+#[test]
+fn renaming_a_ticket_or_note_needs_a_name() {
+    let (mut workspace, _, _, ticket) = work();
+    assert_eq!(
+        workspace.rename(Target::Ticket(ticket), "  "),
+        Err(WorkspaceError::EmptyName)
+    );
+    workspace
+        .rename(Target::Ticket(ticket), "New")
+        .expect("rename");
+    assert_eq!(
+        workspace.ticket(ticket).expect("ticket").ticket.title,
+        "New"
+    );
+}
+
+// ---- profiles ---------------------------------------------------------------
+
+#[test]
+fn removing_a_profile_moves_its_tickets_and_notes() {
+    let (mut workspace, first, _, ticket) = work();
+    let second = workspace.add_profile("Personal").expect("profile");
+    workspace.add_note(first, "Notes").expect("note");
 
     workspace.remove_profile(first, second).expect("remove");
 
+    let kept = workspace.profile(second).expect("second");
+    assert_eq!(kept.tickets[0].id, ticket);
+    assert_eq!(kept.notes.len(), 1);
     assert_eq!(
-        item_ids(&workspace, second),
-        [kept.to_string(), group.to_string(), moved.to_string()]
-    );
-}
-
-#[test]
-fn remove_profile_rejects_itself_or_unknown_target() {
-    let mut workspace = Workspace::new();
-    let only = first_profile(&workspace);
-    let missing = ProfileId::new();
-
-    assert_eq!(
-        workspace.remove_profile(only, only),
+        workspace.remove_profile(second, second),
         Err(WorkspaceError::SameProfile)
     );
-    assert_eq!(
-        workspace.remove_profile(only, missing),
-        Err(WorkspaceError::ProfileNotFound(missing))
-    );
-    assert_eq!(workspace.profiles().len(), 1);
 }
 
-// ---- groups -------------------------------------------------------------
-
-#[test]
-fn add_group_trims_name_and_lives_in_its_profile() {
-    let mut workspace = Workspace::new();
-    let profile = first_profile(&workspace);
-
-    let id = workspace.add_group(profile, "  In TEST  ").expect("add");
-
-    let group = workspace.group(id).expect("group");
-    assert_eq!(group.name, "In TEST");
-    assert_eq!(group.color, ContainerColor::None);
-    assert_eq!(workspace.group_profile(id).map(|p| p.id), Some(profile));
-}
-
-#[test]
-fn add_group_rejects_blank_name_or_unknown_profile() {
-    let mut workspace = Workspace::new();
-    let missing = ProfileId::new();
-
-    assert_eq!(
-        workspace.add_group(first_profile(&workspace), " "),
-        Err(WorkspaceError::EmptyName)
-    );
-    assert_eq!(
-        workspace.add_group(missing, "G"),
-        Err(WorkspaceError::ProfileNotFound(missing))
-    );
-}
-
-#[test]
-fn move_group_reorders_and_crosses_profiles() {
-    let (mut workspace, first, work, _) = work();
-    let other = workspace.add_group(first, "Other").expect("add");
-    let second = workspace.add_profile("Second").expect("add");
-
-    workspace.move_group(other, first, 0).expect("reorder");
-    assert_eq!(
-        item_ids(&workspace, first),
-        [other.to_string(), work.to_string()]
-    );
-
-    workspace.move_group(work, second, 99).expect("move");
-    assert_eq!(item_ids(&workspace, second), [work.to_string()]);
-    assert_eq!(workspace.group_profile(work).map(|p| p.id), Some(second));
-}
-
-#[test]
-fn move_group_to_unknown_profile_changes_nothing() {
-    let (mut workspace, first, work, _) = work();
-    let missing = ProfileId::new();
-
-    assert_eq!(
-        workspace.move_group(work, missing, 0),
-        Err(WorkspaceError::ProfileNotFound(missing))
-    );
-    assert_eq!(item_ids(&workspace, first), [work.to_string()]);
-}
-
-#[test]
-fn rename_and_remove_groups() {
-    let (mut workspace, _, work, _) = work();
-
-    workspace.rename_group(work, " Done ").expect("rename");
-    assert_eq!(workspace.group(work).expect("g").name, "Done");
-
-    let removed = workspace.remove_group(work).expect("remove");
-    assert_eq!(removed.children.len(), 1);
-    assert_eq!(
-        workspace.remove_group(work),
-        Err(WorkspaceError::GroupNotFound(work))
-    );
-}
-
-// ---- folders ------------------------------------------------------------
-
-#[test]
-fn folders_can_live_in_a_profile_or_a_group_but_not_a_folder() {
-    let (mut workspace, profile, group, sprint) = work();
-
-    let loose = workspace
-        .add_folder(Place::Profile(profile), "Docs")
-        .expect("profile folder");
-
-    assert!(workspace.find_folder(loose).expect("found").group.is_none());
-    assert_eq!(
-        workspace
-            .find_folder(sprint)
-            .expect("found")
-            .group
-            .map(|g| g.id),
-        Some(group)
-    );
-    assert_eq!(
-        workspace.add_folder(Place::Folder(sprint), "Nested"),
-        Err(WorkspaceError::NestedFolder)
-    );
-}
-
-#[test]
-fn move_folder_between_group_and_profile_keeps_its_tabs() {
-    let (mut workspace, profile, group, sprint) = work();
-    let tab = workspace
-        .add_tab(Place::Folder(sprint), url("https://a.dev"), "a")
-        .expect("tab");
-
-    workspace
-        .move_folder(sprint, Place::Profile(profile), 0)
-        .expect("to profile");
-    assert_eq!(
-        item_ids(&workspace, profile),
-        [sprint.to_string(), group.to_string()]
-    );
-    assert!(child_ids(&workspace, group).is_empty());
-
-    workspace
-        .move_folder(sprint, Place::Group(group), 0)
-        .expect("back to group");
-    assert_eq!(child_ids(&workspace, group), [sprint.to_string()]);
-    assert_eq!(folder_tab_ids(&workspace, sprint), [tab]);
-}
-
-#[test]
-fn move_folder_into_a_folder_or_unknown_place_changes_nothing() {
-    let (mut workspace, profile, group, sprint) = work();
-    let other = workspace
-        .add_folder(Place::Profile(profile), "Other")
-        .expect("folder");
-    let missing = GroupId::new();
-
-    assert_eq!(
-        workspace.move_folder(sprint, Place::Folder(other), 0),
-        Err(WorkspaceError::NestedFolder)
-    );
-    assert_eq!(
-        workspace.move_folder(sprint, Place::Group(missing), 0),
-        Err(WorkspaceError::GroupNotFound(missing))
-    );
-    assert_eq!(child_ids(&workspace, group), [sprint.to_string()]);
-}
-
-#[test]
-fn rename_collapse_and_remove_folders() {
-    let (mut workspace, profile, _, sprint) = work();
-    let loose = workspace
-        .add_folder(Place::Profile(profile), "Loose")
-        .expect("folder");
-
-    workspace.rename_folder(loose, " Docs ").expect("rename");
-    workspace
-        .set_folder_collapsed(loose, true)
-        .expect("collapse");
-    let found = workspace.find_folder(loose).expect("found").folder;
-    assert_eq!((found.name.as_str(), found.collapsed), ("Docs", true));
-
-    workspace.remove_folder(loose).expect("remove loose");
-    workspace.remove_folder(sprint).expect("remove grouped");
-    assert!(workspace.find_folder(sprint).is_none());
-}
-
-// ---- tabs ---------------------------------------------------------------
-
-#[test]
-fn tabs_can_live_in_a_profile_group_or_folder() {
-    let (mut workspace, profile, group, sprint) = work();
-
-    let in_profile = workspace
-        .add_tab(Place::Profile(profile), url("https://p.dev"), "p")
-        .expect("tab");
-    let in_group = workspace
-        .add_tab(Place::Group(group), url("https://g.dev"), "g")
-        .expect("tab");
-    let in_folder = workspace
-        .add_tab(Place::Folder(sprint), url("https://f.dev"), "f")
-        .expect("tab");
-
-    let where_is = |id| {
-        let found = workspace.find_tab(id).expect("found");
-        (
-            found.profile.id,
-            found.group.map(|g| g.id),
-            found.folder.map(|f| f.id),
-        )
-    };
-    assert_eq!(where_is(in_profile), (profile, None, None));
-    assert_eq!(where_is(in_group), (profile, Some(group), None));
-    assert_eq!(where_is(in_folder), (profile, Some(group), Some(sprint)));
-    assert_eq!(workspace.tabs().len(), 3);
-}
-
-#[test]
-fn add_tab_uses_url_when_title_is_blank() {
-    let (mut workspace, profile, _, _) = work();
-
-    let id = workspace
-        .add_tab(Place::Profile(profile), url("https://a.dev/x"), "  ")
-        .expect("tab");
-
-    assert_eq!(
-        workspace.find_tab(id).expect("t").tab.title,
-        "https://a.dev/x"
-    );
-}
-
-#[test]
-fn add_tab_to_unknown_place_fails() {
-    let (mut workspace, _, _, _) = work();
-    let missing = FolderId::new();
-
-    assert_eq!(
-        workspace.add_tab(Place::Folder(missing), url("https://a.dev"), ""),
-        Err(WorkspaceError::FolderNotFound(missing))
-    );
-}
-
-#[test]
-fn set_tab_url_changes_the_url_and_keeps_a_custom_title() {
-    let (mut workspace, profile, _, _) = work();
-    let id = workspace
-        .add_tab(Place::Profile(profile), url("https://a.dev"), "Docs")
-        .expect("tab");
-
-    workspace
-        .set_tab_url(id, url("https://b.dev/x"))
-        .expect("set url");
-
-    let tab = &workspace.find_tab(id).expect("t").tab;
-    assert_eq!(tab.url.as_str(), "https://b.dev/x");
-    assert_eq!(tab.title, "Docs");
-}
-
-#[test]
-fn set_tab_url_updates_a_title_that_was_the_old_url() {
-    let (mut workspace, profile, _, _) = work();
-    let id = workspace
-        .add_tab(Place::Profile(profile), url("https://a.dev"), "")
-        .expect("tab");
-
-    workspace
-        .set_tab_url(id, url("https://b.dev/"))
-        .expect("set url");
-
-    assert_eq!(
-        workspace.find_tab(id).expect("t").tab.title,
-        "https://b.dev/"
-    );
-}
-
-#[test]
-fn set_tab_url_of_unknown_tab_fails() {
-    let (mut workspace, _, _, _) = work();
-    let missing = TabId::new();
-
-    assert_eq!(
-        workspace.set_tab_url(missing, url("https://a.dev")),
-        Err(WorkspaceError::TabNotFound(missing))
-    );
-}
-
-#[test]
-fn rename_tab_trims_and_falls_back_to_url() {
-    let (mut workspace, profile, _, _) = work();
-    let id = workspace
-        .add_tab(Place::Profile(profile), url("https://a.dev"), "a")
-        .expect("tab");
-
-    workspace.rename_tab(id, " Docs ").expect("rename");
-    assert_eq!(workspace.find_tab(id).expect("t").tab.title, "Docs");
-    workspace.rename_tab(id, "").expect("rename");
-    assert_eq!(
-        workspace.find_tab(id).expect("t").tab.title,
-        "https://a.dev/"
-    );
-}
-
-#[test]
-fn move_tab_out_of_a_folder_to_the_profile_and_into_a_group() {
-    let (mut workspace, profile, group, sprint) = work();
-    let tab = workspace
-        .add_tab(Place::Folder(sprint), url("https://a.dev"), "a")
-        .expect("tab");
-
-    workspace
-        .move_tab(tab, Place::Profile(profile), 0)
-        .expect("to profile");
-    assert_eq!(
-        item_ids(&workspace, profile),
-        [tab.to_string(), group.to_string()]
-    );
-    assert!(folder_tab_ids(&workspace, sprint).is_empty());
-
-    workspace
-        .move_tab(tab, Place::Group(group), usize::MAX)
-        .expect("to group");
-    assert_eq!(
-        child_ids(&workspace, group),
-        [sprint.to_string(), tab.to_string()]
-    );
-}
-
-#[test]
-fn move_tab_to_unknown_place_keeps_the_tab() {
-    let (mut workspace, profile, _, _) = work();
-    let tab = workspace
-        .add_tab(Place::Profile(profile), url("https://a.dev"), "a")
-        .expect("tab");
-    let missing = GroupId::new();
-
-    assert_eq!(
-        workspace.move_tab(tab, Place::Group(missing), 0),
-        Err(WorkspaceError::GroupNotFound(missing))
-    );
-    assert!(workspace.find_tab(tab).is_some());
-}
-
-#[test]
-fn remove_tab_from_anywhere() {
-    let (mut workspace, profile, _, sprint) = work();
-    let loose = workspace
-        .add_tab(Place::Profile(profile), url("https://a.dev"), "a")
-        .expect("tab");
-    let nested = workspace
-        .add_tab(Place::Folder(sprint), url("https://b.dev"), "b")
-        .expect("tab");
-
-    workspace.remove_tab(loose).expect("loose");
-    workspace.remove_tab(nested).expect("nested");
-
-    assert!(workspace.tabs().is_empty());
-    assert_eq!(
-        workspace.remove_tab(loose),
-        Err(WorkspaceError::TabNotFound(loose))
-    );
-}
-
-// ---- icons --------------------------------------------------------------
-
-#[test]
-fn set_icon_on_group_folder_and_tab_and_clear_it() {
-    let (mut workspace, profile, group, sprint) = work();
-    let tab = workspace
-        .add_tab(Place::Profile(profile), url("https://a.dev"), "a")
-        .expect("tab");
-    let emoji = Icon::emoji("🧪").expect("icon");
-    let text = Icon::text("142").expect("icon");
-    let symbol = Icon::symbol("bug").expect("icon");
-
-    workspace
-        .set_icon(Target::Group(group), Some(emoji.clone()))
-        .expect("group");
-    workspace
-        .set_icon(Target::Folder(sprint), Some(text.clone()))
-        .expect("folder");
-    workspace
-        .set_icon(Target::Tab(tab), Some(symbol.clone()))
-        .expect("tab");
-
-    assert_eq!(workspace.group(group).expect("g").icon, Some(emoji));
-    assert_eq!(
-        workspace.find_folder(sprint).expect("f").folder.icon,
-        Some(text)
-    );
-    assert_eq!(workspace.find_tab(tab).expect("t").tab.icon, Some(symbol));
-
-    workspace.set_icon(Target::Tab(tab), None).expect("clear");
-    assert_eq!(workspace.find_tab(tab).expect("t").tab.icon, None);
-}
-
-#[test]
-fn set_icon_on_unknown_target_fails() {
-    let mut workspace = Workspace::new();
-    let missing = TabId::new();
-
-    assert_eq!(
-        workspace.set_icon(Target::Tab(missing), None),
-        Err(WorkspaceError::TabNotFound(missing))
-    );
-}
-
-// ---- serialization and validation ---------------------------------------
-
-#[test]
-fn place_and_target_serialize_as_tagged_ids() {
-    let id = ProfileId::new();
-    let json = serde_json::to_string(&Place::Profile(id)).expect("json");
-    assert_eq!(json, format!(r#"{{"profile":"{id}"}}"#));
-    let group = GroupId::new();
-    let json = serde_json::to_string(&Target::Group(group)).expect("json");
-    assert_eq!(json, format!(r#"{{"group":"{group}"}}"#));
-}
-
-#[test]
-fn workspace_round_trips_through_json_without_empty_icons() {
-    let (mut workspace, profile, group, sprint) = work();
-    workspace
-        .add_tab(Place::Folder(sprint), url("https://a.dev"), "a")
-        .expect("tab");
-    workspace
-        .add_tab(Place::Profile(profile), url("https://b.dev"), "b")
-        .expect("tab");
-    workspace
-        .set_icon(Target::Group(group), Some(Icon::emoji("🚀").expect("i")))
-        .expect("icon");
-
-    let json = serde_json::to_string(&workspace).expect("serialize");
-    let back: Workspace = serde_json::from_str(&json).expect("deserialize");
-
-    assert_eq!(back, workspace);
-    assert_eq!(json.matches("\"icon\"").count(), 1);
-    assert_eq!(back.validate(), Ok(()));
-}
-
-const TAB_A: &str = "00000000-0000-0000-0000-00000000000a";
-const PROFILE_1: &str = "00000000-0000-0000-0000-0000000000aa";
-
-fn from_json(json: &str) -> Workspace {
-    serde_json::from_str(json).expect("valid json shape")
-}
-
-#[test]
-fn validate_rejects_an_id_used_twice() {
-    let workspace = from_json(&format!(
-        r#"{{"profiles":[{{"id":"{PROFILE_1}","name":"P","color":0,"items":[
-        {{"type":"tab","id":"{TAB_A}","url":"https://a.dev","title":"a"}},
-        {{"type":"folder","id":"00000000-0000-0000-0000-0000000000f1","name":"F","tabs":[
-          {{"id":"{TAB_A}","url":"https://b.dev","title":"b"}}]}}]}}]}}"#
-    ));
-
-    assert_eq!(
-        workspace.validate(),
-        Err(WorkspaceError::DuplicateId(TAB_A.to_owned()))
-    );
-}
-
-#[test]
-fn validate_rejects_a_workspace_without_profiles() {
-    assert_eq!(
-        from_json(r#"{"profiles":[]}"#).validate(),
-        Err(WorkspaceError::NoProfiles)
-    );
-}
-
-mod props {
-    use super::*;
-    use proptest::prelude::*;
-
-    fn all_tab_ids(workspace: &Workspace) -> Vec<TabId> {
-        let mut ids: Vec<_> = workspace.tabs().iter().map(|found| found.tab.id).collect();
-        ids.sort();
-        ids
-    }
-
-    fn all_folder_ids(workspace: &Workspace, folders: &[FolderId]) -> usize {
-        folders
-            .iter()
-            .filter(|id| workspace.find_folder(**id).is_some())
-            .count()
-    }
-
-    proptest! {
-        /// Any sequence of tab and folder moves keeps every tab and folder
-        /// exactly once, and the workspace valid.
-        #[test]
-        fn moves_never_lose_or_duplicate_anything(
-            moves in prop::collection::vec((any::<bool>(), 0usize..6, 0usize..6, 0usize..8), 0..40)
-        ) {
-            let (mut workspace, profile, group, sprint) = work();
-            let other = workspace.add_profile("Other").expect("profile");
-            let loose = workspace.add_folder(Place::Profile(other), "Loose").expect("folder");
-            let places = [
-                Place::Profile(profile),
-                Place::Group(group),
-                Place::Folder(sprint),
-                Place::Profile(other),
-                Place::Folder(loose),
-                Place::Group(GroupId::new()),
-            ];
-            let folders = [sprint, loose];
-            let tabs: Vec<_> = (0..6)
-                .map(|n| {
-                    workspace
-                        .add_tab(places[n % 5], url(&format!("https://t{n}.dev")), "t")
-                        .expect("tab")
-                })
-                .collect();
-            let before = all_tab_ids(&workspace);
-
-            for (is_folder, item, place, index) in moves {
-                // Errors (nested folders, unknown places) must change nothing.
-                if is_folder {
-                    let _ = workspace.move_folder(folders[item % 2], places[place], index);
-                } else {
-                    let _ = workspace.move_tab(tabs[item], places[place], index);
-                }
-            }
-
-            prop_assert_eq!(all_tab_ids(&workspace), before);
-            prop_assert_eq!(all_folder_ids(&workspace, &folders), 2);
-            prop_assert_eq!(workspace.validate(), Ok(()));
-        }
-    }
-}
-
-#[test]
-fn set_details_trims_keeps_line_breaks_and_clears_blank_values() {
-    let (mut workspace, profile, _, _) = work();
-    let tab = workspace
-        .add_tab(Place::Profile(profile), url("https://a.dev"), "a")
-        .expect("tab");
-
-    workspace
-        .set_details(Target::Tab(tab), " PROJ-1 ", "\n line 1\nline 2 \n")
-        .expect("details");
-    let found = &workspace.find_tab(tab).expect("t").tab;
-    assert_eq!(found.ticket_id.as_deref(), Some("PROJ-1"));
-    assert_eq!(found.note.as_deref(), Some("line 1\nline 2"));
-
-    workspace
-        .set_details(Target::Tab(tab), "", "  ")
-        .expect("clear");
-    let found = &workspace.find_tab(tab).expect("t").tab;
-    assert_eq!(found.ticket_id, None);
-    assert_eq!(found.note, None);
-}
-
-#[test]
-fn set_details_works_on_groups_and_folders_and_caps_the_ticket() {
-    let (mut workspace, profile, _, _) = work();
-    let group = workspace.add_group(profile, "G").expect("group");
-    let folder = workspace
-        .add_folder(Place::Group(group), "F")
-        .expect("folder");
-
-    workspace
-        .set_details(Target::Group(group), &"x".repeat(100), "g")
-        .expect("group");
-    workspace
-        .set_details(Target::Folder(folder), "F-1", "f")
-        .expect("folder");
-
-    let group = workspace.group(group).expect("g");
-    assert_eq!(
-        group.ticket_id.as_ref().map(String::len),
-        Some(MAX_TICKET_ID_LEN)
-    );
-    assert_eq!(group.note.as_deref(), Some("g"));
-    assert_eq!(
-        workspace
-            .find_folder(folder)
-            .expect("f")
-            .folder
-            .ticket_id
-            .as_deref(),
-        Some("F-1")
-    );
-}
-
-#[test]
-fn set_details_of_unknown_target_fails() {
-    let (mut workspace, _, _, _) = work();
-    let missing = TabId::new();
-
-    assert_eq!(
-        workspace.set_details(Target::Tab(missing), "A-1", ""),
-        Err(WorkspaceError::TabNotFound(missing))
-    );
-}
-
-#[test]
-fn details_are_left_out_of_the_json_when_empty() {
-    let (mut workspace, profile, _, _) = work();
-    let tab = workspace
-        .add_tab(Place::Profile(profile), url("https://a.dev"), "a")
-        .expect("tab");
-    let plain = serde_json::to_string(&workspace).expect("json");
-    assert!(!plain.contains("ticketId"));
-
-    workspace
-        .set_details(Target::Tab(tab), "A-1", "n")
-        .expect("details");
-    let json = serde_json::to_string(&workspace).expect("json");
-    assert!(json.contains(r#""ticketId":"A-1""#));
-    assert!(json.contains(r#""note":"n""#));
-}
-
-// ---- colors -------------------------------------------------------------
-
-#[test]
-fn groups_and_folders_start_without_a_color_and_can_take_one() {
-    let (mut workspace, _, group, folder) = work();
-    let color = ContainerColor::Color(ProfileColor::new(4).expect("color"));
-    assert_eq!(
-        workspace.group(group).expect("group").color,
-        ContainerColor::None
-    );
-    assert!(
-        !serde_json::to_string(&workspace)
-            .expect("json")
-            .contains(r#""color":""#)
-    );
-
-    workspace
-        .set_color(Container::Group(group), color)
-        .expect("group color");
-    workspace
-        .set_color(Container::Folder(folder), ContainerColor::Parent)
-        .expect("folder color");
-    assert_eq!(workspace.group(group).expect("group").color, color);
-    let json = serde_json::to_string(&workspace).expect("json");
-    assert!(json.contains(r#""color":4"#));
-    assert!(json.contains(r#""color":"parent""#));
-
-    workspace
-        .set_color(Container::Group(group), ContainerColor::None)
-        .expect("clear");
-    assert_eq!(
-        workspace.group(group).expect("group").color,
-        ContainerColor::None
-    );
-    assert!(
-        !serde_json::to_string(&workspace)
-            .expect("json")
-            .contains(r#""color":4"#)
-    );
-}
-
-#[test]
-fn coloring_an_unknown_folder_fails() {
-    let (mut workspace, _, _, _) = work();
-    let missing = FolderId::new();
-    assert_eq!(
-        workspace.set_color(Container::Folder(missing), ContainerColor::None),
-        Err(WorkspaceError::FolderNotFound(missing))
-    );
-}
-
-// ---- ticket url ---------------------------------------------------------
-
-#[test]
-fn a_ticket_url_needs_http_and_the_placeholder() {
-    let mut workspace = Workspace::new();
-    let profile = first_profile(&workspace);
-
-    for bad in [
-        "jira.dev/{ticket}",
-        "https://jira.dev/browse",
-        "https://j ira.dev/{ticket}",
-    ] {
-        assert_eq!(
-            workspace.set_ticket_url(profile, bad),
-            Err(WorkspaceError::InvalidTicketUrl),
-            "{bad}"
-        );
-    }
-    workspace
-        .set_ticket_url(profile, "  https://jira.dev/browse/{ticket} ")
-        .expect("valid");
-    assert_eq!(
-        workspace
-            .profile(profile)
-            .expect("profile")
-            .ticket_url
-            .as_deref(),
-        Some("https://jira.dev/browse/{ticket}")
-    );
-    workspace.set_ticket_url(profile, " ").expect("clear");
-    assert_eq!(
-        workspace.profile(profile).expect("profile").ticket_url,
-        None
-    );
-}
-
-#[test]
-fn the_ticket_and_profile_of_any_item_are_found() {
-    let (mut workspace, profile, group, folder) = work();
-    workspace
-        .set_details(Target::Folder(folder), "OPS-9", "")
-        .expect("details");
-    assert_eq!(workspace.ticket_id(Target::Folder(folder)), Some("OPS-9"));
-    assert_eq!(workspace.ticket_id(Target::Group(group)), None);
-    assert_eq!(
-        workspace
-            .target_profile(Target::Folder(folder))
-            .map(|p| p.id),
-        Some(profile)
-    );
-}
-
-// ---- pinned -------------------------------------------------------------
+// ---- pinned -----------------------------------------------------------------
 
 #[test]
 fn pinning_keeps_order_ignores_repeats_and_reorders() {
-    let (mut workspace, profile, group, folder) = work();
-    let tab = workspace
-        .add_tab(Place::Profile(profile), url("https://a.dev"), "a")
-        .expect("tab");
+    let (mut workspace, profile, _, ticket) = work();
+    let note = workspace.add_note(profile, "Notes").expect("note");
 
-    workspace.pin(Target::Tab(tab)).expect("pin tab");
-    workspace.pin(Target::Group(group)).expect("pin group");
-    workspace.pin(Target::Tab(tab)).expect("again");
-    assert_eq!(workspace.pinned(), [Target::Tab(tab), Target::Group(group)]);
-
-    workspace
-        .move_pinned(Target::Group(group), 0)
-        .expect("move");
-    assert_eq!(workspace.pinned(), [Target::Group(group), Target::Tab(tab)]);
-
-    workspace.unpin(Target::Tab(tab));
-    assert_eq!(workspace.pinned(), [Target::Group(group)]);
+    workspace.pin(Target::Ticket(ticket)).expect("pin");
+    workspace.pin(Target::Note(note)).expect("pin note");
+    workspace.pin(Target::Ticket(ticket)).expect("again");
+    workspace.move_pinned(Target::Note(note), 0).expect("move");
     assert_eq!(
-        workspace.move_pinned(Target::Folder(folder), 0),
-        Err(WorkspaceError::FolderNotFound(folder))
+        workspace.pinned(),
+        [Target::Note(note), Target::Ticket(ticket)]
+    );
+
+    workspace.unpin(Target::Note(note));
+    assert_eq!(workspace.pinned(), [Target::Ticket(ticket)]);
+    let missing = NoteId::new();
+    assert_eq!(
+        workspace.pin(Target::Note(missing)),
+        Err(WorkspaceError::NoteNotFound(missing))
     );
 }
 
+// ---- validation and json -----------------------------------------------------
+
 #[test]
-fn pinning_an_unknown_item_fails() {
-    let mut workspace = Workspace::new();
-    let missing = TabId::new();
-    assert_eq!(
-        workspace.pin(Target::Tab(missing)),
-        Err(WorkspaceError::TabNotFound(missing))
-    );
+fn validation_rejects_unknown_statuses_and_deep_tickets() {
+    let (workspace, _, _, _) = work();
+    let mut json = serde_json::to_value(&workspace).expect("json");
+    json["statuses"] = serde_json::json!([]);
+    let broken: Workspace = serde_json::from_value(json).expect("parse");
+    assert!(matches!(
+        broken.validate(),
+        Err(WorkspaceError::StatusNotFound(_))
+    ));
 }
 
 #[test]
-fn removing_an_item_unpins_it_and_what_it_held() {
-    let (mut workspace, _, group, folder) = work();
-    let tab = workspace
-        .add_tab(Place::Folder(folder), url("https://a.dev"), "a")
-        .expect("tab");
-    workspace.pin(Target::Tab(tab)).expect("pin tab");
-    workspace.pin(Target::Folder(folder)).expect("pin folder");
-    workspace.pin(Target::Group(group)).expect("pin group");
-
-    workspace
-        .move_tab(tab, Place::Group(group), 0)
-        .expect("moving keeps it pinned");
-    assert_eq!(workspace.pinned().len(), 3);
-
-    workspace.remove_group(group).expect("remove");
-    assert!(workspace.pinned().is_empty());
-    assert!(
-        !serde_json::to_string(&workspace)
-            .expect("json")
-            .contains("pinned")
-    );
+fn empty_fields_are_left_out_of_the_json() {
+    let (workspace, _, _, _) = work();
+    let json = serde_json::to_string(&workspace).expect("json");
+    for absent in [
+        "\"key\"",
+        "\"url\"",
+        "\"note\"",
+        "\"links\"",
+        "\"children\"",
+        "\"pinned\"",
+    ] {
+        assert!(!json.contains(absent), "{absent} in {json}");
+    }
+    assert!(json.contains("\"statuses\""));
 }

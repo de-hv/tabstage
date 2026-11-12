@@ -100,3 +100,55 @@ export function applyFormat(text: string, start: number, end: number, format: Fo
     }
   }
 }
+
+/** Scheme of the links the note renderer turns into "show this ticket". */
+export const TICKET_LINK_PREFIX = 'tabstage://ticket/';
+
+const KEY = /\b([A-Za-z][A-Za-z0-9]+-\d+)\b/g;
+/** Parts of a line where a key must stay as it is: code, links, autolinks and addresses. */
+const PROTECTED = /(`[^`]*`|!?\[[^\]]*\]\([^)]*\)|<[^>]+>|https?:\/\/\S+)/;
+
+/**
+ * Turns the keys of known tickets (`CAR-6210`) into links that show the
+ * ticket, except in code and inside existing links. `keys` maps a key in
+ * upper case to the ticket's id.
+ */
+export function linkTicketKeys(markdown: string, keys: Map<string, string>): string {
+  if (keys.size === 0) return markdown;
+  let inFence = false;
+  return markdown
+    .split('\n')
+    .map((line) => {
+      if (FENCE.test(line)) {
+        inFence = !inFence;
+        return line;
+      }
+      if (inFence) return line;
+      return line
+        .split(PROTECTED)
+        .map((part, index) =>
+          index % 2 === 1
+            ? part
+            : part.replace(KEY, (key: string) => {
+                const id = keys.get(key.toUpperCase());
+                return id ? `[${key}](${TICKET_LINK_PREFIX}${id})` : key;
+              }),
+        )
+        .join('');
+    })
+    .join('\n');
+}
+
+/**
+ * A ticket from a line of text: a leading key such as `CAR-6210` (with an
+ * optional `:` or `-` after it) becomes its key, the rest its title.
+ */
+export function parseTicketLine(text: string): { key?: string; title: string } {
+  const line = plainText(text, 1).replace(/^[☐☑•]\s*/, '').trim();
+  const match = /^([A-Za-z][A-Za-z0-9]+-\d+)\s*[:\-–—]?\s*(.*)$/.exec(line);
+  if (match) {
+    const title = match[2]?.trim() ?? '';
+    return { key: match[1]!.toUpperCase(), title: title || match[1]!.toUpperCase() };
+  }
+  return { title: line.slice(0, 200) };
+}

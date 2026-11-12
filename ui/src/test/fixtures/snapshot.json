@@ -30,6 +30,7 @@
     "kind": "appData"
   },
   "dataPath": "/Users/me/Library/Application Support/io.github.de-hv.tabstage/workspace.json",
+  "legacyBackup": null,
   "needsDataFile": false,
   "profiles": [
     {
@@ -68,143 +69,112 @@
       {
         "color": 0,
         "id": "00000000-0000-0000-0000-0000000000c1",
-        "items": [
+        "name": "Trabajo",
+        "notes": [
+          {
+            "body": "Yesterday: CAR-6163\n- [ ] Ask QA",
+            "id": "00000000-0000-0000-0000-000000009001",
+            "links": [
+              {
+                "id": "00000000-0000-0000-0000-00000000b004",
+                "title": "Standup board",
+                "url": "https://board.example.com/"
+              }
+            ],
+            "title": "Standup notes"
+          }
+        ],
+        "tickets": [
           {
             "children": [
               {
-                "collapsed": false,
-                "id": "00000000-0000-0000-0000-0000000000f1",
-                "name": "Sprint 42",
-                "tabs": [
+                "id": "00000000-0000-0000-0000-000000007002",
+                "key": "CAR-6020",
+                "links": [
                   {
-                    "id": "00000000-0000-0000-0000-000000000b01",
-                    "title": "PROJ-1182 · Refactor del login",
-                    "url": "https://jira.example.com/browse/PROJ-1182"
-                  },
-                  {
-                    "id": "00000000-0000-0000-0000-000000000b02",
-                    "title": "PROJ-1190 · Cache de sesiones",
-                    "url": "https://jira.example.com/browse/PROJ-1190"
+                    "id": "00000000-0000-0000-0000-00000000b002",
+                    "title": "Staging dashboard",
+                    "url": "https://staging.example.com/"
                   }
                 ],
-                "type": "folder"
-              },
-              {
-                "collapsed": true,
-                "color": 15,
-                "icon": {
-                  "kind": "text",
-                  "value": "77"
-                },
-                "id": "00000000-0000-0000-0000-0000000000f2",
-                "name": "Incidentes",
-                "tabs": [
-                  {
-                    "id": "00000000-0000-0000-0000-000000000b03",
-                    "title": "Incidente 77",
-                    "url": "https://status.example.com/incidents/77"
-                  }
-                ],
-                "ticketId": "INC-77",
-                "type": "folder"
-              },
-              {
-                "id": "00000000-0000-0000-0000-000000000b04",
-                "title": "Grafana · latencia API",
-                "type": "tab",
-                "url": "https://grafana.example.com/d/api"
-              },
-              {
-                "icon": {
-                  "kind": "symbol",
-                  "value": "book-open"
-                },
-                "id": "00000000-0000-0000-0000-000000000b05",
-                "note": "Run after the deploy window\nPing #ops when done",
-                "ticketId": "OPS-31",
-                "title": "Runbook de despliegue",
-                "type": "tab",
-                "url": "https://wiki.example.com/runbook"
+                "status": "00000000-0000-0000-0000-000000000502",
+                "title": "Money card"
               }
             ],
-            "id": "00000000-0000-0000-0000-0000000000a1",
-            "name": "Trabajo · Jira",
-            "type": "group"
-          },
-          {
-            "children": [
-              {
-                "id": "00000000-0000-0000-0000-000000000b07",
-                "title": "Staging dashboard",
-                "type": "tab",
-                "url": "https://staging.example.com/"
-              }
-            ],
-            "color": 3,
             "icon": {
               "kind": "emoji",
               "value": "🧪"
             },
-            "id": "00000000-0000-0000-0000-0000000000a4",
-            "name": "In TEST",
-            "type": "group"
+            "id": "00000000-0000-0000-0000-000000007001",
+            "key": "CAR-5899",
+            "links": [
+              {
+                "id": "00000000-0000-0000-0000-00000000b001",
+                "title": "PR #2214",
+                "url": "https://github.com/acme/app/pull/2214"
+              }
+            ],
+            "note": "Run after the deploy window\nPing #ops when done",
+            "status": "00000000-0000-0000-0000-000000000502",
+            "title": "Carrier Commissions",
+            "url": "https://jira.example.com/browse/CAR-5899"
           },
           {
-            "collapsed": false,
-            "id": "00000000-0000-0000-0000-0000000000f3",
-            "name": "Onboarding",
-            "tabs": [
+            "id": "00000000-0000-0000-0000-000000007003",
+            "key": "CAR-6163",
+            "status": "00000000-0000-0000-0000-000000000501",
+            "title": "Remove map",
+            "url": "https://jira.example.com/browse/CAR-6163"
+          },
+          {
+            "id": "00000000-0000-0000-0000-000000007004",
+            "links": [
               {
-                "id": "00000000-0000-0000-0000-000000000b08",
+                "id": "00000000-0000-0000-0000-00000000b003",
                 "title": "Client wiki",
                 "url": "https://wiki.example.com/client"
               }
             ],
-            "type": "folder"
-          },
-          {
-            "id": "00000000-0000-0000-0000-000000000b09",
-            "title": "Status page",
-            "type": "tab",
-            "url": "https://status.example.com/"
+            "title": "Onboarding wiki"
           }
-        ],
-        "name": "Trabajo",
-        "ticketUrl": "https://jira.example.com/browse/{ticket}"
+        ]
       },
       {
         "color": 1,
         "id": "00000000-0000-0000-0000-0000000000c2",
-        "items": [
+        "name": "Personal",
+        "notes": [],
+        "tickets": [
           {
-            "children": [
-              {
-                "id": "00000000-0000-0000-0000-000000000b06",
-                "title": "HTTP caching · MDN",
-                "type": "tab",
-                "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Caching"
-              }
-            ],
-            "color": "parent",
-            "id": "00000000-0000-0000-0000-0000000000a2",
-            "name": "Investigación",
-            "type": "group"
+            "id": "00000000-0000-0000-0000-000000007005",
+            "title": "HTTP caching",
+            "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Caching"
           }
-        ],
-        "name": "Personal"
+        ]
       },
       {
         "color": 2,
         "id": "00000000-0000-0000-0000-0000000000c3",
-        "items": [
-          {
-            "children": [],
-            "id": "00000000-0000-0000-0000-0000000000a3",
-            "name": "Docs Rust",
-            "type": "group"
-          }
-        ],
-        "name": "QA"
+        "name": "QA",
+        "notes": [],
+        "tickets": []
+      }
+    ],
+    "statuses": [
+      {
+        "color": 14,
+        "id": "00000000-0000-0000-0000-000000000501",
+        "name": "In review"
+      },
+      {
+        "color": 0,
+        "id": "00000000-0000-0000-0000-000000000502",
+        "name": "In TEST"
+      },
+      {
+        "color": 7,
+        "id": "00000000-0000-0000-0000-000000000503",
+        "name": "Done"
       }
     ]
   }

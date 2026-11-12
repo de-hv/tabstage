@@ -2,7 +2,8 @@ import * as AlertDialog from '@radix-ui/react-alert-dialog';
 
 export interface PendingDelete {
   name: string;
-  tabCount: number;
+  /** What goes with it, such as "its 2 sub-tickets and 3 links". */
+  contents: string;
   run: () => void;
 }
 
@@ -11,7 +12,7 @@ interface Props {
   onClose: () => void;
 }
 
-/** Confirmation before deleting something that holds tabs. */
+/** Confirmation before deleting something that holds sub-tickets or links. */
 export function ConfirmDelete({ pending, onClose }: Props) {
   return (
     <AlertDialog.Root open={pending !== null} onOpenChange={(open) => !open && onClose()}>
@@ -20,7 +21,7 @@ export function ConfirmDelete({ pending, onClose }: Props) {
         <AlertDialog.Content className="dialog">
           <AlertDialog.Title className="dialog__title">Delete “{pending?.name}”?</AlertDialog.Title>
           <AlertDialog.Description className="dialog__text">
-            This deletes its {pending?.tabCount} tabs. You can't undo this.
+            This deletes {pending?.contents} too. You can't undo this.
           </AlertDialog.Description>
           <div className="dialog__actions">
             <AlertDialog.Cancel className="button">Cancel</AlertDialog.Cancel>

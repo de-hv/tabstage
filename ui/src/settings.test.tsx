@@ -46,7 +46,7 @@ describe('settings', () => {
   it('turns sidebar URLs on and off', async () => {
     const { user } = await openSettings();
 
-    const toggle = screen.getByRole('checkbox', { name: 'Show URLs under tabs in the sidebar' });
+    const toggle = screen.getByRole('checkbox', { name: 'Show addresses under links in the sidebar' });
     expect((toggle as HTMLInputElement).checked).toBe(false);
     await user.click(toggle);
 

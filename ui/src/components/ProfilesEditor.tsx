@@ -4,8 +4,6 @@ import { useEffect, useState } from 'react';
 
 import type { AppError, Command, Profile, Snapshot } from '../api/types';
 import { findBrowser, profileView } from '../lib/browsers';
-import { TICKET_PLACEHOLDER, ticketLink } from '../lib/urls';
-import { countTabs } from '../lib/workspace';
 import { InlineInput } from './InlineInput';
 import { ProfileColorButton } from './ProfileDot';
 
@@ -120,114 +118,8 @@ function ProfileCard({ snapshot, profile, focused, canRemove, apply, onRemove }:
             ))}
           </select>
         </label>
-        <TicketUrlField profile={profile} apply={apply} />
       </div>
     </article>
-  );
-}
-
-/** Common trackers; `fill` is the part the user replaces, selected after picking one. */
-const PRESETS = [
-  { name: 'Jira', url: 'https://your-company.atlassian.net/browse/{ticket}', fill: 'your-company' },
-  { name: 'Linear', url: 'https://linear.app/your-team/issue/{ticket}', fill: 'your-team' },
-  { name: 'GitHub', url: 'https://github.com/owner/repo/issues/{ticket}', fill: 'owner/repo' },
-  { name: 'Azure DevOps', url: 'https://dev.azure.com/org/project/_workitems/edit/{ticket}', fill: 'org/project' },
-] as const;
-
-/** Problem with a ticket URL the user typed, or `''` when it can be saved. */
-export function ticketUrlProblem(url: string): string {
-  const trimmed = url.trim();
-  if (!trimmed) return '';
-  if (!/^https?:\/\//i.test(trimmed)) return 'Start with https:// or http://';
-  if (!trimmed.includes(TICKET_PLACEHOLDER)) return `Add ${TICKET_PLACEHOLDER} where the ticket id goes`;
-  if (/\s/.test(trimmed)) return 'Remove the spaces';
-  return '';
-}
-
-/** Where this profile's ticket ids link to; saves on Enter or when it loses focus. */
-function TicketUrlField({ profile, apply }: { profile: Profile; apply: Props['apply'] }) {
-  const saved = profile.ticketUrl ?? '';
-  const [value, setValue] = useState(saved);
-  const [error, setError] = useState('');
-  useEffect(() => setValue(saved), [saved]);
-
-  const commit = async () => {
-    const next = value.trim();
-    if (next === saved) return;
-    const problem = ticketUrlProblem(next);
-    if (problem) {
-      setError(problem);
-      return;
-    }
-    const failure = await apply({ type: 'setTicketUrl', profile: profile.id, url: next });
-    setError(failure?.message ?? '');
-  };
-
-  const example = ticketLink(value.trim(), 'PROJ-123');
-  const id = `ticket-url-${profile.id}`;
-  return (
-    <div className="ticket-url">
-      <label className="profile-card__label" htmlFor={id}>
-        Ticket links
-      </label>
-      <input
-        id={id}
-        className="input ticket-url__input"
-        aria-label={`Ticket URL for ${profile.name}`}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={`${id}-help`}
-        value={value}
-        placeholder="https://jira.example.com/browse/{ticket}"
-        spellCheck={false}
-        autoComplete="off"
-        onChange={(event) => {
-          setValue(event.target.value);
-          setError('');
-        }}
-        onBlur={() => void commit()}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault();
-            void commit();
-          } else if (event.key === 'Escape') {
-            setValue(saved);
-            setError('');
-          }
-        }}
-      />
-      <div className="ticket-url__presets">
-        {PRESETS.map((preset) => (
-          <button
-            key={preset.name}
-            type="button"
-            className="button ticket-url__preset"
-            onClick={() => {
-              setValue(preset.url);
-              setError('');
-              const input = document.getElementById(id) as HTMLInputElement | null;
-              const start = preset.url.indexOf(preset.fill);
-              requestAnimationFrame(() => {
-                input?.focus();
-                input?.setSelectionRange(start, start + preset.fill.length);
-              });
-            }}
-          >
-            {preset.name}
-          </button>
-        ))}
-      </div>
-      {error ? (
-        <p className="add-form__error" role="alert">
-          {error}
-        </p>
-      ) : (
-        <p id={`${id}-help`} className="ticket-url__help">
-          {example && !ticketUrlProblem(value)
-            ? `PROJ-123 opens ${example}`
-            : `Ticket ids in this profile become links. Use ${TICKET_PLACEHOLDER} where the id goes.`}
-        </p>
-      )}
-    </div>
   );
 }
 
@@ -268,7 +160,8 @@ export interface RemoveProps {
 export function RemoveProfileDialog({ profile, others, onClose, onRemove }: RemoveProps) {
   const [target, setTarget] = useState('');
   const chosen = target || others[0]?.id || '';
-  const tabs = profile ? countTabs(profile) : 0;
+  const tickets = profile?.tickets.length ?? 0;
+  const notes = profile?.notes.length ?? 0;
 
   return (
     <AlertDialog.Root
@@ -285,9 +178,9 @@ export function RemoveProfileDialog({ profile, others, onClose, onRemove }: Remo
         <AlertDialog.Content className="dialog">
           <AlertDialog.Title className="dialog__title">Delete the “{profile?.name}” profile?</AlertDialog.Title>
           <AlertDialog.Description className="dialog__text">
-            {profile?.items.length === 0
+            {tickets + notes === 0
               ? 'It is empty.'
-              : `Its groups, folders and ${tabs === 1 ? 'tab' : `${tabs} tabs`} move to the profile you choose. Nothing is lost.`}
+              : `Its ${tickets} ${tickets === 1 ? 'ticket' : 'tickets'} and ${notes} ${notes === 1 ? 'note' : 'notes'} move to the profile you choose. Nothing is lost.`}
           </AlertDialog.Description>
           <fieldset className="dialog__choices">
             <legend className="visually-hidden">Move its contents to</legend>

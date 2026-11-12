@@ -1,17 +1,19 @@
 //! IPC commands. Each one locks the service, delegates and turns errors
 //! into an [`ErrorPayload`] the UI can switch on.
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::MutexGuard;
 
 use tabstage_app::config::data_file_in;
 use tabstage_app::{
-    AppError, AppService, Command, DataFileInfo, ErrorPayload, OpenSummary, Relocate, Snapshot,
-    inspect_data_file,
+    AppError, AppService, Command, DataFileInfo, ErrorPayload, ImportPreview, OpenSummary,
+    Relocate, Snapshot, inspect_data_file,
 };
 use tabstage_browsers::Opened;
 use tabstage_browsers::system::System;
-use tabstage_core::{FolderId, GroupId, ProfileId, TabId, Target};
+use tabstage_core::{NoteId, ProfileId, TabId, TicketId};
+use tabstage_store::Role;
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 
@@ -78,17 +80,31 @@ pub fn refresh_browsers(service: State<'_, Service>) -> Reply<Snapshot> {
     lock(&service)?.refresh_browsers().map_err(|e| payload(&e))
 }
 
-/// Opens or focuses one tab. Runs off the main thread: AppleScript calls
+/// Opens or focuses one link. Runs off the main thread: AppleScript calls
 /// can take a moment.
 #[tauri::command(async)]
-pub fn open_tab(service: State<'_, Service>, tab: TabId) -> Reply<Opened> {
-    lock(&service)?.open_tab(tab).map_err(|e| payload(&e))
+pub fn open_link(service: State<'_, Service>, link: TabId) -> Reply<Opened> {
+    lock(&service)?.open_link(link).map_err(|e| payload(&e))
 }
 
-/// Opens the ticket of a group, folder or tab with its profile's ticket URL.
+/// Opens a ticket's own address.
 #[tauri::command(async)]
-pub fn open_ticket(service: State<'_, Service>, target: Target) -> Reply<Opened> {
-    lock(&service)?.open_ticket(target).map_err(|e| payload(&e))
+pub fn open_ticket(service: State<'_, Service>, ticket: TicketId) -> Reply<Opened> {
+    lock(&service)?.open_ticket(ticket).map_err(|e| payload(&e))
+}
+
+/// Opens a ticket's address, links and sub-tickets.
+#[tauri::command(async)]
+pub fn open_ticket_all(service: State<'_, Service>, ticket: TicketId) -> Reply<OpenSummary> {
+    lock(&service)?
+        .open_ticket_all(ticket)
+        .map_err(|e| payload(&e))
+}
+
+/// Opens every link of a note.
+#[tauri::command(async)]
+pub fn open_note(service: State<'_, Service>, note: NoteId) -> Reply<OpenSummary> {
+    lock(&service)?.open_note(note).map_err(|e| payload(&e))
 }
 
 /// Opens an address, such as a link in a note, in a profile's browser.
@@ -99,24 +115,35 @@ pub fn open_url(service: State<'_, Service>, profile: ProfileId, url: String) ->
         .map_err(|e| payload(&e))
 }
 
-/// Opens every tab of a folder.
-#[tauri::command(async)]
-pub fn open_folder(service: State<'_, Service>, folder: FolderId) -> Reply<OpenSummary> {
-    lock(&service)?.open_folder(folder).map_err(|e| payload(&e))
-}
-
-/// Opens every tab of a group.
-#[tauri::command(async)]
-pub fn open_group(service: State<'_, Service>, group: GroupId) -> Reply<OpenSummary> {
-    lock(&service)?.open_group(group).map_err(|e| payload(&e))
-}
-
-/// Opens every tab of a profile.
-#[tauri::command(async)]
-pub fn open_profile(service: State<'_, Service>, profile: ProfileId) -> Reply<OpenSummary> {
+/// What importing a file from before tickets would give: the one set aside
+/// at startup when `path` is `None`.
+#[tauri::command]
+pub fn preview_import(
+    service: State<'_, Service>,
+    path: Option<String>,
+    roles: HashMap<String, Role>,
+) -> Reply<ImportPreview> {
     lock(&service)?
-        .open_profile(profile)
+        .preview_import(path.map(PathBuf::from), &roles)
         .map_err(|e| payload(&e))
+}
+
+/// Imports a file from before tickets into the workspace.
+#[tauri::command]
+pub fn import_legacy(
+    service: State<'_, Service>,
+    path: Option<String>,
+    roles: HashMap<String, Role>,
+) -> Reply<Snapshot> {
+    let result = lock(&service)?.import(path.map(PathBuf::from), &roles);
+    changed(result)
+}
+
+/// Stops offering to import the file set aside at startup.
+#[tauri::command]
+pub fn dismiss_import(service: State<'_, Service>) -> Reply<Snapshot> {
+    let result = lock(&service)?.dismiss_import();
+    changed(result)
 }
 
 /// First run: keeps the data file in `folder`, or in the default location

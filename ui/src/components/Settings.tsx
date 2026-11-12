@@ -1,10 +1,11 @@
 import * as AlertDialog from '@radix-ui/react-alert-dialog';
 import { open } from '@tauri-apps/plugin-dialog';
-import { AlertTriangle, Folder, FolderInput, HardDrive } from 'lucide-react';
+import { AlertTriangle, FileInput, Folder, FolderInput, HardDrive } from 'lucide-react';
 import { useState } from 'react';
 
 import type { AppError, Command, DataFileInfo, DataLocationKind, Relocate, Snapshot } from '../api/types';
 import { ProfilesEditor } from './ProfilesEditor';
+import { StatusEditor } from './StatusEditor';
 
 interface Props {
   snapshot: Snapshot;
@@ -18,6 +19,10 @@ interface Props {
   onShowUrls: (show: boolean) => void;
   indentGuides: boolean;
   onIndentGuides: (show: boolean) => void;
+  /** Scroll to the statuses, e.g. from "Edit statuses…". */
+  focusStatuses?: boolean;
+  /** Opens the import assistant for a file from before tickets. */
+  onImport: (path: string) => void;
 }
 
 interface Pending {
@@ -36,8 +41,15 @@ export function Settings({
   onShowUrls,
   indentGuides,
   onIndentGuides,
+  focusStatuses = false,
+  onImport,
 }: Props) {
   const [pending, setPending] = useState<Pending | null>(null);
+
+  const chooseImport = async () => {
+    const file = await open({ title: 'Tabstage data file to import', filters: [{ name: 'Tabstage data', extensions: ['json'] }] });
+    if (typeof file === 'string') onImport(file);
+  };
 
   const chooseFolder = async () => {
     const folder = await open({ directory: true, title: 'Folder for Tabstage data' });
@@ -53,6 +65,23 @@ export function Settings({
       <h1 id="settings-title" className="group__name">
         Settings
       </h1>
+
+      <section
+        className="settings__section"
+        aria-labelledby="statuses"
+        ref={(node) => {
+          if (focusStatuses) node?.scrollIntoView?.({ block: 'start' });
+        }}
+      >
+        <h2 id="statuses" className="settings__heading">
+          Statuses
+        </h2>
+        <p className="settings__help">
+          The steps tickets move through, shared by every profile. Their order is the order of the sidebar lanes and the board
+          columns.
+        </p>
+        <StatusEditor workspace={snapshot.workspace} apply={apply} />
+      </section>
 
       <section className="settings__section" aria-labelledby="profiles">
         <h2 id="profiles" className="settings__heading">
@@ -70,7 +99,7 @@ export function Settings({
         </h2>
         <label className="checkbox">
           <input type="checkbox" checked={showUrls} onChange={(event) => onShowUrls(event.target.checked)} />
-          Show URLs under tabs in the sidebar
+          Show addresses under links in the sidebar
         </label>
         <label className="checkbox">
           <input type="checkbox" checked={indentGuides} onChange={(event) => onIndentGuides(event.target.checked)} />
@@ -80,13 +109,29 @@ export function Settings({
 
       <DataLocationCard snapshot={snapshot} onReveal={onRevealDataFile} onMove={() => void chooseFolder()} />
 
+      <section className="settings__section" aria-labelledby="import">
+        <h2 id="import" className="settings__heading">
+          Import from a previous version
+        </h2>
+        <p className="settings__help">
+          Bring in groups, folders and tabs from a Tabstage data file saved before version 0.5, such as a copy from another
+          computer. You choose what becomes a status, a ticket or a note; nothing here is replaced.
+        </p>
+        <div>
+          <button type="button" className="button" onClick={() => void chooseImport()}>
+            <FileInput className="icon" aria-hidden="true" />
+            Choose a data file…
+          </button>
+        </div>
+      </section>
+
       <AlertDialog.Root open={pending !== null} onOpenChange={(isOpen) => !isOpen && setPending(null)}>
         <AlertDialog.Portal>
           <AlertDialog.Overlay className="dialog__overlay" />
           <AlertDialog.Content className="dialog">
             <AlertDialog.Title className="dialog__title">That folder already has Tabstage data</AlertDialog.Title>
             <AlertDialog.Description className="dialog__text">
-              It has {pending?.info.groups} groups and {pending?.info.tabs} tabs. Use that data, or replace it with
+              It has {pending?.info.tickets} tickets and {pending?.info.notes} notes. Use that data, or replace it with
               the data you have now.
             </AlertDialog.Description>
             <div className="dialog__actions">

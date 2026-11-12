@@ -7,15 +7,25 @@ import { installIpc } from './ipc';
 export const TRABAJO = '00000000-0000-0000-0000-0000000000c1';
 export const PERSONAL = '00000000-0000-0000-0000-0000000000c2';
 export const QA = '00000000-0000-0000-0000-0000000000c3';
-export const WORK = '00000000-0000-0000-0000-0000000000a1';
-export const IN_TEST = '00000000-0000-0000-0000-0000000000a4';
-export const SPRINT = '00000000-0000-0000-0000-0000000000f1';
-export const INCIDENTS = '00000000-0000-0000-0000-0000000000f2';
-export const ONBOARDING = '00000000-0000-0000-0000-0000000000f3';
-export const LOGIN_TAB = '00000000-0000-0000-0000-000000000b01';
-export const GRAFANA_TAB = '00000000-0000-0000-0000-000000000b04';
-export const STAGING_TAB = '00000000-0000-0000-0000-000000000b07';
-export const STATUS_TAB = '00000000-0000-0000-0000-000000000b09';
+const id = (n: number) => `00000000-0000-0000-0000-${n.toString(16).padStart(12, '0')}`;
+export const REVIEW = id(0x501);
+export const IN_TEST = id(0x502);
+export const DONE = id(0x503);
+/** "Carrier Commissions" (CAR-5899, In TEST): a link and a sub-ticket. */
+export const CARRIER = id(0x7001);
+/** "Money card" (CAR-6020), sub-ticket of Carrier Commissions. */
+export const MONEY = id(0x7002);
+/** "Remove map" (CAR-6163, In review), with its own link. */
+export const REMOVE_MAP = id(0x7003);
+/** "Onboarding wiki": no status, no key, one link. */
+export const ONBOARDING = id(0x7004);
+export const CACHING = id(0x7005);
+export const PR_LINK = id(0xb001);
+export const STAGING_LINK = id(0xb002);
+export const WIKI_LINK = id(0xb003);
+export const BOARD_LINK = id(0xb004);
+/** "Standup notes", which mentions CAR-6163. */
+export const STANDUP = id(0x9001);
 
 /** Renders the app against the fixture and waits for the first profile's board. */
 export async function renderApp(handlers: Parameters<typeof installIpc>[0] = {}) {

@@ -5,51 +5,59 @@ expression: to_json_redacted(&sample())
 {
   "app": "tabstage-desktop",
   "settings": {},
-  "version": 4,
+  "version": 5,
   "workspace": {
     "profiles": [
       {
         "color": 0,
         "id": "[uuid]",
-        "items": [],
-        "name": "Default"
+        "name": "Default",
+        "notes": [],
+        "tickets": []
       },
       {
         "color": 1,
         "id": "[uuid]",
-        "items": [
+        "name": "Trabajo",
+        "notes": [
+          {
+            "body": "Talk about CAR-5899",
+            "id": "[uuid]",
+            "title": "Standup"
+          }
+        ],
+        "tickets": [
           {
             "children": [
               {
-                "collapsed": false,
                 "id": "[uuid]",
-                "name": "Sprint 42",
-                "tabs": [
-                  {
-                    "icon": {
-                      "kind": "text",
-                      "value": "142"
-                    },
-                    "id": "[uuid]",
-                    "title": "Issue 1",
-                    "url": "https://a.dev/issue/1"
-                  }
-                ],
-                "type": "folder"
+                "title": "Money card"
               }
             ],
             "id": "[uuid]",
-            "name": "Work",
-            "type": "group"
-          },
-          {
-            "id": "[uuid]",
-            "title": "Wiki",
-            "type": "tab",
-            "url": "https://wiki.dev/"
+            "key": "CAR-5899",
+            "links": [
+              {
+                "icon": {
+                  "kind": "text",
+                  "value": "142"
+                },
+                "id": "[uuid]",
+                "title": "PR",
+                "url": "https://a.dev/issue/1"
+              }
+            ],
+            "status": "[uuid]",
+            "title": "Carrier Commissions"
           }
-        ],
-        "name": "Trabajo"
+        ]
+      }
+    ],
+    "statuses": [
+      {
+        "color": 3,
+        "id": "[uuid]",
+        "name": "In TEST"
       }
     ]
   }

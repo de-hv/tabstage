@@ -14,16 +14,20 @@ pub mod config;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tabstage_browsers::{
     BrowserError, BrowserInfo, Catalog, Launcher, Opened, Platform, TabFocuser, can_focus_tabs,
     find_installed, open_tab,
 };
+
 use tabstage_core::{
-    BrowserId, Container, ContainerColor, FolderId, GroupId, Icon, Item, Node, Place, ProfileColor,
-    ProfileId, TICKET_PLACEHOLDER, Tab, TabId, TabUrl, TabUrlError, Target, Workspace,
-    WorkspaceError,
+    BrowserId, Icon, LinkOwner, NoteId, ProfileColor, ProfileId, StatusId, TabId, TabUrl,
+    TabUrlError, Target, TicketId, TicketPlace, Workspace, WorkspaceError,
 };
-use tabstage_store::{Document, FileStore, Settings, StoreError};
+use tabstage_store::{
+    Document, FileStore, ImportSummary, LegacyTree, Role, Settings, StoreError, import_legacy,
+    read_legacy,
+};
 use thiserror::Error;
 
 use crate::config::{AppConfig, ProfileBinding, load_config, save_config};
@@ -41,121 +45,135 @@ impl<T: Catalog + Launcher + TabFocuser> System for T {}
     rename_all_fields = "camelCase"
 )]
 pub enum Command {
-    /// Add a group at the end of a profile.
-    AddGroup {
-        /// Profile that gets the group.
-        profile: ProfileId,
-        /// Group name.
-        name: String,
-    },
-    /// Rename a group.
-    RenameGroup {
-        /// Group to rename.
-        group: GroupId,
-        /// New name.
-        name: String,
-    },
-    /// Move a group, within its profile or to another one.
-    MoveGroup {
-        /// Group to move.
-        group: GroupId,
-        /// Destination profile.
-        profile: ProfileId,
-        /// Position among the profile's items.
-        index: usize,
-    },
-    /// Remove a group and everything in it.
-    RemoveGroup {
-        /// Group to remove.
-        group: GroupId,
-    },
-    /// Add a folder at the end of a profile or group.
-    AddFolder {
-        /// Profile or group that gets the folder.
-        place: Place,
-        /// Folder name.
-        name: String,
-    },
-    /// Rename a folder.
-    RenameFolder {
-        /// Folder to rename.
-        folder: FolderId,
-        /// New name.
-        name: String,
-    },
-    /// Collapse or expand a folder.
-    SetFolderCollapsed {
-        /// Folder to change.
-        folder: FolderId,
-        /// Whether it is collapsed.
-        collapsed: bool,
-    },
-    /// Move a folder into a profile or group.
-    MoveFolder {
-        /// Folder to move.
-        folder: FolderId,
-        /// Destination profile or group.
-        place: Place,
-        /// Position in the destination.
-        index: usize,
-    },
-    /// Remove a folder and its tabs.
-    RemoveFolder {
-        /// Folder to remove.
-        folder: FolderId,
-    },
-    /// Save a link.
-    AddTab {
-        /// Where to put it.
-        place: Place,
-        /// URL as typed by the user.
-        url: String,
-        /// Title; the URL is used when blank.
+    /// Add a ticket at the end of a profile, or under a ticket.
+    AddTicket {
+        /// Its id, when the UI picks it to show the ticket right away.
+        #[serde(default)]
+        id: Option<TicketId>,
+        /// Where it goes.
+        place: TicketPlace,
+        /// Its title.
         title: String,
+        /// Its key, if any.
+        #[serde(default)]
+        key: Option<String>,
+        /// Its status, if any.
+        status: Option<StatusId>,
     },
-    /// Change a tab's title.
-    RenameTab {
-        /// Tab to rename.
-        tab: TabId,
-        /// New title; the URL is used when blank.
-        title: String,
+    /// Set a ticket's key, such as `PROJ-123`; blank clears it.
+    SetTicketKey {
+        /// The ticket.
+        ticket: TicketId,
+        /// Its key.
+        key: String,
     },
-    /// Change a tab's URL.
-    SetTabUrl {
-        /// Tab to change.
-        tab: TabId,
-        /// URL as typed by the user.
+    /// Set or clear a ticket's own address.
+    SetTicketUrl {
+        /// The ticket.
+        ticket: TicketId,
+        /// Its address; blank clears it.
         url: String,
     },
-    /// Remove a tab.
-    RemoveTab {
-        /// Tab to remove.
-        tab: TabId,
+    /// Set or clear a ticket's status.
+    SetTicketStatus {
+        /// The ticket.
+        ticket: TicketId,
+        /// Its status, or `None` for none.
+        status: Option<StatusId>,
     },
-    /// Move a tab.
-    MoveTab {
-        /// Tab to move.
-        tab: TabId,
-        /// Destination.
-        place: Place,
-        /// Position in the destination.
+    /// Move a ticket within or across profiles, or under a ticket.
+    MoveTicket {
+        /// The ticket.
+        ticket: TicketId,
+        /// Where it goes.
+        place: TicketPlace,
+        /// Position there.
+        index: usize,
+        /// Also sets its status, when it is dropped in another lane.
+        #[serde(default)]
+        lane: Option<Lane>,
+    },
+    /// Remove a ticket with its links and sub-tickets.
+    RemoveTicket {
+        /// The ticket.
+        ticket: TicketId,
+    },
+    /// Add a note at the end of a profile's notes.
+    AddNote {
+        /// Its id, when the UI picks it to show the note right away.
+        #[serde(default)]
+        id: Option<NoteId>,
+        /// The profile.
+        profile: ProfileId,
+        /// Its title.
+        title: String,
+    },
+    /// Move a note.
+    MoveNote {
+        /// The note.
+        note: NoteId,
+        /// Profile it goes to.
+        profile: ProfileId,
+        /// Position there.
         index: usize,
     },
-    /// Set or clear the custom icon of a group, folder or tab.
+    /// Remove a note with its links.
+    RemoveNote {
+        /// The note.
+        note: NoteId,
+    },
+    /// Set the Markdown text of a ticket (its note) or a note (its body).
+    SetText {
+        /// The ticket or note.
+        owner: LinkOwner,
+        /// The text; blank clears it.
+        text: String,
+    },
+    /// Add a link to a ticket or note.
+    AddLink {
+        /// The ticket or note.
+        owner: LinkOwner,
+        /// Its address.
+        url: String,
+        /// Its title; blank uses the address.
+        title: String,
+    },
+    /// Change where a link points.
+    SetLinkUrl {
+        /// The link.
+        link: TabId,
+        /// Its new address.
+        url: String,
+    },
+    /// Move a link to a ticket or note.
+    MoveLink {
+        /// The link.
+        link: TabId,
+        /// Ticket or note it goes to.
+        owner: LinkOwner,
+        /// Position there.
+        index: usize,
+    },
+    /// Remove a link.
+    RemoveLink {
+        /// The link.
+        link: TabId,
+    },
+    /// Rename a ticket, note or link.
+    Rename {
+        /// What to rename.
+        target: Target,
+        /// The new name.
+        name: String,
+    },
+    /// Set or clear the custom icon of a ticket, note or link.
     SetIcon {
         /// What gets the icon.
         target: Target,
         /// The icon, or `None` for the default one.
         icon: Option<Icon>,
     },
-    /// Set or clear the own color of a group or folder.
-    SetColor {
-        /// What gets the color.
-        target: Container,
-        /// One of the profile colors, `"parent"` or `"none"`.
-        color: ContainerColor,
-    },
-    /// Pin a group, folder or tab to the top of the sidebar.
+    /// Pin an item to the top of the sidebar.
     Pin {
         /// What to pin.
         target: Target,
@@ -172,14 +190,38 @@ pub enum Command {
         /// New position.
         index: usize,
     },
-    /// Set the ticket id and note of a group, folder or tab.
-    SetDetails {
-        /// What gets the details.
-        target: Target,
-        /// Ticket key such as `PROJ-123`; blank clears it.
-        ticket_id: String,
-        /// Free-form note; blank clears it.
-        note: String,
+    /// Add a status at the end of the workflow.
+    AddStatus {
+        /// Its name.
+        name: String,
+        /// Its color.
+        color: ProfileColor,
+    },
+    /// Rename a status.
+    RenameStatus {
+        /// The status.
+        status: StatusId,
+        /// The new name.
+        name: String,
+    },
+    /// Change a status's color.
+    SetStatusColor {
+        /// The status.
+        status: StatusId,
+        /// Its new color.
+        color: ProfileColor,
+    },
+    /// Move a status in the workflow.
+    MoveStatus {
+        /// The status.
+        status: StatusId,
+        /// New position.
+        index: usize,
+    },
+    /// Remove a status; its tickets are left without one.
+    RemoveStatus {
+        /// The status.
+        status: StatusId,
     },
     /// Add a profile at the end.
     AddProfile {
@@ -200,13 +242,6 @@ pub enum Command {
         /// Its new color.
         color: ProfileColor,
     },
-    /// Set or clear the address a profile's ticket ids link to.
-    SetTicketUrl {
-        /// Profile to configure.
-        profile: ProfileId,
-        /// Address with a `{ticket}` placeholder; blank clears it.
-        url: String,
-    },
     /// Move a profile in the sidebar.
     MoveProfile {
         /// Profile to move.
@@ -214,11 +249,11 @@ pub enum Command {
         /// New position.
         index: usize,
     },
-    /// Remove a profile, moving its items to another one.
+    /// Remove a profile, moving its tickets and notes to another one.
     RemoveProfile {
         /// Profile to remove.
         profile: ProfileId,
-        /// Profile that takes its groups, folders and tabs.
+        /// Profile that takes its tickets and notes.
         move_items_to: ProfileId,
     },
     /// Choose, on this machine, the browser a profile opens in.
@@ -228,6 +263,13 @@ pub enum Command {
         /// An installed browser, or `None` for the system browser.
         browser: Option<BrowserId>,
     },
+}
+
+/// The status lane a ticket is dropped in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+pub struct Lane {
+    /// The lane's status, or `None` for "No status".
+    pub status: Option<StatusId>,
 }
 
 /// How a profile opens on this machine, as shown in the UI.
@@ -315,8 +357,11 @@ pub fn classify_location(path: &Path, is_default: bool) -> DataLocationKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
-    /// Profiles with their groups, folders and tabs.
+    /// Statuses, and profiles with their tickets and notes.
     pub workspace: Workspace,
+    /// A data file from before tickets that was set aside and not imported
+    /// yet, so the UI offers to import it.
+    pub legacy_backup: Option<String>,
     /// Synced settings.
     pub settings: Settings,
     /// Browsers installed on this machine.
@@ -331,6 +376,20 @@ pub struct Snapshot {
     pub needs_data_file: bool,
     /// How each profile opens here, in profile order.
     pub profiles: Vec<ProfileView>,
+}
+
+/// What importing a file from before tickets would give.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportPreview {
+    /// The file read.
+    pub path: String,
+    /// Its groups, folders and tabs.
+    pub tree: LegacyTree,
+    /// The role each one gets, and what would be created.
+    pub summary: ImportSummary,
+    /// The statuses, tickets and notes it would create.
+    pub preview: Workspace,
 }
 
 /// What opening several tabs did.
@@ -370,6 +429,9 @@ pub enum AppError {
     /// This machine's config could not be saved.
     #[error("could not save this machine's settings")]
     Config(#[source] std::io::Error),
+    /// There is no file from before tickets to import.
+    #[error("there is no previous data file to import")]
+    NoLegacyFile,
 }
 
 impl AppError {
@@ -378,13 +440,15 @@ impl AppError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Workspace(
-                WorkspaceError::GroupNotFound(_)
-                | WorkspaceError::FolderNotFound(_)
-                | WorkspaceError::TabNotFound(_)
+                WorkspaceError::TicketNotFound(_)
+                | WorkspaceError::NoteNotFound(_)
+                | WorkspaceError::LinkNotFound(_)
+                | WorkspaceError::StatusNotFound(_)
                 | WorkspaceError::ProfileNotFound(_),
             ) => "notFound",
             Self::Workspace(_) => "invalid",
             Self::Store(StoreError::Conflict) => "conflict",
+            Self::Store(StoreError::Legacy(_)) => "legacyFile",
             Self::Store(StoreError::Io { .. }) | Self::Config(_) => "io",
             Self::Store(_) => "badFile",
             Self::Browser(_) => "browser",
@@ -392,6 +456,7 @@ impl AppError {
             Self::UnknownBrowser(_) => "unknownBrowser",
             Self::CloudFolder(_) => "cloudFolder",
             Self::NoBrowser => "noBrowser",
+            Self::NoLegacyFile => "notFound",
         }
     }
 }
@@ -443,10 +508,10 @@ pub struct DataFileInfo {
     pub path: String,
     /// A Tabstage data file is already there.
     pub exists: bool,
-    /// Number of groups in it.
-    pub groups: usize,
-    /// Number of tabs in it, folders included.
-    pub tabs: usize,
+    /// Number of tickets in it, sub-tickets included.
+    pub tickets: usize,
+    /// Number of notes in it.
+    pub notes: usize,
 }
 
 /// Looks at the data file at `path` without changing anything.
@@ -456,17 +521,25 @@ pub struct DataFileInfo {
 /// When the file exists but cannot be read or is not a valid data file.
 pub fn inspect_data_file(path: &Path) -> Result<DataFileInfo> {
     let document = FileStore::new(path).load()?;
-    let (groups, tabs) = document.map_or((0, 0), |document| {
-        (
-            document.workspace.groups().count(),
-            document.workspace.tabs().len(),
-        )
+    let (tickets, notes) = document.map_or((0, 0), |document| {
+        document
+            .workspace
+            .profiles()
+            .iter()
+            .fold((0, 0), |(tickets, notes), profile| {
+                let in_profile: usize = profile
+                    .tickets
+                    .iter()
+                    .map(|ticket| 1 + ticket.children.len())
+                    .sum();
+                (tickets + in_profile, notes + profile.notes.len())
+            })
     });
     Ok(DataFileInfo {
         path: path.display().to_string(),
         exists: path.exists(),
-        groups,
-        tabs,
+        tickets,
+        notes,
     })
 }
 
@@ -496,8 +569,9 @@ impl<S: System> AppService<S> {
     ///
     /// On first run the only profile opens in the system browser, and nothing
     /// is written until the user picks where to keep the data file (see
-    /// [`AppService::choose_data_file`]). A version 1 data file is upgraded:
-    /// its browsers become this machine's bindings.
+    /// [`AppService::choose_data_file`]). A data file from before tickets is
+    /// renamed to `workspace.v{n}-backup.json` next to it and a new, empty
+    /// one takes its place; the UI then offers to import the old one.
     ///
     /// # Errors
     ///
@@ -516,13 +590,24 @@ impl<S: System> AppService<S> {
             .map(|browser| browser.id.clone());
         let mut config = load_config(&config_path);
 
-        let loaded = store.load()?;
+        let loaded = match store.load() {
+            Err(StoreError::Legacy(version)) => {
+                // A file from before tickets: set it aside, start empty and
+                // offer to import it.
+                let backup = set_aside(store.path(), version)?;
+                config.legacy_backup = Some(backup);
+                save_config(&config_path, &config).map_err(AppError::Config)?;
+                store.load()?
+            }
+            other => other?,
+        };
+        let had_file = loaded.is_some() || config.legacy_backup.is_some();
         let is_new = loaded.is_none();
-        let mut document = loaded.unwrap_or_default();
-        let migrated = std::mem::take(&mut document.migrated);
+        let document = loaded.unwrap_or_default();
         let mut config_changed = false;
 
         if is_new
+            && !had_file
             && let (Some(browser), Some(profile)) =
                 (&system_browser, document.workspace.profiles().first())
         {
@@ -534,33 +619,11 @@ impl<S: System> AppService<S> {
             );
             config_changed = true;
         }
-        for binding in &migrated {
-            let installed = find_installed(&browsers, &binding.browser);
-            // Migrated profiles are named after the browser id; use its name.
-            let named_after_id = document
-                .workspace
-                .profile(binding.profile)
-                .is_some_and(|profile| profile.name == binding.browser.as_str());
-            if let Some(info) = installed
-                && named_after_id
-            {
-                document
-                    .workspace
-                    .rename_profile(binding.profile, &info.name)?;
-            }
-            config.profiles.insert(
-                binding.profile,
-                ProfileBinding {
-                    browser: installed
-                        .map_or_else(|| binding.browser.clone(), |info| info.id.clone()),
-                },
-            );
-            config_changed = true;
-        }
 
         // On first run the user picks the folder before anything is written.
-        let first_run = is_new && config.data_path.is_none();
-        if (is_new && !first_run) || !migrated.is_empty() {
+        // A file set aside counts as a choice: the new one goes in its place.
+        let first_run = is_new && config.data_path.is_none() && config.legacy_backup.is_none();
+        if is_new && !first_run {
             store.save(&document)?;
         }
         if config_changed {
@@ -607,6 +670,12 @@ impl<S: System> AppService<S> {
             .collect();
         Snapshot {
             workspace: self.document.workspace.clone(),
+            legacy_backup: self
+                .config
+                .legacy_backup
+                .as_ref()
+                .filter(|path| path.exists())
+                .map(|path| path.display().to_string()),
             settings: self.document.settings.clone(),
             browsers: self.browsers.clone(),
             system_browser: self.system_browser.clone(),
@@ -741,50 +810,69 @@ impl<S: System> AppService<S> {
         Ok(self.snapshot())
     }
 
-    /// Opens a tab with its profile's browser, focusing it if already open.
+    /// Opens a link with its profile's browser, focusing it if already open.
     ///
     /// # Errors
     ///
-    /// When the tab is unknown, no browser is installed or opening fails.
-    pub fn open_tab(&self, tab: TabId) -> Result<Opened> {
+    /// When the link is unknown, no browser is installed or opening fails.
+    pub fn open_link(&self, link: TabId) -> Result<Opened> {
         let found = self
             .document
             .workspace
-            .find_tab(tab)
-            .ok_or(WorkspaceError::TabNotFound(tab))?;
-        let browser = self
-            .resolve(found.profile.id)
-            .browser
-            .ok_or(AppError::NoBrowser)?;
-        Ok(open_tab(
-            browser,
-            &found.tab.url,
-            self.platform,
-            &self.system,
-            &self.system,
-        )?)
+            .link(link)
+            .ok_or(WorkspaceError::LinkNotFound(link))?;
+        self.open_in(found.profile.id, &found.link.url)
     }
 
-    /// Opens the ticket of a group, folder or tab with its profile's ticket
-    /// URL, in the profile's browser.
+    /// Opens a ticket's own address in its profile's browser.
     ///
     /// # Errors
     ///
-    /// When the item is unknown, has no ticket, its profile has no ticket
-    /// URL, no browser is installed or opening fails.
-    pub fn open_ticket(&self, target: Target) -> Result<Opened> {
+    /// When the ticket is unknown or has no address, no browser is installed
+    /// or opening fails.
+    pub fn open_ticket(&self, ticket: TicketId) -> Result<Opened> {
         let workspace = &self.document.workspace;
-        let profile = workspace.target_profile(target).ok_or(match target {
-            Target::Group(id) => WorkspaceError::GroupNotFound(id),
-            Target::Folder(id) => WorkspaceError::FolderNotFound(id),
-            Target::Tab(id) => WorkspaceError::TabNotFound(id),
-        })?;
-        let (Some(template), Some(ticket)) =
-            (profile.ticket_url.as_deref(), workspace.ticket_id(target))
-        else {
-            return Err(WorkspaceError::InvalidTicketUrl.into());
-        };
-        self.open_url(profile.id, &ticket_link(template, ticket))
+        let url = workspace.ticket_address(ticket)?;
+        let profile = workspace
+            .ticket(ticket)
+            .ok_or(WorkspaceError::TicketNotFound(ticket))?
+            .profile
+            .id;
+        self.open_in(profile, url)
+    }
+
+    /// Opens everything a ticket points to: its address, its links, and its
+    /// sub-tickets' addresses and links, in order.
+    ///
+    /// # Errors
+    ///
+    /// When the ticket is unknown, no browser is installed or opening fails.
+    pub fn open_ticket_all(&self, ticket: TicketId) -> Result<OpenSummary> {
+        let found = self
+            .document
+            .workspace
+            .ticket(ticket)
+            .ok_or(WorkspaceError::TicketNotFound(ticket))?;
+        let mut urls = Vec::new();
+        for item in std::iter::once(found.ticket).chain(&found.ticket.children) {
+            urls.extend(item.url.iter());
+            urls.extend(item.links.iter().map(|link| &link.url));
+        }
+        self.open_all(found.profile.id, urls.into_iter())
+    }
+
+    /// Opens every link of a note, in order.
+    ///
+    /// # Errors
+    ///
+    /// When the note is unknown, no browser is installed or opening fails.
+    pub fn open_note(&self, note: NoteId) -> Result<OpenSummary> {
+        let (profile, found) = self
+            .document
+            .workspace
+            .note(note)
+            .ok_or(WorkspaceError::NoteNotFound(note))?;
+        self.open_all(profile.id, found.links.iter().map(|link| &link.url))
     }
 
     /// Opens an address, such as a link in a note, in a profile's browser.
@@ -797,87 +885,115 @@ impl<S: System> AppService<S> {
         if self.document.workspace.profile(profile).is_none() {
             return Err(WorkspaceError::ProfileNotFound(profile).into());
         }
-        let url = TabUrl::parse(url)?;
+        self.open_in(profile, &TabUrl::parse(url)?)
+    }
+
+    fn open_in(&self, profile: ProfileId, url: &TabUrl) -> Result<Opened> {
         let browser = self.resolve(profile).browser.ok_or(AppError::NoBrowser)?;
         Ok(open_tab(
             browser,
-            &url,
+            url,
             self.platform,
             &self.system,
             &self.system,
         )?)
     }
 
-    /// Opens every tab of a folder, in order.
+    // ---- importing a file from before tickets ------------------------------
+
+    /// Reads a file from before tickets (the one set aside at startup when
+    /// `path` is `None`) and shows what importing it would give, with
+    /// `chosen` roles by old id and suggestions for the rest.
     ///
     /// # Errors
     ///
-    /// When the folder is unknown, no browser is installed or opening fails.
-    pub fn open_folder(&self, folder: FolderId) -> Result<OpenSummary> {
-        let found = self
-            .document
-            .workspace
-            .find_folder(folder)
-            .ok_or(WorkspaceError::FolderNotFound(folder))?;
-        self.open_all(found.profile.id, found.folder.tabs.iter())
+    /// When there is no such file or it cannot be read.
+    pub fn preview_import(
+        &self,
+        path: Option<PathBuf>,
+        chosen: &HashMap<String, Role>,
+    ) -> Result<ImportPreview> {
+        let (path, tree) = self.read_legacy_file(path)?;
+        let mut preview = Workspace::from_parts(Vec::new(), Vec::new());
+        let summary = import_legacy(&mut preview, &tree, chosen)?;
+        Ok(ImportPreview {
+            path: path.display().to_string(),
+            tree,
+            summary,
+            preview,
+        })
     }
 
-    /// Opens every tab of a group, folders included, in order.
+    /// Imports a file from before tickets into the workspace, adding to what
+    /// is there, and stops offering to import the file set aside.
     ///
     /// # Errors
     ///
-    /// When the group is unknown, no browser is installed or opening fails.
-    pub fn open_group(&self, group: GroupId) -> Result<OpenSummary> {
-        let workspace = &self.document.workspace;
-        let (Some(found), Some(profile)) = (workspace.group(group), workspace.group_profile(group))
-        else {
-            return Err(WorkspaceError::GroupNotFound(group).into());
-        };
-        let tabs = found.children.iter().flat_map(|node| match node {
-            Node::Tab(tab) => std::slice::from_ref(tab).iter(),
-            Node::Folder(folder) => folder.tabs.iter(),
-        });
-        self.open_all(profile.id, tabs)
-    }
-
-    /// Opens every tab of a profile, groups and folders included, in order.
-    ///
-    /// # Errors
-    ///
-    /// When the profile is unknown, no browser is installed or opening fails.
-    pub fn open_profile(&self, profile: ProfileId) -> Result<OpenSummary> {
-        let found = self
-            .document
-            .workspace
-            .profile(profile)
-            .ok_or(WorkspaceError::ProfileNotFound(profile))?;
-        let tabs = found.items.iter().flat_map(|item| -> Vec<&Tab> {
-            match item {
-                Item::Tab(tab) => vec![tab],
-                Item::Folder(folder) => folder.tabs.iter().collect(),
-                Item::Group(group) => group
-                    .children
-                    .iter()
-                    .flat_map(|node| match node {
-                        Node::Tab(tab) => std::slice::from_ref(tab).iter(),
-                        Node::Folder(folder) => folder.tabs.iter(),
-                    })
-                    .collect(),
+    /// When the file cannot be read, the result is invalid or saving fails.
+    pub fn import(
+        &mut self,
+        path: Option<PathBuf>,
+        chosen: &HashMap<String, Role>,
+    ) -> Result<Snapshot> {
+        let (path, tree) = self.read_legacy_file(path)?;
+        let mut next = self.document.clone();
+        import_legacy(&mut next.workspace, &tree, chosen)?;
+        self.store.save(&next)?;
+        self.document = next;
+        let mut config_changed = false;
+        for binding in &tree.bindings {
+            if !self.config.profiles.contains_key(&binding.profile) {
+                let browser = find_installed(&self.browsers, &binding.browser)
+                    .map_or_else(|| binding.browser.clone(), |info| info.id.clone());
+                self.config
+                    .profiles
+                    .insert(binding.profile, ProfileBinding { browser });
+                config_changed = true;
             }
-        });
-        self.open_all(profile, tabs)
+        }
+        if self.config.legacy_backup.as_deref() == Some(path.as_path()) {
+            self.config.legacy_backup = None;
+            config_changed = true;
+        }
+        if config_changed {
+            self.save_config()?;
+        }
+        Ok(self.snapshot())
+    }
+
+    /// Stops offering to import the file set aside; the file stays on disk.
+    ///
+    /// # Errors
+    ///
+    /// When the config cannot be saved.
+    pub fn dismiss_import(&mut self) -> Result<Snapshot> {
+        if self.config.legacy_backup.take().is_some() {
+            self.save_config()?;
+        }
+        Ok(self.snapshot())
+    }
+
+    fn read_legacy_file(&self, path: Option<PathBuf>) -> Result<(PathBuf, LegacyTree)> {
+        let path = path
+            .or_else(|| self.config.legacy_backup.clone())
+            .ok_or(AppError::NoLegacyFile)?;
+        let text = std::fs::read_to_string(&path).map_err(|source| StoreError::Io {
+            path: path.clone(),
+            source,
+        })?;
+        Ok((path, read_legacy(&text)?))
     }
 
     /// Opens tabs one after another in the profile's browser.
     fn open_all<'a>(
         &self,
         profile: ProfileId,
-        tabs: impl Iterator<Item = &'a Tab>,
+        urls: impl Iterator<Item = &'a TabUrl>,
     ) -> Result<OpenSummary> {
         let browser = self.resolve(profile).browser.ok_or(AppError::NoBrowser)?;
         let mut summary = OpenSummary::default();
-        for tab in tabs {
-            match open_tab(browser, &tab.url, self.platform, &self.system, &self.system)? {
+        for url in urls {
+            match open_tab(browser, url, self.platform, &self.system, &self.system)? {
                 Opened::OpenedNew => summary.opened += 1,
                 Opened::FocusedExisting => summary.focused += 1,
             }
@@ -946,52 +1062,81 @@ impl<S: System> AppService<S> {
     fn execute(&self, document: &mut Document, command: Command) -> Result<()> {
         let workspace = &mut document.workspace;
         match command {
-            Command::AddGroup { profile, name } => workspace.add_group(profile, &name).map(drop)?,
-            Command::RenameGroup { group, name } => workspace.rename_group(group, &name)?,
-            Command::MoveGroup {
-                group,
-                profile,
-                index,
-            } => workspace.move_group(group, profile, index)?,
-            Command::RemoveGroup { group } => workspace.remove_group(group).map(drop)?,
-            Command::AddFolder { place, name } => workspace.add_folder(place, &name).map(drop)?,
-            Command::RenameFolder { folder, name } => workspace.rename_folder(folder, &name)?,
-            Command::SetFolderCollapsed { folder, collapsed } => {
-                workspace.set_folder_collapsed(folder, collapsed)?;
+            Command::AddTicket {
+                id,
+                place,
+                title,
+                key,
+                status,
+            } => {
+                let id = workspace.add_ticket_as(id.unwrap_or_default(), place, &title, status)?;
+                if let Some(key) = key {
+                    workspace.set_ticket_key(id, &key)?;
+                }
             }
-            Command::MoveFolder {
-                folder,
+            Command::SetTicketKey { ticket, key } => workspace.set_ticket_key(ticket, &key)?,
+            Command::SetTicketUrl { ticket, url } => {
+                let url = if url.trim().is_empty() {
+                    None
+                } else {
+                    Some(TabUrl::parse(&url)?)
+                };
+                workspace.set_ticket_address(ticket, url)?;
+            }
+            Command::SetTicketStatus { ticket, status } => {
+                workspace.set_ticket_status(ticket, status)?;
+            }
+            Command::MoveTicket {
+                ticket,
                 place,
                 index,
-            } => workspace.move_folder(folder, place, index)?,
-            Command::RemoveFolder { folder } => workspace.remove_folder(folder).map(drop)?,
-            Command::AddTab { place, url, title } => {
-                let url = TabUrl::parse(&url)?;
-                workspace.add_tab(place, url, &title).map(drop)?;
+                lane,
+            } => {
+                workspace.move_ticket(ticket, place, index)?;
+                if let Some(lane) = lane {
+                    workspace.set_ticket_status(ticket, lane.status)?;
+                }
             }
-            Command::RenameTab { tab, title } => workspace.rename_tab(tab, &title)?,
-            Command::SetTabUrl { tab, url } => {
-                let url = TabUrl::parse(&url)?;
-                workspace.set_tab_url(tab, url)?;
+            Command::RemoveTicket { ticket } => workspace.remove_ticket(ticket).map(drop)?,
+            Command::AddNote { id, profile, title } => {
+                workspace
+                    .add_note_as(id.unwrap_or_default(), profile, &title)
+                    .map(drop)?;
             }
-            Command::RemoveTab { tab } => workspace.remove_tab(tab).map(drop)?,
-            Command::MoveTab { tab, place, index } => workspace.move_tab(tab, place, index)?,
+            Command::MoveNote {
+                note,
+                profile,
+                index,
+            } => workspace.move_note(note, profile, index)?,
+            Command::RemoveNote { note } => workspace.remove_note(note).map(drop)?,
+            Command::SetText { owner, text } => workspace.set_text(owner, &text)?,
+            Command::AddLink { owner, url, title } => {
+                let url = TabUrl::parse(&url)?;
+                workspace.add_link(owner, url, &title).map(drop)?;
+            }
+            Command::SetLinkUrl { link, url } => {
+                let url = TabUrl::parse(&url)?;
+                workspace.set_link_url(link, url)?;
+            }
+            Command::MoveLink { link, owner, index } => workspace.move_link(link, owner, index)?,
+            Command::RemoveLink { link } => workspace.remove_link(link).map(drop)?,
+            Command::Rename { target, name } => workspace.rename(target, &name)?,
             Command::SetIcon { target, icon } => workspace.set_icon(target, icon)?,
-            Command::SetColor { target, color } => workspace.set_color(target, color)?,
             Command::Pin { target } => workspace.pin(target)?,
             Command::Unpin { target } => workspace.unpin(target),
             Command::MovePinned { target, index } => workspace.move_pinned(target, index)?,
-            Command::SetDetails {
-                target,
-                ticket_id,
-                note,
-            } => workspace.set_details(target, &ticket_id, &note)?,
+            Command::AddStatus { name, color } => workspace.add_status(&name, color).map(drop)?,
+            Command::RenameStatus { status, name } => workspace.rename_status(status, &name)?,
+            Command::SetStatusColor { status, color } => {
+                workspace.set_status_color(status, color)?;
+            }
+            Command::MoveStatus { status, index } => workspace.move_status(status, index)?,
+            Command::RemoveStatus { status } => workspace.remove_status(status).map(drop)?,
             Command::AddProfile { name } => workspace.add_profile(&name).map(drop)?,
             Command::RenameProfile { profile, name } => workspace.rename_profile(profile, &name)?,
             Command::SetProfileColor { profile, color } => {
                 workspace.set_profile_color(profile, color)?;
             }
-            Command::SetTicketUrl { profile, url } => workspace.set_ticket_url(profile, &url)?,
             Command::MoveProfile { profile, index } => workspace.move_profile(profile, index)?,
             Command::RemoveProfile {
                 profile,
@@ -1004,19 +1149,25 @@ impl<S: System> AppService<S> {
     }
 }
 
-/// A profile's ticket URL with the ticket id in place of `{ticket}`,
-/// percent-encoded so an id cannot change the rest of the address.
-#[must_use]
-pub fn ticket_link(template: &str, ticket: &str) -> String {
-    let mut encoded = String::new();
-    for byte in ticket.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
-            encoded.push(char::from(byte));
-        } else {
-            encoded.push_str(&format!("%{byte:02X}"));
-        }
+/// Renames a data file from before tickets to `workspace.v{version}-backup.json`
+/// next to it (with a number when that name is taken) and returns the new path.
+fn set_aside(path: &Path, version: u32) -> Result<PathBuf> {
+    let folder = path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = path.file_stem().map_or_else(
+        || "workspace".to_owned(),
+        |stem| stem.to_string_lossy().into_owned(),
+    );
+    let mut backup = folder.join(format!("{stem}.v{version}-backup.json"));
+    let mut copy = 2;
+    while backup.exists() {
+        backup = folder.join(format!("{stem}.v{version}-backup-{copy}.json"));
+        copy += 1;
     }
-    template.replace(TICKET_PLACEHOLDER, &encoded)
+    std::fs::rename(path, &backup).map_err(|source| StoreError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    Ok(backup)
 }
 
 #[cfg(test)]

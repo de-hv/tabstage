@@ -1,4 +1,4 @@
-//! Typed identifiers, so a group id can never be passed where a tab id is expected.
+//! Typed identifiers, so a ticket id can never be passed where a link id is expected.
 
 use std::fmt;
 use std::str::FromStr;
@@ -50,15 +50,19 @@ macro_rules! uuid_id {
 }
 
 uuid_id!(
-    /// Identifies a group.
-    GroupId
+    /// Identifies a ticket or a sub-ticket.
+    TicketId
 );
 uuid_id!(
-    /// Identifies a folder inside a group.
-    FolderId
+    /// Identifies a note.
+    NoteId
 );
 uuid_id!(
-    /// Identifies a tab.
+    /// Identifies a status.
+    StatusId
+);
+uuid_id!(
+    /// Identifies a link (a saved tab) of a ticket or a note.
     TabId
 );
 uuid_id!(
@@ -72,15 +76,15 @@ mod tests {
 
     #[test]
     fn new_ids_are_unique() {
-        assert_ne!(GroupId::new(), GroupId::new());
+        assert_ne!(TicketId::new(), TicketId::new());
     }
 
     #[test]
     fn id_parses_from_its_display_form() {
-        let id = GroupId::new();
+        let id = TicketId::new();
 
-        assert_eq!(id.to_string().parse::<GroupId>(), Ok(id));
-        assert!("not-a-uuid".parse::<GroupId>().is_err());
+        assert_eq!(id.to_string().parse::<TicketId>(), Ok(id));
+        assert!("not-a-uuid".parse::<TicketId>().is_err());
     }
 
     #[test]

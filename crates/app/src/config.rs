@@ -34,6 +34,10 @@ pub struct AppConfig {
     /// between machines, so these choices stay out of the data file.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub profiles: BTreeMap<ProfileId, ProfileBinding>,
+    /// A data file from before tickets that was set aside at startup and not
+    /// imported yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legacy_backup: Option<PathBuf>,
 }
 
 /// The data file inside `folder`.

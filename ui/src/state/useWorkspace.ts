@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, asAppError } from '../api/client';
-import type { AppError, Command, DataFileInfo, Opened, Relocate, Snapshot, Target } from '../api/types';
+import type { AppError, Command, DataFileInfo, ImportPreview, Opened, Relocate, Role, Snapshot } from '../api/types';
 
 /** Errors a form shows next to its own fields instead of in the banner. */
 const INLINE_CODES: ReadonlySet<AppError['code']> = new Set(['invalidUrl', 'invalid', 'cloudFolder']);
@@ -17,15 +17,19 @@ export interface WorkspaceState {
   reload: () => Promise<void>;
   keepMine: () => Promise<void>;
   dismissError: () => void;
-  /** Opens a tab; `browserName` is for the "already open" notice. */
-  openTab: (tab: string, browserName: string) => Promise<void>;
-  /** Opens the ticket of an item with its profile's ticket URL. */
-  openTicket: (target: Target) => Promise<void>;
+  /** Opens a link; `browserName` is for the "already open" notice. */
+  openLink: (link: string, browserName: string) => Promise<void>;
+  /** Opens a ticket's own address. */
+  openTicket: (ticket: string, browserName: string) => Promise<void>;
+  /** Opens a ticket's address, links and sub-tickets. */
+  openTicketAll: (ticket: string) => Promise<void>;
+  openNote: (note: string) => Promise<void>;
   /** Opens an address, such as a link in a note, in a profile's browser. */
   openUrl: (profile: string, url: string) => Promise<void>;
-  openFolder: (folder: string) => Promise<void>;
-  openGroup: (group: string) => Promise<void>;
-  openProfile: (profile: string) => Promise<void>;
+  /** What importing an old file would give; `null` path: the one set aside. */
+  previewImport: (path: string | null, roles: Record<string, Role>) => Promise<ImportPreview | AppError>;
+  importLegacy: (path: string | null, roles: Record<string, Role>) => Promise<AppError | null>;
+  dismissImport: () => Promise<void>;
   /** First run. Resolves to the error, if any, so the dialog can show it. */
   chooseDataFile: (folder: string | null) => Promise<AppError | null>;
   /** What a folder holds, or `null` when it cannot be read (error shown). */
@@ -96,16 +100,28 @@ export function useWorkspace(): WorkspaceState {
     reload: async () => void (await run(api.reload)),
     keepMine: async () => void (await run(api.forceSave)),
     dismissError: () => setError(null),
-    openTab: (tab, browserName) =>
+    openLink: (link, browserName) =>
       attempt(async () => {
-        const opened: Opened = await api.openTab(tab);
+        const opened: Opened = await api.openLink(link);
         if (opened === 'focusedExisting') show(`Already open in ${browserName}`);
       }),
-    openTicket: (target) => attempt(async () => void (await api.openTicket(target))),
+    openTicket: (ticket, browserName) =>
+      attempt(async () => {
+        const opened: Opened = await api.openTicket(ticket);
+        if (opened === 'focusedExisting') show(`Already open in ${browserName}`);
+      }),
+    openTicketAll: (ticket) => attempt(async () => void (await api.openTicketAll(ticket))),
+    openNote: (note) => attempt(async () => void (await api.openNote(note))),
     openUrl: (profile, url) => attempt(async () => void (await api.openUrl(profile, url))),
-    openFolder: (folder) => attempt(async () => void (await api.openFolder(folder))),
-    openGroup: (group) => attempt(async () => void (await api.openGroup(group))),
-    openProfile: (profile) => attempt(async () => void (await api.openProfile(profile))),
+    previewImport: async (path, roles) => {
+      try {
+        return await api.previewImport(path, roles);
+      } catch (raw) {
+        return asAppError(raw);
+      }
+    },
+    importLegacy: (path, roles) => run(() => api.importLegacy(path, roles), true),
+    dismissImport: async () => void (await run(api.dismissImport)),
     chooseDataFile: (folder) => run(() => api.chooseDataFile(folder), true),
     inspectDataFolder: async (folder) => {
       try {

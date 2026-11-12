@@ -1,11 +1,13 @@
 import {
+  CircleDot,
+  CornerLeftUp,
   ExternalLink,
   FolderInput,
-  FolderPlus,
   Globe,
-  Layers,
   Link,
+  ListTree,
   NotebookPen,
+  NotebookText,
   Palette,
   Pencil,
   Pin,
@@ -16,147 +18,159 @@ import {
   Trash2,
 } from 'lucide-react';
 
-import type { Command, Workspace } from '../api/types';
+import type { Command, Ticket as TicketData, Workspace } from '../api/types';
 import type { MenuEntry } from '../components/ActionMenu';
-import { type DragItem, moveDestinations } from './dnd';
+import type { ItemActions } from '../state/selection';
+import { findNote, findTicket, pinnedIndex } from './workspace';
 
-export type NewKind = 'group' | 'folder' | 'tab';
+/** What a row's menu can ask the row it belongs to. */
+export interface RowControls {
+  rename: () => void;
+  /** Opens the icon (or color) picker on the row's leading button. */
+  openLeading: () => void;
+}
 
-/** What a menu needs to act; each view supplies its own. */
-export interface MenuHandlers {
+interface Context {
   workspace: Workspace;
-  onNew: (kind: NewKind) => void;
-  onOpen: () => void;
-  onRename: () => void;
-  onIcon: () => void;
-  /** Edit the name, ticket id and note; groups, folders and tabs only. */
-  onDetails?: () => void;
-  /** Pick a color; profiles, groups and folders only. */
-  onColor?: () => void;
-  /** Open the item's ticket; only when it has one and its profile a ticket URL. */
-  onTicket?: () => void;
-  /** Pin to or unpin from the top of the sidebar; groups, folders and tabs only. */
-  pin?: { pinned: boolean; onToggle: () => void };
-  onMove: (command: Command) => void;
-  onDelete: () => void;
+  actions: ItemActions;
+  apply: (command: Command) => void;
 }
 
-function moves(item: DragItem, handlers: MenuHandlers): MenuEntry {
-  return {
-    label: 'Move to…',
-    icon: FolderInput,
-    items: moveDestinations(item, handlers.workspace).map((move) => ({
-      label: move.label,
-      onSelect: () => handlers.onMove(move.command),
-    })),
-  };
-}
-
-const rename = (handlers: MenuHandlers): MenuEntry => ({
-  label: 'Rename',
-  icon: Pencil,
-  keepsFocus: true,
-  onSelect: handlers.onRename,
-});
-
-const icon = (handlers: MenuHandlers, separated = false): MenuEntry => ({
-  label: 'Change icon…',
-  icon: Smile,
-  separated,
-  onSelect: handlers.onIcon,
-});
-
-const color = (handlers: MenuHandlers): MenuEntry[] =>
-  handlers.onColor ? [{ label: 'Change color…', icon: Palette, onSelect: handlers.onColor }] : [];
-
-const pin = (handlers: MenuHandlers): MenuEntry[] =>
-  handlers.pin
-    ? [
-        {
-          label: handlers.pin.pinned ? 'Unpin' : 'Pin to top',
-          icon: handlers.pin.pinned ? PinOff : Pin,
-          onSelect: handlers.pin.onToggle,
-        },
-      ]
-    : [];
-
-const ticket = (handlers: MenuHandlers): MenuEntry[] =>
-  handlers.onTicket ? [{ label: 'Open ticket', icon: Ticket, onSelect: handlers.onTicket }] : [];
-
-const details = (handlers: MenuHandlers): MenuEntry[] =>
-  handlers.onDetails ? [{ label: 'Edit note', icon: NotebookPen, onSelect: handlers.onDetails }] : [];
-
-const remove = (handlers: MenuHandlers, label = 'Delete…'): MenuEntry => ({
+const icon = (row: RowControls): MenuEntry => ({ label: 'Change icon…', icon: Smile, separated: true, onSelect: row.openLeading });
+const rename = (row: RowControls): MenuEntry => ({ label: 'Rename', icon: Pencil, keepsFocus: true, onSelect: row.rename });
+const remove = (onSelect: () => void, label = 'Delete…'): MenuEntry => ({
   label,
   icon: Trash2,
   danger: true,
   separated: true,
-  onSelect: handlers.onDelete,
+  onSelect,
 });
 
+function pin(context: Context, target: Parameters<ItemActions['togglePin']>[0]): MenuEntry {
+  const pinned = pinnedIndex(context.workspace, target) !== -1;
+  return { label: pinned ? 'Unpin' : 'Pin to top', icon: pinned ? PinOff : Pin, onSelect: () => context.actions.togglePin(target) };
+}
+
+function moveToProfile(context: Context, from: string, move: (profile: string) => Command): MenuEntry {
+  return {
+    label: 'Move to profile',
+    icon: FolderInput,
+    items: context.workspace.profiles
+      .filter((profile) => profile.id !== from)
+      .map((profile) => ({ label: profile.name, onSelect: () => context.apply(move(profile.id)) })),
+  };
+}
+
+export function ticketMenu(id: string, row: RowControls, context: Context): MenuEntry[] {
+  const found = findTicket(context.workspace, id);
+  if (!found) return [];
+  const { profile, parent, ticket } = found;
+  const { actions, apply, workspace } = context;
+  const current = ticket.status ?? null;
+  const entries: MenuEntry[] = [];
+  if (ticket.url) entries.push({ label: 'Open', icon: ExternalLink, onSelect: () => actions.openTicket(id) });
+  entries.push(
+    { label: 'Open all', icon: ExternalLink, onSelect: () => actions.openTicketAll(id) },
+    pin(context, { ticket: id }),
+    {
+      label: 'Status',
+      icon: CircleDot,
+      separated: true,
+      items: [
+        ...workspace.statuses.map((status) => ({
+          label: `${status.id === current ? '✓ ' : ''}${status.name}`,
+          onSelect: () => apply({ type: 'setTicketStatus', ticket: id, status: status.id }),
+        })),
+        { label: `${current === null ? '✓ ' : ''}No status`, onSelect: () => apply({ type: 'setTicketStatus', ticket: id, status: null }) },
+        { label: 'Edit statuses…', onSelect: actions.editStatuses },
+      ],
+    },
+  );
+  if (parent) {
+    entries.push({
+      label: `Move out of “${parent.title}”`,
+      icon: CornerLeftUp,
+      onSelect: () =>
+        apply({
+          type: 'moveTicket',
+          ticket: id,
+          place: { profile: profile.id },
+          index: profile.tickets.findIndex((candidate) => candidate.id === parent.id) + 1,
+        }),
+    });
+  } else if (!(ticket.children?.length ?? 0)) {
+    entries.push({
+      label: 'Make sub-ticket of',
+      icon: ListTree,
+      items: profile.tickets
+        .filter((candidate: TicketData) => candidate.id !== id)
+        .map((candidate) => ({
+          label: candidate.key ? `${candidate.key} ${candidate.title}` : candidate.title,
+          onSelect: () =>
+            apply({ type: 'moveTicket', ticket: id, place: { ticket: candidate.id }, index: candidate.children?.length ?? 0 }),
+        })),
+    });
+  }
+  if (!parent) {
+    entries.push(moveToProfile(context, profile.id, (to) => ({ type: 'moveTicket', ticket: id, place: { profile: to }, index: Number.MAX_SAFE_INTEGER })));
+  }
+  entries.push(
+    { label: 'Add link…', icon: Link, onSelect: () => actions.addLink({ ticket: id }) },
+    icon(row),
+    rename(row),
+    { label: 'Edit note', icon: NotebookPen, onSelect: () => actions.editText({ ticket: id }) },
+    remove(() => actions.requestDelete({ ticket: id })),
+  );
+  return entries;
+}
+
+export function noteMenu(id: string, row: RowControls, context: Context): MenuEntry[] {
+  const found = findNote(context.workspace, id);
+  if (!found) return [];
+  const { actions } = context;
+  return [
+    { label: 'Open all links', icon: ExternalLink, onSelect: () => actions.openNote(id) },
+    pin(context, { note: id }),
+    { label: 'Add link…', icon: Link, separated: true, onSelect: () => actions.addLink({ note: id }) },
+    icon(row),
+    rename(row),
+    { label: 'Edit note', icon: NotebookPen, onSelect: () => actions.editText({ note: id }) },
+    moveToProfile(context, found.profile.id, (to) => ({ type: 'moveNote', note: id, profile: to, index: Number.MAX_SAFE_INTEGER })),
+    remove(() => actions.requestDelete({ note: id })),
+  ];
+}
+
+export function linkMenu(id: string, row: RowControls, context: Context): MenuEntry[] {
+  const { actions } = context;
+  return [
+    { label: 'Open', icon: ExternalLink, onSelect: () => actions.openLink(id) },
+    pin(context, { link: id }),
+    icon(row),
+    rename(row),
+    remove(() => actions.requestDelete({ link: id }), 'Delete'),
+  ];
+}
+
 export function profileMenu(
-  handlers: MenuHandlers & {
-    onColor: () => void;
-    onConfigure: () => void;
+  id: string,
+  row: RowControls,
+  context: Context & {
+    onNewTicket: () => void;
+    onNewNote: () => void;
     canDelete: boolean;
-    /** Whether the sidebar shows URLs under tabs, and how to flip it. */
+    /** Whether the sidebar shows addresses under links, and how to flip it. */
     showsUrls: boolean;
     onToggleUrls: () => void;
   },
 ): MenuEntry[] {
+  const { actions } = context;
   return [
-    { label: 'New group', icon: Layers, keepsFocus: true, onSelect: () => handlers.onNew('group') },
-    { label: 'New folder', icon: FolderPlus, keepsFocus: true, onSelect: () => handlers.onNew('folder') },
-    { label: 'New tab…', icon: Globe, onSelect: () => handlers.onNew('tab') },
-    { label: 'Open all', icon: ExternalLink, separated: true, onSelect: handlers.onOpen },
-    rename(handlers),
-    { label: 'Change color…', icon: Palette, onSelect: handlers.onColor },
-    { label: 'Choose browser…', icon: Settings, onSelect: handlers.onConfigure },
-    { label: handlers.showsUrls ? 'Hide URLs' : 'Show URLs', icon: Link, onSelect: handlers.onToggleUrls },
-    ...(handlers.canDelete ? [remove(handlers)] : []),
-  ];
-}
-
-export function groupMenu(group: string, handlers: MenuHandlers): MenuEntry[] {
-  return [
-    { label: 'New folder', icon: FolderPlus, keepsFocus: true, onSelect: () => handlers.onNew('folder') },
-    { label: 'New tab…', icon: Globe, onSelect: () => handlers.onNew('tab') },
-    { label: 'Open all', icon: ExternalLink, separated: true, onSelect: handlers.onOpen },
-    ...pin(handlers),
-    ...ticket(handlers),
-    icon(handlers),
-    ...color(handlers),
-    rename(handlers),
-    ...details(handlers),
-    moves({ kind: 'group', group }, handlers),
-    remove(handlers),
-  ];
-}
-
-export function folderMenu(folder: string, handlers: MenuHandlers): MenuEntry[] {
-  return [
-    { label: 'New tab…', icon: Globe, onSelect: () => handlers.onNew('tab') },
-    { label: 'Open all', icon: ExternalLink, separated: true, onSelect: handlers.onOpen },
-    ...pin(handlers),
-    ...ticket(handlers),
-    icon(handlers),
-    ...color(handlers),
-    rename(handlers),
-    ...details(handlers),
-    moves({ kind: 'folder', folder }, handlers),
-    remove(handlers),
-  ];
-}
-
-export function tabMenu(tab: string, handlers: MenuHandlers): MenuEntry[] {
-  return [
-    { label: 'Open', icon: ExternalLink, onSelect: handlers.onOpen },
-    ...pin(handlers),
-    ...ticket(handlers),
-    icon(handlers, true),
-    rename(handlers),
-    ...details(handlers),
-    moves({ kind: 'tab', tab }, handlers),
-    remove(handlers, 'Delete'),
+    { label: 'New ticket', icon: Ticket, keepsFocus: true, onSelect: context.onNewTicket },
+    { label: 'New note', icon: NotebookText, keepsFocus: true, onSelect: context.onNewNote },
+    rename(row),
+    { label: 'Change color…', icon: Palette, separated: true, onSelect: row.openLeading },
+    { label: 'Choose browser…', icon: Settings, onSelect: () => actions.configureProfile(id) },
+    { label: context.showsUrls ? 'Hide addresses' : 'Show addresses', icon: Globe, onSelect: context.onToggleUrls },
+    ...(context.canDelete ? [remove(() => actions.requestDelete({ profile: id }))] : []),
   ];
 }

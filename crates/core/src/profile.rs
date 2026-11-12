@@ -1,13 +1,13 @@
 //! Tabstage profiles: named contexts such as "Work" or "Personal".
 //!
-//! A profile holds groups, folders and tabs. Which browser it opens in is
-//! decided on each machine, so it is not part of this synced model.
+//! A profile holds tickets and notes. Which browser it opens in is decided
+//! on each machine, so it is not part of this synced model.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::ids::ProfileId;
-use crate::workspace::Item;
+use crate::workspace::{Note, Ticket};
 
 /// Name of the profile a new or migrated workspace starts with.
 pub const DEFAULT_PROFILE_NAME: &str = "Default";
@@ -76,7 +76,7 @@ impl From<ProfileColor> for u8 {
     }
 }
 
-/// A named context such as "Work" that holds groups, folders and tabs.
+/// A named context such as "Work" that holds tickets and notes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
     /// Stable id.
@@ -85,12 +85,12 @@ pub struct Profile {
     pub name: String,
     /// Color of its dot in the UI.
     pub color: ProfileColor,
-    /// Address its ticket ids link to, with a `{ticket}` placeholder.
-    #[serde(default, rename = "ticketUrl", skip_serializing_if = "Option::is_none")]
-    pub ticket_url: Option<String>,
-    /// Groups, folders and tabs in display order.
+    /// Tickets in display order (within each status lane too).
     #[serde(default)]
-    pub items: Vec<Item>,
+    pub tickets: Vec<Ticket>,
+    /// Notes in display order.
+    #[serde(default)]
+    pub notes: Vec<Note>,
 }
 
 #[cfg(test)]

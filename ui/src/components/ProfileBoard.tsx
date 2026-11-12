@@ -1,19 +1,19 @@
-import { ExternalLink, FolderPlus, Globe, Layers } from 'lucide-react';
-import { useState } from 'react';
+import { Link as LinkIcon, ListTree, NotebookText, Plus, Ticket as TicketIcon } from 'lucide-react';
+import { type CSSProperties, useState } from 'react';
 
-import type { AppError, Command, Group, Node, Place, Profile, Snapshot } from '../api/types';
+import type { AppError, Command, Profile, Snapshot, Ticket } from '../api/types';
 import { profileOpensIn } from '../lib/browsers';
-import { countTabs } from '../lib/workspace';
-import type { ItemActions, Selection } from '../state/selection';
 import { pressable } from '../lib/pressable';
+import { profileColor } from '../lib/profileColors';
+import { type Lane, countLinks, findStatus, lanes } from '../lib/workspace';
+import type { ItemActions, Selection } from '../state/selection';
 import { useClickOrDoubleClick } from '../state/useClickOrDoubleClick';
 import { useDrag, useDrop } from './DragDrop';
 import { InlineInput } from './InlineInput';
 import { ItemIcon } from './ItemIcon';
 import { ProfileDot } from './ProfileDot';
 import { SetupNote } from './SetupNote';
-import { TabUrl } from './TabUrl';
-
+import { StatusPill } from './StatusPill';
 
 interface Props {
   snapshot: Snapshot;
@@ -24,16 +24,16 @@ interface Props {
 }
 
 /**
- * A profile as a board: one column per group, plus one for what sits
- * directly in the profile. Dragging a card to a column moves it there, so
- * groups can work as statuses ("In progress", "In TEST", "Done").
+ * A profile as a board: one column per status, in workflow order, plus "No
+ * status". Dragging a card to another column changes its status. The notes
+ * sit below.
  */
-export function ProfileBoard({ snapshot, profile, apply, actions, onSelect }: Props) {
-  const [adding, setAdding] = useState<'group' | 'folder' | null>(null);
-  const loose = profile.items.filter((item): item is Node => item.type !== 'group');
-  const groups = profile.items.filter((item): item is { type: 'group' } & Group => item.type === 'group');
-  const place: Place = { profile: profile.id };
-  const tabCount = countTabs(profile);
+export function ProfileBoard({ snapshot, profile, actions, onSelect }: Props) {
+  const [addingIn, setAddingIn] = useState<string | null | undefined>(undefined);
+  const [addingNote, setAddingNote] = useState(false);
+  const { workspace } = snapshot;
+  const columns = lanes(workspace, profile);
+  const count = profile.tickets.reduce((total, ticket) => total + 1 + (ticket.children?.length ?? 0), 0);
 
   return (
     <main className="board-view" aria-labelledby="view-title">
@@ -43,159 +43,182 @@ export function ProfileBoard({ snapshot, profile, apply, actions, onSelect }: Pr
           {profile.name}
         </h1>
         <span className="group__meta">
-          {tabCount} {tabCount === 1 ? 'tab' : 'tabs'} · opens in {profileOpensIn(snapshot, profile.id)}
+          {count} {count === 1 ? 'ticket' : 'tickets'} · opens in {profileOpensIn(snapshot, profile.id)}
         </span>
         <div className="group__actions">
-          <button type="button" className="button" onClick={() => setAdding('group')}>
-            <Layers className="icon" aria-hidden="true" />
-            New group
+          <button type="button" className="button" onClick={() => setAddingIn(null)}>
+            <TicketIcon className="icon" aria-hidden="true" />
+            New ticket
           </button>
-          <button type="button" className="button" onClick={() => setAdding('folder')}>
-            <FolderPlus className="icon" aria-hidden="true" />
-            New folder
-          </button>
-          <button type="button" className="button" onClick={() => actions.newTab(place)}>
-            <Globe className="icon" aria-hidden="true" />
-            New tab
-          </button>
-          <button type="button" className="button" onClick={() => actions.open({ profile: profile.id })}>
-            <ExternalLink className="icon" aria-hidden="true" />
-            Open all
+          <button type="button" className="button" onClick={() => setAddingNote(true)}>
+            <NotebookText className="icon" aria-hidden="true" />
+            New note
           </button>
         </div>
       </header>
 
       <SetupNote snapshot={snapshot} profile={profile} onConfigure={() => actions.configureProfile(profile.id)} />
 
-      {adding && (
-        <InlineInput
-          label={adding === 'group' ? 'Group name' : 'Folder name'}
-          placeholder={adding === 'group' ? 'In TEST, Done…' : 'Sprint, Docs…'}
-          onCancel={() => setAdding(null)}
-          onSubmit={async (name) => {
-            const command: Command =
-              adding === 'group'
-                ? { type: 'addGroup', profile: profile.id, name }
-                : { type: 'addFolder', place, name };
-            const failure = await apply(command);
-            if (!failure) setAdding(null);
-            return !failure;
-          }}
-        />
+      {workspace.statuses.length === 0 && (
+        <p className="board__hint">
+          Statuses such as “In review” or “Done” sort tickets into columns.{' '}
+          <button type="button" className="link-button" onClick={actions.editStatuses}>
+            Add statuses
+          </button>
+        </p>
       )}
 
-      <div className="board" role="list" aria-label={`Board of ${profile.name}`}>
-        <Column
-          title={`Loose in ${profile.name}`}
-          place={place}
-          nodes={loose}
-          actions={actions}
-          onSelect={onSelect}
-        />
-        {groups.map((group) => (
-          <Column key={group.id} group={group} title={group.name} place={{ group: group.id }} nodes={group.children} actions={actions} onSelect={onSelect} />
+      <div className="board" role="list" aria-label="Status board">
+        {columns.map((lane) => (
+          <Column
+            key={lane.status?.id ?? 'none'}
+            profile={profile}
+            lane={lane}
+            adding={addingIn === (lane.status?.id ?? null)}
+            onAdd={() => setAddingIn(lane.status?.id ?? null)}
+            onStopAdding={() => setAddingIn(undefined)}
+            actions={actions}
+            onSelect={onSelect}
+            snapshot={snapshot}
+          />
         ))}
       </div>
+
+      <section className="board-notes" aria-label="Notes">
+        <h2 className="settings__heading">Notes</h2>
+        {addingNote && (
+          <InlineInput
+            label="Note title"
+            placeholder="Standup notes"
+            onCancel={() => setAddingNote(false)}
+            onSubmit={async (title) => {
+              const saved = await actions.newNote(profile.id, title);
+              if (saved) setAddingNote(false);
+              return saved;
+            }}
+          />
+        )}
+        {profile.notes.length === 0 && !addingNote ? (
+          <p className="column__empty">Notes hold what is not a ticket: standups, plans, loose links.</p>
+        ) : (
+          <div className="note-cards">
+            {profile.notes.map((note) => (
+              <div
+                key={note.id}
+                {...pressable(() => onSelect({ kind: 'note', id: note.id }))}
+                className="card"
+                onClick={() => onSelect({ kind: 'note', id: note.id })}
+              >
+                <ItemIcon icon={note.icon} kind="note" />
+                <span className="card__title">{note.title}</span>
+                {(note.links?.length ?? 0) > 0 && <span className="row__count">{note.links?.length}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </main>
   );
 }
 
 interface ColumnProps {
-  title: string;
-  group?: Group;
-  place: Place;
-  nodes: Node[];
+  snapshot: Snapshot;
+  profile: Profile;
+  lane: Lane;
+  adding: boolean;
+  onAdd: () => void;
+  onStopAdding: () => void;
   actions: ItemActions;
   onSelect: (selection: Selection) => void;
 }
 
-function Column({ title, group, place, nodes, actions, onSelect }: ColumnProps) {
-  const drop = useDrop((item) => (item.kind === 'tab' || item.kind === 'folder' ? { kind: 'end', place } : null));
-  const count = nodes.reduce((total, node) => total + countTabs(node), 0);
+function Column({ snapshot, profile, lane, adding, onAdd, onStopAdding, actions, onSelect }: ColumnProps) {
+  const status = lane.status?.id ?? null;
+  const drop = useDrop({ kind: 'lane', profile: profile.id, status });
+  const name = lane.status?.name ?? 'No status';
+  const style = lane.status ? ({ '--lane': profileColor(lane.status.color) } as CSSProperties) : undefined;
   return (
-    <section className="column" role="listitem" aria-label={title} data-loose={!group || undefined} {...drop}>
-      {group ? (
-        <GroupHeader group={group} count={count} onSelect={onSelect} />
-      ) : (
-        <header className="column__header">
-          <span className="column__title column__title--muted">
-            <span className="column__name">{title}</span>
-          </span>
-          <span className="row__count">{count}</span>
-        </header>
+    <section className="column" role="listitem" aria-label={name} data-lane={lane.status ? true : undefined} style={style} {...drop}>
+      <header className="column__header">
+        <StatusPill name={name} color={lane.status?.color} />
+        <span className="row__count">{lane.tickets.length}</span>
+        <button type="button" className="icon-button column__add" aria-label={`New ticket in ${name}`} onClick={onAdd}>
+          <Plus className="icon" aria-hidden="true" />
+        </button>
+      </header>
+      {adding && (
+        <InlineInput
+          label="Ticket title"
+          placeholder="CAR-6210 Decouple compliance status"
+          onCancel={onStopAdding}
+          onSubmit={async (title) => {
+            const saved = await actions.newTicket({ profile: profile.id }, title, status);
+            if (saved) onStopAdding();
+            return saved;
+          }}
+        />
       )}
       <ul className="column__cards">
-        {nodes.map((node) => (
-          <li key={node.id}>
-            <Card node={node} actions={actions} onSelect={onSelect} />
+        {lane.tickets.map((ticket) => (
+          <li key={ticket.id}>
+            <Card snapshot={snapshot} profile={profile} lane={lane} ticket={ticket} actions={actions} onSelect={onSelect} />
           </li>
         ))}
       </ul>
-      {nodes.length === 0 && <p className="column__empty">Drop tabs or folders here</p>}
+      {lane.tickets.length === 0 && !adding && <p className="column__empty">Drop tickets here</p>}
     </section>
   );
 }
 
-/** A column's group: click to open it as a list, drag to reorder columns. */
-function GroupHeader({ group, count, onSelect }: { group: Group; count: number; onSelect: (selection: Selection) => void }) {
-  const drag = useDrag({ kind: 'group', group: group.id });
-  const drop = useDrop((item) => (item.kind === 'group' ? { kind: 'before', node: group.id } : null));
-  return (
-    <header className="column__header" {...drag} {...drop}>
-      <div
-        {...pressable(() => onSelect({ kind: 'group', id: group.id }))}
-        className="column__title"
-        onClick={() => onSelect({ kind: 'group', id: group.id })}
-      >
-        <ItemIcon icon={group.icon} kind="group" />
-        <span className="column__name">{group.name}</span>
-      </div>
-      <span className="row__count">{count}</span>
-    </header>
-  );
+interface CardProps {
+  snapshot: Snapshot;
+  profile: Profile;
+  lane: Lane;
+  ticket: Ticket;
+  actions: ItemActions;
+  onSelect: (selection: Selection) => void;
 }
 
-function Card({ node, actions, onSelect }: { node: Node; actions: ItemActions; onSelect: (selection: Selection) => void }) {
-  const drag = useDrag(node.type === 'tab' ? { kind: 'tab', tab: node.id } : { kind: 'folder', folder: node.id });
-  const drop = useDrop((item) =>
-    node.type === 'folder' && item.kind === 'tab'
-      ? { kind: 'into', place: { folder: node.id } }
-      : { kind: 'before', node: node.id },
-  );
+function Card({ snapshot, profile, lane, ticket, actions, onSelect }: CardProps) {
+  const drag = useDrag({ kind: 'ticket', ticket: ticket.id });
+  const drop = useDrop({ kind: 'lane', profile: profile.id, status: lane.status?.id ?? null, before: ticket.id });
   const clicks = useClickOrDoubleClick(
-    () => onSelect({ kind: 'tab', id: node.id }),
-    () => actions.open({ tab: node.id }),
+    () => onSelect({ kind: 'ticket', id: ticket.id }),
+    () => (ticket.url ? actions.openTicket(ticket.id) : onSelect({ kind: 'ticket', id: ticket.id })),
   );
-  if (node.type === 'folder') {
-    return (
-      <div
-        {...pressable(() => onSelect({ kind: 'folder', id: node.id }))}
-        className="card"
-        title={`Show ${node.name}`}
-        onClick={() => onSelect({ kind: 'folder', id: node.id })}
-        {...drag}
-        {...drop}
-      >
-        <ItemIcon icon={node.icon} kind="folder" />
-        <span className="card__title">{node.name}</span>
-        <span className="row__count">{node.tabs.length}</span>
-      </div>
-    );
-  }
+  const children = ticket.children ?? [];
+  const done = children.filter((child) => findStatus(snapshot.workspace, child.status)?.id === lane.status?.id).length;
+  const links = countLinks(ticket);
   return (
     <div
-      {...pressable(() => onSelect({ kind: 'tab', id: node.id }))}
-      className="card"
-      title={`${node.url}\nDouble-click to open`}
+      {...pressable(() => onSelect({ kind: 'ticket', id: ticket.id }))}
+      className="card ticket-card"
+      title={ticket.url ? `${ticket.title}\nDouble-click to open` : ticket.title}
       {...clicks}
       {...drag}
       {...drop}
     >
-      <ItemIcon icon={node.icon} kind="tab" />
-      <span className="card__title">
-        {node.title}
-        <TabUrl url={node.url} />
+      <span className="ticket-card__top">
+        <ItemIcon icon={ticket.icon} kind="ticket" />
+        {ticket.key && <span className="ticket">{ticket.key}</span>}
       </span>
+      <span className="card__title">{ticket.title}</span>
+      {(children.length > 0 || links > 0) && (
+        <span className="ticket-card__meta">
+          {children.length > 0 && (
+            <span title={`${children.length} sub-tickets, ${done} in this status`}>
+              <ListTree className="icon" aria-hidden="true" />
+              {done}/{children.length}
+            </span>
+          )}
+          {links > 0 && (
+            <span title={`${links} links`}>
+              <LinkIcon className="icon" aria-hidden="true" />
+              {links}
+            </span>
+          )}
+        </span>
+      )}
     </div>
   );
 }

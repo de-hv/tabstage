@@ -1,79 +1,43 @@
 import { emit } from '@tauri-apps/api/event';
-import { act, screen } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { SPRINT, renderApp } from './test/render';
+import { WIKI_LINK, renderApp } from './test/render';
 
-const CACHE_TAB = '00000000-0000-0000-0000-000000000b02';
-
-async function openWithEvent() {
+async function openPalette() {
   const rendered = await renderApp();
   await act(async () => {
     await emit('open-palette');
   });
-  return { ...rendered, input: await screen.findByRole('combobox', { name: 'Search tabs' }) };
+  return { ...rendered, input: await screen.findByRole('combobox', { name: 'Search' }) };
 }
 
 describe('quick search', () => {
-  it('opens from the global shortcut event with the search focused', async () => {
-    const { input } = await openWithEvent();
-
+  it('opens from the global shortcut event and with Ctrl+K', async () => {
+    const { input, user } = await openPalette();
     expect(document.activeElement).toBe(input);
-  });
-
-  it('opens with Ctrl+K inside the window', async () => {
-    const { user } = await renderApp();
-
-    await user.keyboard('{Control>}k{/Control}');
-
-    expect(await screen.findByRole('combobox', { name: 'Search tabs' })).toBeTruthy();
-  });
-
-  it('finds tabs from every group and opens the chosen one', async () => {
-    const { calls, input, user } = await openWithEvent();
-
-    await user.type(input, 'cache');
-    expect(screen.getByRole('option', { name: /PROJ-1190 · Cache de sesiones/ })).toBeTruthy();
-    expect(screen.getByRole('option', { name: /HTTP caching · MDN/ })).toBeTruthy();
-    await user.click(screen.getByRole('option', { name: /PROJ-1190/ }));
-
-    expect(calls).toContainEqual({ cmd: 'open_tab', args: { tab: CACHE_TAB } });
-    expect(screen.queryByRole('combobox', { name: 'Search tabs' })).toBeNull();
-  });
-
-  it('shows the group and the browser each result opens in', async () => {
-    const { input, user } = await openWithEvent();
-
-    await user.type(input, 'MDN');
-
-    const option = screen.getByRole('option', { name: /HTTP caching/ });
-    expect(option.textContent).toContain('Personal');
-    expect(option.textContent).toContain('Investigación');
-    expect(option.textContent).toContain('Firefox');
-  });
-
-  it('shows the readable URL of each result', async () => {
-    const { input, user } = await openWithEvent();
-
-    await user.type(input, 'Grafana');
-
-    expect(screen.getByRole('option', { name: /Grafana/ }).textContent).toContain('grafana.example.com/d/api');
-  });
-
-  it('opens a whole folder', async () => {
-    const { calls, input, user } = await openWithEvent();
-
-    await user.type(input, 'Sprint');
-    await user.click(screen.getByRole('option', { name: /Folder Sprint 42/ }));
-
-    expect(calls).toContainEqual({ cmd: 'open_folder', args: { folder: SPRINT } });
-  });
-
-  it('closes with Escape', async () => {
-    const { user } = await openWithEvent();
-
     await user.keyboard('{Escape}');
+    await user.keyboard('{Control>}k{/Control}');
+    expect(await screen.findByRole('combobox', { name: 'Search' })).toBeTruthy();
+  });
 
-    expect(screen.queryByRole('combobox', { name: 'Search tabs' })).toBeNull();
+  it('finds a ticket by key and shows it, with its status', async () => {
+    const { input, user } = await openPalette();
+
+    await user.type(input, 'CAR-6163');
+    const option = await screen.findByRole('option', { name: /Remove map/ });
+    expect(within(option).getByText('In review')).toBeTruthy();
+    await user.click(option);
+
+    expect(await screen.findByRole('main', { name: 'Remove map' })).toBeTruthy();
+  });
+
+  it('finds notes and opens links', async () => {
+    const { calls, input, user } = await openPalette();
+
+    await user.type(input, 'client wiki');
+    await user.click(await screen.findByRole('option', { name: /Client wiki/ }));
+
+    expect(calls).toContainEqual({ cmd: 'open_link', args: { link: WIKI_LINK } });
   });
 });

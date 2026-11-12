@@ -5,7 +5,6 @@ use std::cell::RefCell;
 use std::fs;
 
 use tabstage_browsers::{BrowserKind, Focus, Launch};
-use tabstage_core::DEFAULT_PROFILE_NAME;
 
 use super::*;
 use crate::config::{AppConfig, load_config, save_config};
@@ -134,66 +133,84 @@ fn add_profile(service: &mut AppService<FakeSystem>, name: &str) -> ProfileId {
         .id
 }
 
-fn add_group_in(service: &mut AppService<FakeSystem>, profile: ProfileId, name: &str) -> GroupId {
-    let snapshot = service
-        .apply(Command::AddGroup {
-            profile,
-            name: name.to_owned(),
-        })
-        .expect("add group");
-    snapshot
+fn ticket_named(service: &AppService<FakeSystem>, title: &str) -> TicketId {
+    service
+        .document
         .workspace
-        .groups()
-        .find(|group| group.name == name)
-        .expect("group")
+        .profiles()
+        .iter()
+        .flat_map(|profile| &profile.tickets)
+        .flat_map(|ticket| std::iter::once(ticket).chain(&ticket.children))
+        .find(|ticket| ticket.title == title)
+        .expect("ticket")
         .id
 }
 
-fn add_group(service: &mut AppService<FakeSystem>, name: &str) -> GroupId {
-    let profile = first_profile(service);
-    add_group_in(service, profile, name)
+fn add_ticket_in(
+    service: &mut AppService<FakeSystem>,
+    place: TicketPlace,
+    title: &str,
+) -> TicketId {
+    service
+        .apply(Command::AddTicket {
+            id: None,
+            place,
+            title: title.to_owned(),
+            key: None,
+            status: None,
+        })
+        .expect("add ticket");
+    ticket_named(service, title)
 }
 
-fn add_folder(service: &mut AppService<FakeSystem>, place: Place, name: &str) -> FolderId {
-    let snapshot = service
-        .apply(Command::AddFolder {
-            place,
-            name: name.to_owned(),
+fn add_ticket(service: &mut AppService<FakeSystem>, title: &str) -> TicketId {
+    let profile = first_profile(service);
+    add_ticket_in(service, TicketPlace::Profile(profile), title)
+}
+
+fn add_link(service: &mut AppService<FakeSystem>, owner: LinkOwner, url: &str) -> TabId {
+    service
+        .apply(Command::AddLink {
+            owner,
+            url: url.to_owned(),
+            title: String::new(),
         })
-        .expect("add folder");
+        .expect("add link");
+    let workspace = &service.document.workspace;
+    workspace
+        .profiles()
+        .iter()
+        .flat_map(|profile| {
+            profile
+                .tickets
+                .iter()
+                .flat_map(|ticket| std::iter::once(ticket).chain(&ticket.children))
+                .flat_map(|ticket| &ticket.links)
+                .chain(profile.notes.iter().flat_map(|note| &note.links))
+        })
+        .find(|link| link.url.as_str() == url)
+        .expect("link")
+        .id
+}
+
+fn titles(snapshot: &Snapshot) -> Vec<String> {
     snapshot
         .workspace
         .profiles()
         .iter()
-        .flat_map(|profile| &profile.items)
-        .find_map(|item| match item {
-            Item::Folder(folder) if folder.name == name => Some(folder.id),
-            Item::Group(group) => group.children.iter().find_map(|node| match node {
-                Node::Folder(folder) if folder.name == name => Some(folder.id),
-                _ => None,
-            }),
-            _ => None,
-        })
-        .expect("folder")
+        .flat_map(|profile| &profile.tickets)
+        .map(|ticket| ticket.title.clone())
+        .collect()
 }
 
-fn add_tab(service: &mut AppService<FakeSystem>, place: Place, url: &str) -> TabId {
-    service
-        .apply(Command::AddTab {
-            place,
-            url: url.to_owned(),
-            title: String::new(),
-        })
-        .expect("add tab");
-    service
-        .document
+fn ticket_document(title: &str) -> Document {
+    let mut document = Document::default();
+    let profile = document.workspace.profiles()[0].id;
+    document
         .workspace
-        .tabs()
-        .iter()
-        .find(|found| found.tab.url.as_str() == url)
-        .expect("tab")
-        .tab
-        .id
+        .add_ticket(TicketPlace::Profile(profile), title, None)
+        .expect("ticket");
+    document
 }
 
 fn bind(service: &mut AppService<FakeSystem>, profile: ProfileId, browser: Option<&str>) {
@@ -246,52 +263,6 @@ fn choosing_the_default_location_writes_the_file_there() {
 }
 
 #[test]
-fn choosing_a_local_folder_remembers_it_and_loads_data_already_there() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(None));
-    let folder = tempfile::tempdir().expect("tempdir");
-    let path = config::data_file_in(folder.path());
-    let mut existing = Document::default();
-    let profile = existing.workspace.profiles()[0].id;
-    existing
-        .workspace
-        .add_group(profile, "Kept")
-        .expect("group");
-    fs::write(&path, tabstage_store::to_json(&existing)).expect("write");
-
-    let snapshot = service
-        .choose_data_file(Some(path.clone()))
-        .expect("choose");
-
-    assert!(!snapshot.needs_data_file);
-    assert_eq!(fixture.config().data_path, Some(path));
-    let names: Vec<_> = snapshot
-        .workspace
-        .groups()
-        .map(|g| g.name.as_str())
-        .collect();
-    assert_eq!(names, ["Kept"]);
-    assert!(!fixture.path().exists());
-}
-
-#[test]
-fn cloud_folders_are_refused_for_the_data_file() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(None));
-    let icloud = PathBuf::from(
-        "/Users/me/Library/Mobile Documents/com~apple~CloudDocs/Tabstage/workspace.json",
-    );
-
-    let chosen = service.choose_data_file(Some(icloud.clone()));
-    let moved = service.relocate(icloud, Relocate::ReplaceWithMine);
-
-    assert_eq!(chosen.map(drop).map_err(|e| e.code()), Err("cloudFolder"));
-    assert_eq!(moved.map(drop).map_err(|e| e.code()), Err("cloudFolder"));
-    assert!(service.snapshot().needs_data_file);
-    assert_eq!(fixture.config().data_path, None);
-}
-
-#[test]
 fn a_known_data_file_never_asks_again() {
     let fixture = Fixture::new();
     let mut service = fixture.start(FakeSystem::new(None));
@@ -336,233 +307,6 @@ fn unknown_system_default_falls_back_to_first_installed() {
         Some(id("com.google.Chrome"))
     );
 }
-
-#[test]
-fn changes_are_saved_and_survive_a_restart() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
-
-    add_group(&mut service, "Work");
-    drop(service);
-    let restarted = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
-
-    let names: Vec<_> = restarted
-        .snapshot()
-        .workspace
-        .groups()
-        .map(|g| g.name.clone())
-        .collect();
-    assert_eq!(names, ["Work"]);
-}
-
-#[test]
-fn invalid_url_is_rejected_and_nothing_changes() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(None));
-    let group = add_group(&mut service, "Work");
-    let before = fs::read_to_string(fixture.path()).expect("file");
-
-    let result = service.apply(Command::AddTab {
-        place: Place::Group(group),
-        url: "not a url".into(),
-        title: String::new(),
-    });
-
-    assert_eq!(result.map(drop).map_err(|e| e.code()), Err("invalidUrl"));
-    assert_eq!(fs::read_to_string(fixture.path()).expect("file"), before);
-}
-
-#[test]
-fn set_tab_url_saves_a_valid_url_and_rejects_an_invalid_one() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(None));
-    let group = add_group(&mut service, "Work");
-    let tab = add_tab(&mut service, Place::Group(group), "https://a.dev/");
-
-    service
-        .apply(Command::SetTabUrl {
-            tab,
-            url: " https://b.dev/x ".into(),
-        })
-        .expect("set url");
-    let before = fs::read_to_string(fixture.path()).expect("file");
-    assert!(before.contains("https://b.dev/x"));
-
-    let result = service.apply(Command::SetTabUrl {
-        tab,
-        url: "ftp://b.dev".into(),
-    });
-
-    assert_eq!(result.map(drop).map_err(|e| e.code()), Err("invalidUrl"));
-    assert_eq!(fs::read_to_string(fixture.path()).expect("file"), before);
-}
-
-#[test]
-fn set_details_is_saved_to_the_file() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(None));
-    let group = add_group(&mut service, "Work");
-
-    service
-        .apply(Command::SetDetails {
-            target: Target::Group(group),
-            ticket_id: "PROJ-7".into(),
-            note: "line 1\nline 2".into(),
-        })
-        .expect("details");
-
-    let file = fs::read_to_string(fixture.path()).expect("file");
-    assert!(file.contains("PROJ-7"));
-    let group = service.document.workspace.group(group).expect("g");
-    assert_eq!(group.note.as_deref(), Some("line 1\nline 2"));
-}
-
-#[test]
-fn set_details_command_reads_camel_case_json() {
-    let command: Command = serde_json::from_str(
-        r#"{"type":"setDetails","target":{"tab":"6f0c5e8e-3f0a-4d43-9a54-6c1b8d1a2b3c"},"ticketId":"A-1","note":""}"#,
-    )
-    .expect("command");
-    assert!(matches!(command, Command::SetDetails { ref ticket_id, .. } if ticket_id == "A-1"));
-}
-
-// ---- hierarchy ----------------------------------------------------------
-
-#[test]
-fn folders_and_tabs_can_go_straight_into_a_profile() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(None));
-    let cliente = add_profile(&mut service, "Cliente");
-
-    let folder = add_folder(&mut service, Place::Profile(cliente), "Docs");
-    let tab = add_tab(&mut service, Place::Profile(cliente), "https://wiki.dev/");
-
-    let workspace = &service.document.workspace;
-    assert_eq!(
-        workspace.find_folder(folder).map(|f| f.profile.id),
-        Some(cliente)
-    );
-    let found = workspace.find_tab(tab).expect("tab");
-    assert_eq!((found.profile.id, found.group), (cliente, None));
-}
-
-#[test]
-fn a_folder_inside_a_folder_is_refused() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(None));
-    let profile = first_profile(&service);
-    let folder = add_folder(&mut service, Place::Profile(profile), "Docs");
-
-    let nested = service.apply(Command::AddFolder {
-        place: Place::Folder(folder),
-        name: "Nested".into(),
-    });
-
-    assert_eq!(nested.map(drop).map_err(|e| e.code()), Err("invalid"));
-}
-
-#[test]
-fn groups_are_created_inside_an_existing_profile() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(None));
-    let work = add_profile(&mut service, "Trabajo");
-
-    let group = add_group_in(&mut service, work, "Jira");
-    let missing = service.apply(Command::AddGroup {
-        profile: ProfileId::new(),
-        name: "X".into(),
-    });
-
-    assert_eq!(
-        service
-            .document
-            .workspace
-            .group_profile(group)
-            .map(|p| p.id),
-        Some(work)
-    );
-    assert_eq!(missing.map(drop).map_err(|e| e.code()), Err("notFound"));
-}
-
-#[test]
-fn a_group_can_move_to_another_profile() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(None));
-    let work = add_profile(&mut service, "Trabajo");
-    let group = add_group(&mut service, "Jira");
-
-    service
-        .apply(Command::MoveGroup {
-            group,
-            profile: work,
-            index: 0,
-        })
-        .expect("move");
-
-    assert_eq!(
-        service
-            .document
-            .workspace
-            .group_profile(group)
-            .map(|p| p.id),
-        Some(work)
-    );
-}
-
-#[test]
-fn icons_are_set_and_cleared() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(None));
-    let group = add_group(&mut service, "In TEST");
-    let icon = Icon::emoji("🧪").expect("icon");
-
-    service
-        .apply(Command::SetIcon {
-            target: Target::Group(group),
-            icon: Some(icon.clone()),
-        })
-        .expect("set");
-    assert_eq!(
-        service.document.workspace.group(group).expect("g").icon,
-        Some(icon)
-    );
-
-    service
-        .apply(Command::SetIcon {
-            target: Target::Group(group),
-            icon: None,
-        })
-        .expect("clear");
-    assert_eq!(
-        service.document.workspace.group(group).expect("g").icon,
-        None
-    );
-}
-
-#[test]
-fn removing_a_profile_moves_its_items_and_forgets_its_binding() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(None));
-    let first = first_profile(&service);
-    let work = add_profile(&mut service, "Trabajo");
-    bind(&mut service, work, Some("com.google.Chrome"));
-    let group = add_group_in(&mut service, work, "Jira");
-    let tab = add_tab(&mut service, Place::Profile(work), "https://a.dev/");
-
-    service
-        .apply(Command::RemoveProfile {
-            profile: work,
-            move_items_to: first,
-        })
-        .expect("remove");
-
-    let workspace = &service.document.workspace;
-    assert_eq!(workspace.group_profile(group).map(|p| p.id), Some(first));
-    assert_eq!(workspace.find_tab(tab).map(|t| t.profile.id), Some(first));
-    assert!(!fixture.config().profiles.contains_key(&work));
-}
-
-// ---- browsers -----------------------------------------------------------
 
 #[test]
 fn binding_a_profile_is_saved_in_this_machines_config_only() {
@@ -626,25 +370,377 @@ fn binding_rejects_unknown_profiles_and_browsers() {
 }
 
 #[test]
-fn tab_opens_with_its_profiles_browser() {
+fn profile_color_can_be_changed() {
+    let fixture = Fixture::new();
+    let mut service = fixture.start(FakeSystem::new(None));
+    let profile = first_profile(&service);
+    let color = ProfileColor::new(11).expect("color");
+
+    let snapshot = service
+        .apply(Command::SetProfileColor { profile, color })
+        .expect("color");
+
+    assert_eq!(snapshot.workspace.profiles()[0].color, color);
+}
+
+#[test]
+fn snapshot_reports_the_data_path() {
+    let fixture = Fixture::new();
+
+    let service = fixture.start(FakeSystem::new(None));
+
+    assert_eq!(
+        service.snapshot().data_path,
+        fixture.path().display().to_string()
+    );
+}
+
+#[test]
+fn error_payload_has_code_and_full_message() {
+    let error = AppError::from(WorkspaceError::EmptyName);
+
+    let payload = ErrorPayload::from(&error);
+
+    assert_eq!(payload.code, "invalid");
+    assert_eq!(payload.message, "name is empty");
+}
+
+// ---- data file --------------------------------------------------------------
+
+#[test]
+fn choosing_a_local_folder_remembers_it_and_loads_data_already_there() {
+    let fixture = Fixture::new();
+    let mut service = fixture.start(FakeSystem::new(None));
+    let folder = tempfile::tempdir().expect("tempdir");
+    let path = config::data_file_in(folder.path());
+    fs::write(&path, tabstage_store::to_json(&ticket_document("Kept"))).expect("write");
+
+    let snapshot = service
+        .choose_data_file(Some(path.clone()))
+        .expect("choose");
+
+    assert!(!snapshot.needs_data_file);
+    assert_eq!(fixture.config().data_path, Some(path));
+    assert_eq!(titles(&snapshot), ["Kept"]);
+    assert!(!fixture.path().exists());
+}
+
+#[test]
+fn cloud_folders_are_refused_for_the_data_file() {
+    let fixture = Fixture::new();
+    let mut service = fixture.start(FakeSystem::new(None));
+    let icloud = PathBuf::from(
+        "/Users/me/Library/Mobile Documents/com~apple~CloudDocs/Tabstage/workspace.json",
+    );
+
+    let chosen = service.choose_data_file(Some(icloud.clone()));
+    let moved = service.relocate(icloud, Relocate::ReplaceWithMine);
+
+    assert_eq!(chosen.map(drop).map_err(|e| e.code()), Err("cloudFolder"));
+    assert_eq!(moved.map(drop).map_err(|e| e.code()), Err("cloudFolder"));
+    assert!(service.snapshot().needs_data_file);
+}
+
+#[test]
+fn changes_are_saved_and_survive_a_restart() {
+    let fixture = Fixture::new();
+    let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
+    add_ticket(&mut service, "Work");
+    drop(service);
+
+    let restarted = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
+
+    assert_eq!(titles(&restarted.snapshot()), ["Work"]);
+}
+
+#[test]
+fn change_on_disk_is_a_conflict_until_reload_or_force() {
+    let fixture = Fixture::new();
+    let mut laptop = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
+    add_ticket(&mut laptop, "Mine");
+    let other = ticket_document("Theirs");
+    fs::write(fixture.path(), tabstage_store::to_json(&other)).expect("external write");
+
+    assert!(laptop.has_external_change().expect("check"));
+    let conflict = laptop.apply(Command::AddProfile {
+        name: "Otro".into(),
+    });
+    assert_eq!(conflict.map(drop).map_err(|e| e.code()), Err("conflict"));
+
+    let reloaded = laptop.reload().expect("reload");
+    assert_eq!(titles(&reloaded), ["Theirs"]);
+
+    add_ticket(&mut laptop, "After reload");
+    fs::write(fixture.path(), tabstage_store::to_json(&other)).expect("external write");
+    let forced = laptop.force_save().expect("force");
+    assert_eq!(titles(&forced).len(), 2);
+    assert!(!laptop.has_external_change().expect("check"));
+}
+
+#[test]
+fn data_location_is_this_machine_until_the_file_moves() {
+    let fixture = Fixture::new();
+    let mut service = fixture.start(FakeSystem::new(None));
+    assert_eq!(
+        service.snapshot().data_location.kind,
+        DataLocationKind::AppData
+    );
+
+    let local = tempfile::tempdir().expect("tempdir");
+    let snapshot = service
+        .relocate(config::data_file_in(local.path()), Relocate::UseExisting)
+        .expect("relocate");
+
+    assert_eq!(snapshot.data_location.kind, DataLocationKind::Folder);
+    assert_eq!(
+        snapshot.data_location.folder,
+        local.path().display().to_string()
+    );
+}
+
+#[test]
+fn cloud_folders_are_recognized_from_their_path() {
+    let kind = |path: &str| classify_location(Path::new(path), false);
+    assert_eq!(
+        kind("/Users/me/Library/Mobile Documents/com~apple~CloudDocs/Tabstage/workspace.json"),
+        DataLocationKind::ICloudDrive
+    );
+    assert_eq!(
+        kind("/Users/me/Dropbox/Tabstage/workspace.json"),
+        DataLocationKind::Dropbox
+    );
+    assert_eq!(
+        kind("/Users/me/Library/CloudStorage/OneDrive-Personal/workspace.json"),
+        DataLocationKind::OneDrive
+    );
+    assert_eq!(
+        kind("/Users/me/Library/CloudStorage/GoogleDrive-me@x.com/My Drive/workspace.json"),
+        DataLocationKind::GoogleDrive
+    );
+    assert_eq!(
+        kind("/home/me/sync/workspace.json"),
+        DataLocationKind::Folder
+    );
+    assert_eq!(
+        classify_location(Path::new("/anything/workspace.json"), true),
+        DataLocationKind::AppData
+    );
+}
+
+#[test]
+fn relocate_moves_my_data_and_remembers_the_place() {
+    let fixture = Fixture::new();
+    let mut service = fixture.start(FakeSystem::new(None));
+    add_ticket(&mut service, "Mine");
+    let local = tempfile::tempdir().expect("tempdir");
+    let new_path = config::data_file_in(&local.path().join("Tabstage"));
+
+    let snapshot = service
+        .relocate(new_path.clone(), Relocate::UseExisting)
+        .expect("relocate");
+    add_ticket(&mut service, "After move");
+
+    assert_eq!(snapshot.data_path, new_path.display().to_string());
+    assert_eq!(fixture.config().data_path, Some(new_path.clone()));
+    let moved = inspect_data_file(&new_path).expect("inspect");
+    assert_eq!((moved.exists, moved.tickets), (true, 2));
+    assert_eq!(
+        inspect_data_file(&fixture.path()).expect("inspect").tickets,
+        1
+    );
+}
+
+#[test]
+fn relocate_can_use_or_replace_the_data_already_there() {
+    let fixture = Fixture::new();
+    let mut service = fixture.start(FakeSystem::new(None));
+    add_ticket(&mut service, "Mine");
+    let local = tempfile::tempdir().expect("tempdir");
+    let new_path = config::data_file_in(local.path());
+    fs::write(
+        &new_path,
+        tabstage_store::to_json(&ticket_document("Theirs")),
+    )
+    .expect("write");
+
+    let used = service
+        .relocate(new_path.clone(), Relocate::UseExisting)
+        .expect("relocate");
+    assert_eq!(titles(&used), ["Theirs"]);
+
+    fs::write(&new_path, tabstage_store::to_json(&Document::default())).expect("write");
+    service
+        .relocate(new_path.clone(), Relocate::ReplaceWithMine)
+        .expect("relocate");
+    assert_eq!(inspect_data_file(&new_path).expect("inspect").tickets, 1);
+}
+
+#[test]
+fn inspect_counts_tickets_and_notes_or_reports_missing() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = config::data_file_in(dir.path());
+    let missing = inspect_data_file(&path).expect("inspect");
+    assert_eq!(
+        (missing.exists, missing.tickets, missing.notes),
+        (false, 0, 0)
+    );
+
+    let mut document = ticket_document("Parent");
+    let profile = document.workspace.profiles()[0].id;
+    let parent = document.workspace.profiles()[0].tickets[0].id;
+    document
+        .workspace
+        .add_ticket(TicketPlace::Ticket(parent), "Child", None)
+        .expect("child");
+    document.workspace.add_note(profile, "Notes").expect("note");
+    fs::write(&path, tabstage_store::to_json(&document)).expect("write");
+
+    let found = inspect_data_file(&path).expect("inspect");
+    assert_eq!((found.exists, found.tickets, found.notes), (true, 2, 1));
+}
+
+// ---- tickets --------------------------------------------------------------
+
+#[test]
+fn invalid_urls_are_rejected_and_nothing_changes() {
+    let fixture = Fixture::new();
+    let mut service = fixture.start(FakeSystem::new(None));
+    let ticket = add_ticket(&mut service, "Work");
+    let before = fs::read_to_string(fixture.path()).expect("file");
+
+    let link = service.apply(Command::AddLink {
+        owner: LinkOwner::Ticket(ticket),
+        url: "not a url".into(),
+        title: String::new(),
+    });
+    let own = service.apply(Command::SetTicketUrl {
+        ticket,
+        url: "file:///etc/passwd".into(),
+    });
+
+    assert_eq!(link.map(drop).map_err(|e| e.code()), Err("invalidUrl"));
+    assert_eq!(own.map(drop).map_err(|e| e.code()), Err("invalidUrl"));
+    assert_eq!(fs::read_to_string(fixture.path()).expect("file"), before);
+}
+
+#[test]
+fn dropping_a_ticket_in_another_lane_moves_it_and_changes_its_status() {
+    let fixture = Fixture::new();
+    let mut service = fixture.start(FakeSystem::new(None));
+    let profile = first_profile(&service);
+    service
+        .apply(Command::AddStatus {
+            name: "In TEST".into(),
+            color: ProfileColor::new(0).expect("color"),
+        })
+        .expect("status");
+    let status = service.document.workspace.statuses()[0].id;
+    add_ticket(&mut service, "First");
+    let second = add_ticket(&mut service, "Second");
+
+    service
+        .apply(Command::MoveTicket {
+            ticket: second,
+            place: TicketPlace::Profile(profile),
+            index: 0,
+            lane: Some(Lane {
+                status: Some(status),
+            }),
+        })
+        .expect("move");
+    assert_eq!(titles(&service.snapshot()), ["Second", "First"]);
+    assert_eq!(
+        service
+            .document
+            .workspace
+            .ticket(second)
+            .expect("ticket")
+            .ticket
+            .status,
+        Some(status)
+    );
+
+    service
+        .apply(Command::MoveTicket {
+            ticket: second,
+            place: TicketPlace::Profile(profile),
+            index: 0,
+            lane: Some(Lane { status: None }),
+        })
+        .expect("move to no status");
+    assert_eq!(
+        service
+            .document
+            .workspace
+            .ticket(second)
+            .expect("ticket")
+            .ticket
+            .status,
+        None
+    );
+}
+
+#[test]
+fn removing_a_profile_moves_its_tickets_and_forgets_its_binding() {
+    let fixture = Fixture::new();
+    let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
+    let first = first_profile(&service);
+    let work = add_profile(&mut service, "Trabajo");
+    bind(&mut service, work, Some("com.google.Chrome"));
+    add_ticket_in(&mut service, TicketPlace::Profile(work), "Kept");
+
+    service
+        .apply(Command::RemoveProfile {
+            profile: work,
+            move_items_to: first,
+        })
+        .expect("remove");
+
+    assert_eq!(titles(&service.snapshot()), ["Kept"]);
+    assert!(!fixture.config().profiles.contains_key(&work));
+}
+
+#[test]
+fn links_and_tickets_open_in_their_profiles_browser() {
     let fixture = Fixture::new();
     let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
     let work = add_profile(&mut service, "Trabajo");
     bind(&mut service, work, Some("com.google.Chrome"));
-    let group = add_group_in(&mut service, work, "Jira");
-    let in_group = add_tab(&mut service, Place::Group(group), "https://a.dev/");
-    let loose = add_tab(&mut service, Place::Profile(work), "https://b.dev/");
+    let ticket = add_ticket_in(&mut service, TicketPlace::Profile(work), "CAR-1");
+    let child = add_ticket_in(&mut service, TicketPlace::Ticket(ticket), "CAR-2");
+    service
+        .apply(Command::SetTicketUrl {
+            ticket,
+            url: "https://jira.dev/CAR-1".into(),
+        })
+        .expect("url");
+    let link = add_link(&mut service, LinkOwner::Ticket(ticket), "https://pr.dev/1");
+    add_link(&mut service, LinkOwner::Ticket(child), "https://pr.dev/2");
 
-    service.open_tab(in_group).expect("open");
-    service.open_tab(loose).expect("open");
+    service.open_link(link).expect("link");
+    service.open_ticket(ticket).expect("ticket");
+    let all = service.open_ticket_all(ticket).expect("all");
 
+    assert_eq!(all.opened, 3);
     assert_eq!(
         *service.system().opened.borrow(),
         [
-            "com.google.Chrome https://a.dev/",
-            "com.google.Chrome https://b.dev/"
+            "com.google.Chrome https://pr.dev/1",
+            "com.google.Chrome https://jira.dev/CAR-1",
+            "com.google.Chrome https://jira.dev/CAR-1",
+            "com.google.Chrome https://pr.dev/1",
+            "com.google.Chrome https://pr.dev/2",
         ]
     );
+    assert_eq!(
+        service.open_ticket(child).map(drop).map_err(|e| e.code()),
+        Err("invalid"),
+        "a ticket without its own address has nothing to open"
+    );
+    assert!(matches!(
+        service.open_url(work, "file:///etc/passwd"),
+        Err(AppError::Url(_))
+    ));
 }
 
 #[test]
@@ -652,9 +748,17 @@ fn unbound_profile_opens_in_the_system_browser_and_says_so() {
     let fixture = Fixture::new();
     let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
     let qa = add_profile(&mut service, "QA");
-    let tab = add_tab(&mut service, Place::Profile(qa), "https://a.dev/");
+    service
+        .apply(Command::AddNote {
+            id: None,
+            profile: qa,
+            title: "Links".into(),
+        })
+        .expect("note");
+    let note = service.document.workspace.profile(qa).expect("qa").notes[0].id;
+    add_link(&mut service, LinkOwner::Note(note), "https://a.dev/");
 
-    service.open_tab(tab).expect("open");
+    service.open_note(note).expect("open");
 
     assert_eq!(
         *service.system().opened.borrow(),
@@ -666,207 +770,147 @@ fn unbound_profile_opens_in_the_system_browser_and_says_so() {
 }
 
 #[test]
-fn bound_browser_missing_here_falls_back_and_is_flagged() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
-    let work = add_profile(&mut service, "Trabajo");
-    bind(&mut service, work, Some("com.google.Chrome"));
-    let tab = add_tab(&mut service, Place::Profile(work), "https://a.dev/");
-    drop(service);
-
-    let service =
-        fixture.start(FakeSystem::new(Some("org.mozilla.firefox")).without("com.google.Chrome"));
-    service.open_tab(tab).expect("open");
-
-    assert_eq!(
-        *service.system().opened.borrow(),
-        ["org.mozilla.firefox https://a.dev/"]
-    );
-    let view = view(&service, work);
-    assert!(view.is_bound && view.is_fallback);
-}
-
-#[test]
-fn open_tab_focuses_an_existing_tab_on_macos() {
+fn open_link_focuses_an_existing_tab_on_macos() {
     let fixture = Fixture::new();
     let mut system = FakeSystem::new(Some("com.google.Chrome"));
     system.focus = Focus::Focused;
     let mut service = fixture.start_on(system, Platform::MacOs);
-    let group = add_group(&mut service, "Work");
-    let tab = add_tab(&mut service, Place::Group(group), "https://a.dev/");
+    let ticket = add_ticket(&mut service, "Work");
+    let link = add_link(&mut service, LinkOwner::Ticket(ticket), "https://a.dev/");
 
-    let opened = service.open_tab(tab).expect("open");
-
-    assert_eq!(opened, Opened::FocusedExisting);
+    assert_eq!(
+        service.open_link(link).expect("open"),
+        Opened::FocusedExisting
+    );
     assert!(service.system().opened.borrow().is_empty());
-    assert!(service.snapshot().profiles[0].can_focus_tabs);
-}
-
-#[test]
-fn open_group_folder_and_profile_open_their_tabs_in_order() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
-    let profile = first_profile(&service);
-    add_tab(&mut service, Place::Profile(profile), "https://loose.dev/");
-    let group = add_group(&mut service, "Work");
-    add_tab(&mut service, Place::Group(group), "https://a.dev/");
-    let folder = add_folder(&mut service, Place::Group(group), "Sprint");
-    add_tab(&mut service, Place::Folder(folder), "https://b.dev/");
-    add_tab(&mut service, Place::Folder(folder), "https://c.dev/");
-
-    let in_group = service.open_group(group).expect("open group");
-    assert_eq!(
-        in_group,
-        OpenSummary {
-            opened: 3,
-            focused: 0
-        }
-    );
-    assert_eq!(service.open_folder(folder).expect("folder").opened, 2);
-    assert_eq!(service.open_profile(profile).expect("profile").opened, 4);
-
-    let opened = service.system().opened.borrow();
-    assert_eq!(
-        opened[opened.len() - 4..],
-        [
-            "org.mozilla.firefox https://loose.dev/",
-            "org.mozilla.firefox https://a.dev/",
-            "org.mozilla.firefox https://b.dev/",
-            "org.mozilla.firefox https://c.dev/",
-        ]
-    );
-}
-
-// ---- files and sync -----------------------------------------------------
-
-#[test]
-fn a_version_1_file_becomes_profiles_bound_on_this_machine() {
-    let fixture = Fixture::new();
-    let v1 = r#"{"app":"tabstage-desktop","version":1,
-        "settings":{"defaultBrowser":"org.mozilla.firefox"},
-        "workspace":{"statuses":[],"groups":[
-          {"id":"00000000-0000-0000-0000-000000000001","name":"Jira","color":"blue",
-           "browser":{"kind":"specific","browser":"com.google.Chrome"},"children":[]},
-          {"id":"00000000-0000-0000-0000-000000000002","name":"Lecturas","color":"mauve",
-           "browser":{"kind":"default"},"children":[]}]}}"#;
-    fs::write(fixture.path(), v1).expect("write");
-
-    let service = fixture.start(FakeSystem::new(Some("com.apple.Safari")));
-
-    let workspace = &service.document.workspace;
-    let names: Vec<_> = workspace
-        .profiles()
-        .iter()
-        .map(|p| p.name.as_str())
-        .collect();
-    assert_eq!(names, [DEFAULT_PROFILE_NAME, "Google Chrome"]);
-    let config = fixture.config();
-    let browser_of = |name: &str| {
-        let profile = workspace
-            .profiles()
-            .iter()
-            .find(|p| p.name == name)
-            .expect("profile")
-            .id;
-        config
-            .profiles
-            .get(&profile)
-            .map(|b| b.browser.as_str().to_owned())
-    };
-    assert_eq!(
-        browser_of(DEFAULT_PROFILE_NAME).as_deref(),
-        Some("org.mozilla.firefox")
-    );
-    assert_eq!(
-        browser_of("Google Chrome").as_deref(),
-        Some("com.google.Chrome")
-    );
-    assert!(
-        fs::read_to_string(fixture.path())
-            .expect("file")
-            .contains("\"version\": 4")
-    );
-    assert!(!service.snapshot().needs_data_file);
-}
-
-#[test]
-fn change_on_disk_is_a_conflict_until_reload_or_force() {
-    let fixture = Fixture::new();
-    let mut laptop = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
-    add_group(&mut laptop, "Mine");
-    let mut other = Document::default();
-    let profile = other.workspace.profiles()[0].id;
-    other.workspace.add_group(profile, "Theirs").expect("group");
-    fs::write(fixture.path(), tabstage_store::to_json(&other)).expect("external write");
-
-    assert!(laptop.has_external_change().expect("check"));
-    let conflict = laptop.apply(Command::AddProfile {
-        name: "Otro".into(),
-    });
-    assert_eq!(conflict.map(drop).map_err(|e| e.code()), Err("conflict"));
-    assert_eq!(laptop.snapshot().workspace.groups().count(), 1);
-
-    let reloaded = laptop.reload().expect("reload");
-    assert_eq!(
-        reloaded.workspace.groups().next().map(|g| g.name.as_str()),
-        Some("Theirs")
-    );
-
-    add_group(&mut laptop, "After reload");
-    fs::write(fixture.path(), tabstage_store::to_json(&other)).expect("external write");
-    let forced = laptop.force_save().expect("force");
-    assert_eq!(forced.workspace.groups().count(), 2);
-    assert!(!laptop.has_external_change().expect("check"));
 }
 
 #[test]
 fn commands_deserialize_from_ui_json() {
-    let nil = "00000000-0000-0000-0000-000000000000";
-    let parse = |json: String| serde_json::from_str::<Command>(&json);
+    let parse = |json: &str| serde_json::from_str::<Command>(json).expect(json);
+    let ticket = "00000000-0000-0000-0000-000000000001";
+    let profile = "00000000-0000-0000-0000-0000000000c1";
 
     assert!(matches!(
-        parse(format!(
-            r#"{{"type":"addTab","place":{{"profile":"{nil}"}},"url":"https://a.dev","title":"A"}}"#
-        ))
-        .expect("addTab"),
-        Command::AddTab {
-            place: Place::Profile(_),
+        parse(&format!(
+            r#"{{"type":"moveTicket","ticket":"{ticket}","place":{{"profile":"{profile}"}},"index":0,"lane":{{"status":null}}}}"#
+        )),
+        Command::MoveTicket {
+            lane: Some(Lane { status: None }),
             ..
         }
     ));
     assert!(matches!(
-        parse(format!(
-            r#"{{"type":"bindProfile","profile":"{nil}","browser":null}}"#
-        ))
-        .expect("bindProfile"),
-        Command::BindProfile { browser: None, .. }
+        parse(&format!(
+            r#"{{"type":"moveTicket","ticket":"{ticket}","place":{{"ticket":"{ticket}"}},"index":1}}"#
+        )),
+        Command::MoveTicket { lane: None, .. }
     ));
     assert!(matches!(
-        parse(format!(
-            r#"{{"type":"setIcon","target":{{"tab":"{nil}"}},"icon":{{"kind":"emoji","value":"🧪"}}}}"#
-        ))
-        .expect("setIcon"),
-        Command::SetIcon { icon: Some(_), .. }
+        parse(&format!(
+            r#"{{"type":"setText","owner":{{"note":"{ticket}"}},"text":"hi"}}"#
+        )),
+        Command::SetText {
+            owner: LinkOwner::Note(_),
+            ..
+        }
     ));
+    assert!(matches!(
+        parse(r#"{"type":"addStatus","name":"Done","color":7}"#),
+        Command::AddStatus { .. }
+    ));
+}
+
+// ---- files from before tickets ----------------------------------------------
+
+const OLD_FILE: &str = r#"{"app":"tabstage-desktop","version":4,"settings":{},"workspace":{"profiles":[
+  {"id":"00000000-0000-0000-0000-0000000000c1","name":"Arrive","color":3,"items":[
+    {"type":"group","id":"g1","name":"In STG","color":5,"children":[
+      {"type":"tab","id":"t1","url":"https://jira.dev/CAR-6100","title":"CSUI GQL to REST","ticketId":"CAR-6100"}]}]}]}}"#;
+
+#[test]
+fn an_old_file_is_set_aside_and_offered_for_import() {
+    let fixture = Fixture::new();
+    fs::write(fixture.path(), OLD_FILE).expect("old file");
+
+    let mut service = fixture.start(FakeSystem::new(Some("com.google.Chrome")));
+
+    let backup = fixture.dir.path().join("workspace.v4-backup.json");
+    assert_eq!(fs::read_to_string(&backup).expect("backup"), OLD_FILE);
+    assert!(fixture.path().exists(), "a new, empty file takes its place");
+    let snapshot = service.snapshot();
+    assert!(!snapshot.needs_data_file);
+    assert_eq!(snapshot.legacy_backup, Some(backup.display().to_string()));
+    assert!(titles(&snapshot).is_empty());
+
+    let preview = service
+        .preview_import(None, &HashMap::new())
+        .expect("preview");
+    assert_eq!(preview.tree.profiles[0].name, "Arrive");
+    assert_eq!(preview.summary.roles["g1"], Role::Status);
+    assert_eq!(preview.preview.statuses()[0].name, "In STG");
     assert!(
-        parse(format!(
-            r#"{{"type":"removeProfile","profile":"{nil}","moveItemsTo":"{nil}"}}"#
-        ))
-        .is_ok()
+        titles(&service.snapshot()).is_empty(),
+        "a preview changes nothing"
     );
+
+    let imported = service.import(None, &HashMap::new()).expect("import");
+    assert_eq!(titles(&imported), ["CSUI GQL to REST"]);
+    assert_eq!(imported.legacy_backup, None);
+    assert_eq!(fixture.config().legacy_backup, None);
+    assert!(backup.exists(), "the old file is kept");
+    drop(service);
+
+    let restarted = fixture.start(FakeSystem::new(Some("com.google.Chrome")));
+    assert_eq!(titles(&restarted.snapshot()), ["CSUI GQL to REST"]);
+}
+
+#[test]
+fn the_import_can_be_dismissed_and_run_later_from_any_file() {
+    let fixture = Fixture::new();
+    fs::write(fixture.path(), OLD_FILE).expect("old file");
+    let mut service = fixture.start(FakeSystem::new(None));
+
+    let dismissed = service.dismiss_import().expect("dismiss");
+    assert_eq!(dismissed.legacy_backup, None);
+    assert_eq!(
+        service
+            .preview_import(None, &HashMap::new())
+            .map(drop)
+            .map_err(|e| e.code()),
+        Err("notFound")
+    );
+
+    let other = tempfile::tempdir().expect("tempdir");
+    let copy = other.path().join("tabstage-backup.json");
+    fs::write(&copy, OLD_FILE).expect("copy");
+    let chosen = HashMap::from([("g1".to_owned(), Role::Unwrap)]);
+    let imported = service.import(Some(copy), &chosen).expect("import");
+    assert_eq!(titles(&imported), ["CSUI GQL to REST"]);
+    assert!(imported.workspace.statuses().is_empty());
+}
+
+#[test]
+fn a_backup_name_already_taken_gets_a_number() {
+    let fixture = Fixture::new();
+    fs::write(fixture.dir.path().join("workspace.v4-backup.json"), "older").expect("taken");
+    fs::write(fixture.path(), OLD_FILE).expect("old file");
+
+    fixture.start(FakeSystem::new(None));
+
     assert!(
-        parse(format!(
-            r#"{{"type":"moveFolder","folder":"{nil}","place":{{"group":"{nil}"}},"index":0}}"#
-        ))
-        .is_ok()
+        fixture
+            .dir
+            .path()
+            .join("workspace.v4-backup-2.json")
+            .exists()
+    );
+    assert_eq!(
+        fs::read_to_string(fixture.dir.path().join("workspace.v4-backup.json")).expect("kept"),
+        "older"
     );
 }
 
-/// Contract with the UI: `ui/src/test/fixtures/snapshot.json` must be exactly
-/// what Rust sends for its own workspace and profile bindings. The UI tests
-/// use that file as mock data, so a change in the JSON shape fails here
-/// instead of silently in the UI. Regenerate with
-/// `UPDATE_UI_FIXTURE=1 cargo test -p tabstage-app ui_fixture`.
 #[test]
 fn ui_fixture_matches_the_rust_snapshot() {
     let path =
@@ -915,223 +959,51 @@ fn ui_fixture_matches_the_rust_snapshot() {
 }
 
 #[test]
-fn profile_color_can_be_changed() {
+fn bound_browser_missing_here_falls_back_and_is_flagged() {
+    let fixture = Fixture::new();
+    let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
+    let work = add_profile(&mut service, "Trabajo");
+    bind(&mut service, work, Some("com.google.Chrome"));
+    let ticket = add_ticket_in(&mut service, TicketPlace::Profile(work), "Work");
+    let link = add_link(&mut service, LinkOwner::Ticket(ticket), "https://a.dev/");
+    drop(service);
+
+    let service =
+        fixture.start(FakeSystem::new(Some("org.mozilla.firefox")).without("com.google.Chrome"));
+    service.open_link(link).expect("open");
+
+    assert_eq!(
+        *service.system().opened.borrow(),
+        ["org.mozilla.firefox https://a.dev/"]
+    );
+    let view = view(&service, work);
+    assert!(view.is_bound && view.is_fallback);
+}
+
+#[test]
+fn a_ticket_can_be_added_with_the_id_and_key_the_ui_chose() {
     let fixture = Fixture::new();
     let mut service = fixture.start(FakeSystem::new(None));
     let profile = first_profile(&service);
-    let color = ProfileColor::new(11).expect("color");
+    let id: TicketId = "00000000-0000-0000-0000-000000000123".parse().expect("id");
+    let add = || Command::AddTicket {
+        id: Some(id),
+        place: TicketPlace::Profile(profile),
+        title: "Decouple".into(),
+        key: Some("CAR-6210".into()),
+        status: None,
+    };
 
-    let snapshot = service
-        .apply(Command::SetProfileColor { profile, color })
-        .expect("color");
-
-    assert_eq!(snapshot.workspace.profiles()[0].color, color);
-}
-
-#[test]
-fn data_location_is_this_machine_until_the_file_moves() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(None));
-    assert_eq!(
-        service.snapshot().data_location.kind,
-        DataLocationKind::AppData
-    );
-
-    let local = tempfile::tempdir().expect("tempdir");
-    let snapshot = service
-        .relocate(config::data_file_in(local.path()), Relocate::UseExisting)
-        .expect("relocate");
-
-    assert_eq!(snapshot.data_location.kind, DataLocationKind::Folder);
-    assert_eq!(
-        snapshot.data_location.folder,
-        local.path().display().to_string()
-    );
-}
-
-#[test]
-fn cloud_folders_are_recognized_from_their_path() {
-    let kind = |path: &str| classify_location(Path::new(path), false);
-
-    assert_eq!(
-        kind("/Users/me/Library/Mobile Documents/com~apple~CloudDocs/Tabstage/workspace.json"),
-        DataLocationKind::ICloudDrive
-    );
-    assert_eq!(
-        kind("/Users/me/Dropbox/Tabstage/workspace.json"),
-        DataLocationKind::Dropbox
-    );
-    assert_eq!(
-        kind("/Users/me/Library/CloudStorage/Dropbox/Tabstage/workspace.json"),
-        DataLocationKind::Dropbox
-    );
-    assert_eq!(
-        kind("/Users/me/Library/CloudStorage/OneDrive-Personal/workspace.json"),
-        DataLocationKind::OneDrive
-    );
-    assert_eq!(
-        kind("/Users/me/Library/CloudStorage/GoogleDrive-me@x.com/My Drive/workspace.json"),
-        DataLocationKind::GoogleDrive
-    );
-    assert_eq!(
-        kind("/home/me/sync/workspace.json"),
-        DataLocationKind::Folder
-    );
-    assert!(!kind("/home/me/sync/workspace.json").is_cloud());
-    assert!(kind("/Users/me/Dropbox/workspace.json").is_cloud());
-    assert_eq!(
-        classify_location(Path::new("/anything/workspace.json"), true),
-        DataLocationKind::AppData
-    );
-}
-
-#[test]
-fn snapshot_reports_the_data_path() {
-    let fixture = Fixture::new();
-
-    let service = fixture.start(FakeSystem::new(None));
-
-    assert_eq!(
-        service.snapshot().data_path,
-        fixture.path().display().to_string()
-    );
-}
-
-#[test]
-fn relocate_moves_my_data_and_remembers_the_place() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(None));
-    add_group(&mut service, "Mine");
-    let local = tempfile::tempdir().expect("tempdir");
-    let new_path = config::data_file_in(&local.path().join("Tabstage"));
-
-    let snapshot = service
-        .relocate(new_path.clone(), Relocate::UseExisting)
-        .expect("relocate");
-    add_group(&mut service, "After move");
-
-    assert_eq!(snapshot.data_path, new_path.display().to_string());
-    assert_eq!(fixture.config().data_path, Some(new_path.clone()));
-    let moved = inspect_data_file(&new_path).expect("inspect");
-    assert_eq!((moved.exists, moved.groups), (true, 2));
-    let old = inspect_data_file(&fixture.path()).expect("inspect");
-    assert_eq!(old.groups, 1, "old file is left as it was");
-}
-
-#[test]
-fn relocate_can_use_or_replace_the_data_already_there() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(None));
-    add_group(&mut service, "Mine");
-    let local = tempfile::tempdir().expect("tempdir");
-    let new_path = config::data_file_in(local.path());
-    let mut theirs = Document::default();
-    let profile = theirs.workspace.profiles()[0].id;
-    theirs
+    service.apply(add()).expect("add");
+    let found = service
+        .document
         .workspace
-        .add_group(profile, "Theirs")
-        .expect("group");
-    fs::write(&new_path, tabstage_store::to_json(&theirs)).expect("write");
-
-    let used = service
-        .relocate(new_path.clone(), Relocate::UseExisting)
-        .expect("relocate");
-    let names: Vec<_> = used.workspace.groups().map(|g| g.name.as_str()).collect();
-    assert_eq!(names, ["Theirs"]);
-
-    fs::write(&new_path, tabstage_store::to_json(&Document::default())).expect("write");
-    service
-        .relocate(new_path.clone(), Relocate::ReplaceWithMine)
-        .expect("relocate");
-    assert_eq!(inspect_data_file(&new_path).expect("inspect").groups, 1);
-}
-
-#[test]
-fn inspect_counts_groups_and_tabs_or_reports_missing() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let path = config::data_file_in(dir.path());
-
-    let missing = inspect_data_file(&path).expect("inspect");
+        .ticket(id)
+        .expect("ticket")
+        .ticket;
+    assert_eq!(found.key.as_deref(), Some("CAR-6210"));
     assert_eq!(
-        (missing.exists, missing.groups, missing.tabs),
-        (false, 0, 0)
+        service.apply(add()).map(drop).map_err(|e| e.code()),
+        Err("invalid")
     );
-
-    let mut document = Document::default();
-    let profile = document.workspace.profiles()[0].id;
-    let group = document.workspace.add_group(profile, "G").expect("group");
-    let folder = document
-        .workspace
-        .add_folder(Place::Group(group), "F")
-        .expect("folder");
-    for (place, url) in [
-        (Place::Group(group), "https://a.dev/"),
-        (Place::Folder(folder), "https://b.dev/"),
-        (Place::Profile(profile), "https://c.dev/"),
-    ] {
-        document
-            .workspace
-            .add_tab(place, TabUrl::parse(url).expect("url"), "")
-            .expect("tab");
-    }
-    fs::write(&path, tabstage_store::to_json(&document)).expect("write");
-
-    let found = inspect_data_file(&path).expect("inspect");
-    assert_eq!((found.exists, found.groups, found.tabs), (true, 1, 3));
-}
-
-#[test]
-fn error_payload_has_code_and_full_message() {
-    let error = AppError::from(WorkspaceError::EmptyName);
-
-    let payload = ErrorPayload::from(&error);
-
-    assert_eq!(payload.code, "invalid");
-    assert_eq!(payload.message, "name is empty");
-}
-
-#[test]
-fn ticket_links_encode_the_id() {
-    assert_eq!(
-        crate::ticket_link("https://jira.dev/browse/{ticket}", "PROJ-1"),
-        "https://jira.dev/browse/PROJ-1"
-    );
-    assert_eq!(
-        crate::ticket_link("https://x.dev/?q={ticket}", "a b/c&d"),
-        "https://x.dev/?q=a%20b%2Fc%26d"
-    );
-}
-
-#[test]
-fn a_ticket_opens_with_the_profile_ticket_url_in_its_browser() {
-    let fixture = Fixture::new();
-    let mut service = fixture.start(FakeSystem::new(Some("com.apple.Safari")));
-    let profile = first_profile(&service);
-    let group = add_group(&mut service, "Work");
-    let target = Target::Group(group);
-
-    assert!(service.open_ticket(target).is_err());
-    service
-        .apply(Command::SetDetails {
-            target,
-            ticket_id: "PROJ-7".to_owned(),
-            note: String::new(),
-        })
-        .expect("details");
-    service
-        .apply(Command::SetTicketUrl {
-            profile,
-            url: "https://jira.example.com/browse/{ticket}".to_owned(),
-        })
-        .expect("ticket url");
-
-    service.open_ticket(target).expect("open");
-    assert_eq!(
-        service.system.opened.borrow().last().map(String::as_str),
-        Some("com.apple.Safari https://jira.example.com/browse/PROJ-7")
-    );
-    assert!(matches!(
-        service.open_url(profile, "file:///etc/passwd"),
-        Err(AppError::Url(_))
-    ));
 }

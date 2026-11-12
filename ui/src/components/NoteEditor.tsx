@@ -12,13 +12,15 @@ import {
   LoaderCircle,
   NotebookText,
   Pencil,
+  Ticket,
   TriangleAlert,
 } from 'lucide-react';
 import { type CSSProperties, type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from 'react';
-import Markdown, { type Components } from 'react-markdown';
+import Markdown, { type Components, defaultUrlTransform } from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
-import { type Format, applyFormat, toggleTask } from '../lib/markdown';
+import { type Format, TICKET_LINK_PREFIX, applyFormat, linkTicketKeys, toggleTask } from '../lib/markdown';
 import {
   NOTE_TEXT_DEFAULT,
   NOTE_TEXT_MAX,
@@ -38,6 +40,14 @@ interface Props {
   onOpenLink: (url: string) => void;
   /** Starts editing whenever this changes to a new non-zero value. */
   editRequest?: number;
+  /** Keys of known tickets (upper case) to their ids; they show as links. */
+  ticketKeys?: Map<string, string>;
+  /** Shows a ticket, from a key link. */
+  onOpenTicket?: (ticket: string) => void;
+  /** Creates a ticket from the selected text; adds a toolbar button. */
+  onCreateTicket?: (text: string) => void;
+  /** Label of the panel, "Note" by default. */
+  label?: string;
 }
 
 type Status = 'idle' | 'saving' | 'saved' | 'failed';
@@ -55,7 +65,16 @@ const TOOLS: { format: Format; label: string; icon: typeof Bold; keys?: string }
 const SHORTCUTS: Record<string, Format> = { b: 'bold', i: 'italic', k: 'link' };
 
 /** A group's, folder's or tab's note: rendered Markdown, edited in place and saved as you type. */
-export function NoteEditor({ note = '', onSave, onOpenLink, editRequest = 0 }: Props) {
+export function NoteEditor({
+  note = '',
+  onSave,
+  onOpenLink,
+  editRequest = 0,
+  ticketKeys,
+  onOpenTicket,
+  onCreateTicket,
+  label = 'Note',
+}: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note);
   const [status, setStatus] = useState<Status>('idle');
@@ -167,7 +186,7 @@ export function NoteEditor({ note = '', onSave, onOpenLink, editRequest = 0 }: P
     >
       <header className="note__bar">
         <NotebookText className="icon" aria-hidden="true" />
-        <span className="note__label">Note</span>
+        <span className="note__label">{label}</span>
         {editing && (
           <div className="note__tools" role="toolbar" aria-label="Formatting">
             {TOOLS.map(({ format: kind, label, icon: Icon, keys }) => (
@@ -183,6 +202,26 @@ export function NoteEditor({ note = '', onSave, onOpenLink, editRequest = 0 }: P
                 <Icon className="icon" aria-hidden="true" />
               </button>
             ))}
+            {onCreateTicket && (
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Ticket from selection"
+                title="Create a ticket from the selected line"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  const field = area.current;
+                  if (!field) return;
+                  const selected = draft.slice(field.selectionStart, field.selectionEnd);
+                  const lineStart = draft.lastIndexOf('\n', field.selectionStart - 1) + 1;
+                  const lineEnd = draft.indexOf('\n', field.selectionStart);
+                  const text = selected.trim() || draft.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
+                  if (text.trim()) onCreateTicket(text);
+                }}
+              >
+                <Ticket className="icon" aria-hidden="true" />
+              </button>
+            )}
           </div>
         )}
         <SaveStatus status={status} />
@@ -212,7 +251,16 @@ export function NoteEditor({ note = '', onSave, onOpenLink, editRequest = 0 }: P
           onKeyDown={onKeyDown}
         />
       ) : draft ? (
-        <RenderedNote note={draft} onStart={start} onToggle={toggle} onOpenLink={onOpenLink} />
+        <RenderedNote
+          note={draft}
+          onStart={start}
+          onToggle={toggle}
+          onOpenLink={(url) => {
+            if (url.startsWith(TICKET_LINK_PREFIX)) onOpenTicket?.(url.slice(TICKET_LINK_PREFIX.length));
+            else onOpenLink(url);
+          }}
+          ticketKeys={ticketKeys}
+        />
       ) : (
         <button type="button" className="note__empty" onClick={start}>
           Add a note: steps, links, decisions. Markdown works.
@@ -282,13 +330,14 @@ function SaveStatus({ status }: { status: Status }) {
 
 interface RenderedProps {
   note: string;
+  ticketKeys?: Map<string, string>;
   onStart: () => void;
   onToggle: (index: number) => void;
   onOpenLink: (url: string) => void;
 }
 
 /** The note as HTML. A click edits it, except on a link or a task box. */
-function RenderedNote({ note, onStart, onToggle, onOpenLink }: RenderedProps) {
+function RenderedNote({ note, onStart, onToggle, onOpenLink, ticketKeys }: RenderedProps) {
   // Task boxes render in reading order, so a counter gives each one its index.
   let task = 0;
   const components: Components = {
@@ -322,8 +371,13 @@ function RenderedNote({ note, onStart, onToggle, onOpenLink }: RenderedProps) {
   return (
     // A click anywhere on the note starts editing; the Edit button is the keyboard path.
     <div className="note__view markdown" onClick={onStart}>
-      <Markdown remarkPlugins={[remarkGfm]} components={components}>
-        {note}
+      <Markdown
+        // A line break in a note is a line break, as in the plain notes before Markdown.
+        remarkPlugins={[remarkGfm, remarkBreaks]}
+        components={components}
+        urlTransform={(url) => (url.startsWith(TICKET_LINK_PREFIX) ? url : defaultUrlTransform(url))}
+      >
+        {ticketKeys ? linkTicketKeys(note, ticketKeys) : note}
       </Markdown>
     </div>
   );

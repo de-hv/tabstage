@@ -1,171 +1,149 @@
-//! The workspace: profiles that hold groups, folders and tabs.
+//! The workspace: profiles that hold tickets and notes, and the statuses
+//! tickets move through.
 //!
-//! The hierarchy is fixed: a profile holds groups, folders and tabs; a group
-//! holds folders and tabs; a folder holds tabs. Order is the position in
-//! each `Vec`, so there are no order fields that can get out of sync. Every
-//! change goes through a [`Workspace`] method that checks its references and
-//! returns a [`WorkspaceError`] instead of panicking.
+//! A profile holds tickets and notes. A ticket holds links and sub-tickets
+//! (one level: a sub-ticket holds links only); a note holds links. Statuses
+//! are shared by every profile. Order is the position in each `Vec`, so there
+//! are no order fields that can get out of sync. Every change goes through a
+//! [`Workspace`] method that checks its references and returns a
+//! [`WorkspaceError`] instead of panicking.
 
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::color::ContainerColor;
 use crate::icon::Icon;
-use crate::ids::{FolderId, GroupId, ProfileId, TabId};
+use crate::ids::{NoteId, ProfileId, StatusId, TabId, TicketId};
 use crate::profile::{DEFAULT_PROFILE_NAME, Profile, ProfileColor};
 use crate::url::TabUrl;
 
-/// A saved link.
+/// A saved tab of a ticket or a note.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Tab {
+pub struct Link {
     /// Stable id.
     pub id: TabId,
-    /// Where the tab points.
+    /// Where it points.
     pub url: TabUrl,
     /// Title shown in the UI.
     pub title: String,
-    /// Custom icon; the UI shows the default tab icon without one.
+    /// Custom icon; the UI shows the default link icon without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<Icon>,
-    /// Ticket key in Jira or a similar tracker, such as `PROJ-123`.
-    #[serde(default, rename = "ticketId", skip_serializing_if = "Option::is_none")]
-    pub ticket_id: Option<String>,
-    /// Free-form note; may span several lines.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
 }
 
-/// A named folder of tabs. Folders do not nest.
+/// A piece of work, such as a Jira issue, with its links and sub-tickets.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Folder {
+pub struct Ticket {
     /// Stable id.
-    pub id: FolderId,
+    pub id: TicketId,
+    /// Title shown in the UI.
+    pub title: String,
+    /// Key in Jira or a similar tracker, such as `PROJ-123`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// The ticket's own address, such as its page in the tracker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<TabUrl>,
+    /// Where it is in the workflow; none until one is chosen.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<StatusId>,
+    /// Custom icon; the UI shows the default ticket icon without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<Icon>,
+    /// Free-form note in Markdown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// Other tabs that belong to the ticket.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<Link>,
+    /// Sub-tickets. Always empty for a sub-ticket.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<Ticket>,
+}
+
+/// Something that is not a ticket, such as standup notes, with its links.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Note {
+    /// Stable id.
+    pub id: NoteId,
+    /// Title shown in the UI.
+    pub title: String,
+    /// Custom icon; the UI shows the default note icon without one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<Icon>,
+    /// The note itself, in Markdown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    /// Tabs that belong to the note.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<Link>,
+}
+
+/// A step of the workflow, such as "In review", shared by every profile.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Status {
+    /// Stable id.
+    pub id: StatusId,
     /// Name shown in the UI.
     pub name: String,
-    /// Its color; none by default.
-    #[serde(default, skip_serializing_if = "ContainerColor::is_none")]
-    pub color: ContainerColor,
-    /// Custom icon; the UI shows the default folder icon without one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub icon: Option<Icon>,
-    /// Ticket key in Jira or a similar tracker, such as `PROJ-123`.
-    #[serde(default, rename = "ticketId", skip_serializing_if = "Option::is_none")]
-    pub ticket_id: Option<String>,
-    /// Free-form note; may span several lines.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-    /// Whether the folder is shown collapsed.
-    #[serde(default)]
-    pub collapsed: bool,
-    /// Tabs in display order.
-    #[serde(default)]
-    pub tabs: Vec<Tab>,
+    /// Color of its tickets' rows.
+    pub color: ProfileColor,
 }
 
-/// A direct child of a group.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum Node {
-    /// A loose tab.
-    Tab(Tab),
-    /// A folder of tabs.
-    Folder(Folder),
-}
-
-/// A group of tabs and folders, such as "In TEST".
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Group {
-    /// Stable id.
-    pub id: GroupId,
-    /// Name shown in the UI.
-    pub name: String,
-    /// Its color; none by default.
-    #[serde(default, skip_serializing_if = "ContainerColor::is_none")]
-    pub color: ContainerColor,
-    /// Custom icon; the UI shows the default group icon without one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub icon: Option<Icon>,
-    /// Ticket key in Jira or a similar tracker, such as `PROJ-123`.
-    #[serde(default, rename = "ticketId", skip_serializing_if = "Option::is_none")]
-    pub ticket_id: Option<String>,
-    /// Free-form note; may span several lines.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub note: Option<String>,
-    /// Tabs and folders in display order.
-    #[serde(default)]
-    pub children: Vec<Node>,
-}
-
-/// A direct child of a profile.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum Item {
-    /// A group.
-    Group(Group),
-    /// A folder outside any group.
-    Folder(Folder),
-    /// A tab outside any group or folder.
-    Tab(Tab),
-}
-
-/// Something that holds tabs, and except for a folder, folders too.
+/// Where a ticket goes: directly in a profile, or under a ticket as a
+/// sub-ticket.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum Place {
-    /// Directly inside a profile.
+pub enum TicketPlace {
+    /// Directly in a profile.
     Profile(ProfileId),
-    /// Directly inside a group.
-    Group(GroupId),
-    /// Inside a folder.
-    Folder(FolderId),
+    /// Under a ticket, as a sub-ticket.
+    Ticket(TicketId),
 }
 
-/// A group, folder or tab, for changes that apply to any of them.
+/// What holds links: a ticket (or sub-ticket) or a note.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LinkOwner {
+    /// A ticket or sub-ticket.
+    Ticket(TicketId),
+    /// A note.
+    Note(NoteId),
+}
+
+/// A ticket, note or link, for changes that apply to any of them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Target {
-    /// A group.
-    Group(GroupId),
-    /// A folder.
-    Folder(FolderId),
-    /// A tab.
-    Tab(TabId),
+    /// A ticket or sub-ticket.
+    Ticket(TicketId),
+    /// A note.
+    Note(NoteId),
+    /// A link.
+    Link(TabId),
 }
 
-/// A group or folder: the items that hold others and can have a color.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum Container {
-    /// A group.
-    Group(GroupId),
-    /// A folder.
-    Folder(FolderId),
-}
-
-/// A tab together with what contains it.
+/// A ticket together with what contains it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TabRef<'a> {
-    /// The profile the tab belongs to.
+pub struct TicketRef<'a> {
+    /// The profile it belongs to.
     pub profile: &'a Profile,
-    /// The group the tab is in, if any.
-    pub group: Option<&'a Group>,
-    /// The folder the tab is in, if any.
-    pub folder: Option<&'a Folder>,
-    /// The tab.
-    pub tab: &'a Tab,
+    /// Its parent, for a sub-ticket.
+    pub parent: Option<&'a Ticket>,
+    /// The ticket.
+    pub ticket: &'a Ticket,
 }
 
-/// A folder together with what contains it.
+/// A link together with what contains it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FolderRef<'a> {
-    /// The profile the folder belongs to.
+pub struct LinkRef<'a> {
+    /// The profile it belongs to.
     pub profile: &'a Profile,
-    /// The group the folder is in, if any.
-    pub group: Option<&'a Group>,
-    /// The folder.
-    pub folder: &'a Folder,
+    /// The ticket or note that holds it.
+    pub owner: LinkOwner,
+    /// The link.
+    pub link: &'a Link,
 }
 
 /// Errors returned by [`Workspace`] changes.
@@ -174,22 +152,26 @@ pub enum WorkspaceError {
     /// No profile has this id.
     #[error("profile {0} not found")]
     ProfileNotFound(ProfileId),
-    /// No group has this id.
-    #[error("group {0} not found")]
-    GroupNotFound(GroupId),
-    /// No folder has this id.
-    #[error("folder {0} not found")]
-    FolderNotFound(FolderId),
-    /// No tab has this id.
-    #[error("tab {0} not found")]
-    TabNotFound(TabId),
+    /// No ticket has this id.
+    #[error("ticket {0} not found")]
+    TicketNotFound(TicketId),
+    /// No note has this id.
+    #[error("note {0} not found")]
+    NoteNotFound(NoteId),
+    /// No link has this id.
+    #[error("link {0} not found")]
+    LinkNotFound(TabId),
+    /// No status has this id.
+    #[error("status {0} not found")]
+    StatusNotFound(StatusId),
     /// A name was empty or only whitespace.
     #[error("name is empty")]
     EmptyName,
-    /// A folder was put inside a folder; folders do not nest.
-    #[error("a folder cannot go inside another folder")]
-    NestedFolder,
-    /// Two profiles, groups, folders or tabs share the same id.
+    /// A sub-ticket cannot hold sub-tickets, and a ticket with sub-tickets
+    /// cannot become one.
+    #[error("sub-tickets cannot hold sub-tickets")]
+    NestedTicket,
+    /// Two items share the same id.
     #[error("id {0} is used more than once")]
     DuplicateId(String),
     /// A profile cannot take over its own items when it is removed.
@@ -198,17 +180,20 @@ pub enum WorkspaceError {
     /// A workspace must have at least one profile.
     #[error("the workspace has no profiles")]
     NoProfiles,
-    /// A ticket URL must be an http(s) address with a `{ticket}` placeholder.
-    #[error("the ticket URL must start with http:// or https:// and contain {{ticket}}")]
-    InvalidTicketUrl,
+    /// The ticket has no address of its own.
+    #[error("the ticket has no address")]
+    NoTicketLink,
 }
 
 /// Result type for workspace changes.
 pub type Result<T> = std::result::Result<T, WorkspaceError>;
 
-/// Everything a user keeps: profiles and their contents.
+/// Everything a user keeps: statuses, profiles and what they hold.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Workspace {
+    /// The workflow, in order.
+    #[serde(default)]
+    statuses: Vec<Status>,
     profiles: Vec<Profile>,
     /// Items shown in the sidebar's "Pinned" section, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -222,26 +207,28 @@ impl Default for Workspace {
 }
 
 impl Workspace {
-    /// A workspace with one empty profile.
+    /// A workspace with one empty profile and no statuses.
     #[must_use]
     pub fn new() -> Self {
         Self {
+            statuses: Vec::new(),
             profiles: vec![Profile {
                 id: ProfileId::new(),
                 name: DEFAULT_PROFILE_NAME.to_owned(),
                 color: ProfileColor::default(),
-                ticket_url: None,
-                items: Vec::new(),
+                tickets: Vec::new(),
+                notes: Vec::new(),
             }],
             pinned: Vec::new(),
         }
     }
 
-    /// A workspace with these profiles. Call [`Workspace::validate`] before
-    /// trusting it.
+    /// A workspace with these statuses and profiles. Call
+    /// [`Workspace::validate`] before trusting it.
     #[must_use]
-    pub fn from_profiles(profiles: Vec<Profile>) -> Self {
+    pub fn from_parts(statuses: Vec<Status>, profiles: Vec<Profile>) -> Self {
         Self {
+            statuses,
             profiles,
             pinned: Vec::new(),
         }
@@ -275,10 +262,23 @@ impl Workspace {
             id,
             name,
             color,
-            ticket_url: None,
-            items: Vec::new(),
+            tickets: Vec::new(),
+            notes: Vec::new(),
         });
         Ok(id)
+    }
+
+    /// Adds a profile as it is, such as one imported from an older file.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::DuplicateId`] when its id is taken.
+    pub fn insert_profile(&mut self, profile: Profile) -> Result<()> {
+        if self.profile(profile.id).is_some() {
+            return Err(WorkspaceError::DuplicateId(profile.id.to_string()));
+        }
+        self.profiles.push(profile);
+        Ok(())
     }
 
     /// Changes the color of a profile's dot.
@@ -288,28 +288,6 @@ impl Workspace {
     /// [`WorkspaceError::ProfileNotFound`].
     pub fn set_profile_color(&mut self, id: ProfileId, color: ProfileColor) -> Result<()> {
         self.profile_mut(id)?.color = color;
-        Ok(())
-    }
-
-    /// Sets or clears the address a profile's ticket ids link to, such as
-    /// `https://jira.example.com/browse/{ticket}`. A blank one clears it.
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::InvalidTicketUrl`] or [`WorkspaceError::ProfileNotFound`].
-    pub fn set_ticket_url(&mut self, id: ProfileId, url: &str) -> Result<()> {
-        let url = url.trim();
-        let url = if url.is_empty() {
-            None
-        } else {
-            let lower = url.to_ascii_lowercase();
-            let web = lower.starts_with("http://") || lower.starts_with("https://");
-            if !web || !url.contains(TICKET_PLACEHOLDER) || url.chars().any(char::is_whitespace) {
-                return Err(WorkspaceError::InvalidTicketUrl);
-            }
-            Some(url.to_owned())
-        };
-        self.profile_mut(id)?.ticket_url = url;
         Ok(())
     }
 
@@ -337,7 +315,7 @@ impl Workspace {
         Ok(())
     }
 
-    /// Removes a profile and appends its items to `move_items_to`.
+    /// Removes a profile and appends its tickets and notes to `move_items_to`.
     ///
     /// # Errors
     ///
@@ -346,361 +324,551 @@ impl Workspace {
     /// these keep at least one profile.
     pub fn remove_profile(&mut self, id: ProfileId, move_items_to: ProfileId) -> Result<Profile> {
         let index = self.profile_index(id)?;
-        // The target must be another existing profile, so the last profile
-        // can never be removed.
         if id == move_items_to {
             return Err(WorkspaceError::SameProfile);
         }
         self.profile_index(move_items_to)?;
         let mut removed = self.profiles.remove(index);
-        let items = std::mem::take(&mut removed.items);
-        self.profile_mut(move_items_to)?.items.extend(items);
+        let tickets = std::mem::take(&mut removed.tickets);
+        let notes = std::mem::take(&mut removed.notes);
+        let target = self.profile_mut(move_items_to)?;
+        target.tickets.extend(tickets);
+        target.notes.extend(notes);
         Ok(removed)
     }
 
-    // ---- groups ---------------------------------------------------------
+    // ---- statuses -------------------------------------------------------
 
-    /// Every group, profile by profile, in display order.
-    pub fn groups(&self) -> impl Iterator<Item = &Group> {
-        self.profiles
+    /// Statuses in workflow order.
+    #[must_use]
+    pub fn statuses(&self) -> &[Status] {
+        &self.statuses
+    }
+
+    /// The status with this id.
+    #[must_use]
+    pub fn status(&self, id: StatusId) -> Option<&Status> {
+        self.statuses.iter().find(|status| status.id == id)
+    }
+
+    /// Adds a status at the end of the workflow.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::EmptyName`].
+    pub fn add_status(&mut self, name: &str, color: ProfileColor) -> Result<StatusId> {
+        let name = clean_name(name)?;
+        let id = StatusId::new();
+        self.statuses.push(Status { id, name, color });
+        Ok(id)
+    }
+
+    /// Renames a status.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::EmptyName`] or [`WorkspaceError::StatusNotFound`].
+    pub fn rename_status(&mut self, id: StatusId, name: &str) -> Result<()> {
+        let name = clean_name(name)?;
+        self.status_mut(id)?.name = name;
+        Ok(())
+    }
+
+    /// Changes a status's color.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::StatusNotFound`].
+    pub fn set_status_color(&mut self, id: StatusId, color: ProfileColor) -> Result<()> {
+        self.status_mut(id)?.color = color;
+        Ok(())
+    }
+
+    /// Moves a status to `index` of the workflow, clamped to the end.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::StatusNotFound`].
+    pub fn move_status(&mut self, id: StatusId, index: usize) -> Result<()> {
+        let from = self
+            .statuses
             .iter()
-            .flat_map(|profile| &profile.items)
-            .filter_map(|item| match item {
-                Item::Group(group) => Some(group),
-                Item::Folder(_) | Item::Tab(_) => None,
+            .position(|status| status.id == id)
+            .ok_or(WorkspaceError::StatusNotFound(id))?;
+        let status = self.statuses.remove(from);
+        let to = index.min(self.statuses.len());
+        self.statuses.insert(to, status);
+        Ok(())
+    }
+
+    /// Removes a status; its tickets are left without one.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::StatusNotFound`].
+    pub fn remove_status(&mut self, id: StatusId) -> Result<Status> {
+        let index = self
+            .statuses
+            .iter()
+            .position(|status| status.id == id)
+            .ok_or(WorkspaceError::StatusNotFound(id))?;
+        let clear = |ticket: &mut Ticket| {
+            if ticket.status == Some(id) {
+                ticket.status = None;
+            }
+        };
+        for ticket in self
+            .profiles
+            .iter_mut()
+            .flat_map(|profile| &mut profile.tickets)
+        {
+            ticket.children.iter_mut().for_each(clear);
+            clear(ticket);
+        }
+        Ok(self.statuses.remove(index))
+    }
+
+    // ---- tickets --------------------------------------------------------
+
+    /// Finds a ticket or sub-ticket with its profile and parent.
+    #[must_use]
+    pub fn ticket(&self, id: TicketId) -> Option<TicketRef<'_>> {
+        self.profiles.iter().find_map(|profile| {
+            profile.tickets.iter().find_map(|ticket| {
+                if ticket.id == id {
+                    return Some(TicketRef {
+                        profile,
+                        parent: None,
+                        ticket,
+                    });
+                }
+                ticket
+                    .children
+                    .iter()
+                    .find(|child| child.id == id)
+                    .map(|child| TicketRef {
+                        profile,
+                        parent: Some(ticket),
+                        ticket: child,
+                    })
             })
-    }
-
-    /// The group with this id.
-    #[must_use]
-    pub fn group(&self, id: GroupId) -> Option<&Group> {
-        self.groups().find(|group| group.id == id)
-    }
-
-    /// The profile that holds this group.
-    #[must_use]
-    pub fn group_profile(&self, id: GroupId) -> Option<&Profile> {
-        self.profiles.iter().find(|profile| {
-            profile
-                .items
-                .iter()
-                .any(|item| matches!(item, Item::Group(group) if group.id == id))
         })
     }
 
-    /// Adds an empty group at the end of `profile`.
+    /// Adds a ticket at the end of `place`.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::EmptyName`], [`WorkspaceError::NestedTicket`] when
+    /// `place` is a sub-ticket, or the not-found error of `place` or `status`.
+    pub fn add_ticket(
+        &mut self,
+        place: TicketPlace,
+        title: &str,
+        status: Option<StatusId>,
+    ) -> Result<TicketId> {
+        self.add_ticket_as(TicketId::new(), place, title, status)
+    }
+
+    /// Adds a ticket with an id chosen by the caller, so the UI can show it
+    /// right away.
+    ///
+    /// # Errors
+    ///
+    /// As [`Workspace::add_ticket`], or [`WorkspaceError::DuplicateId`] when
+    /// the id is taken.
+    pub fn add_ticket_as(
+        &mut self,
+        id: TicketId,
+        place: TicketPlace,
+        title: &str,
+        status: Option<StatusId>,
+    ) -> Result<TicketId> {
+        let title = clean_name(title)?;
+        if let Some(status) = status {
+            self.ensure_status(status)?;
+        }
+        if self.ticket(id).is_some() {
+            return Err(WorkspaceError::DuplicateId(id.to_string()));
+        }
+        let ticket = Ticket {
+            id,
+            title,
+            key: None,
+            url: None,
+            status,
+            icon: None,
+            note: None,
+            links: Vec::new(),
+            children: Vec::new(),
+        };
+        self.insert_ticket(place, usize::MAX, ticket)?;
+        Ok(id)
+    }
+
+    /// Adds a ticket as it is, such as one imported from an older file.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::NestedTicket`] or the not-found error of `place`.
+    pub fn insert_ticket(
+        &mut self,
+        place: TicketPlace,
+        index: usize,
+        ticket: Ticket,
+    ) -> Result<()> {
+        let list = match place {
+            TicketPlace::Profile(id) => &mut self.profile_mut(id)?.tickets,
+            TicketPlace::Ticket(id) => {
+                if !ticket.children.is_empty() {
+                    return Err(WorkspaceError::NestedTicket);
+                }
+                if self
+                    .ticket(id)
+                    .ok_or(WorkspaceError::TicketNotFound(id))?
+                    .parent
+                    .is_some()
+                {
+                    return Err(WorkspaceError::NestedTicket);
+                }
+                &mut self.ticket_mut(id)?.children
+            }
+        };
+        list.insert(index.min(list.len()), ticket);
+        Ok(())
+    }
+
+    /// Sets the key of a ticket, such as `PROJ-123`; blank clears it.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::TicketNotFound`].
+    pub fn set_ticket_key(&mut self, id: TicketId, key: &str) -> Result<()> {
+        self.ticket_mut(id)?.key = clean_detail(key, MAX_KEY_LEN);
+        Ok(())
+    }
+
+    /// Sets or clears a ticket's own address.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::TicketNotFound`].
+    pub fn set_ticket_address(&mut self, id: TicketId, url: Option<TabUrl>) -> Result<()> {
+        self.ticket_mut(id)?.url = url;
+        Ok(())
+    }
+
+    /// Sets or clears a ticket's status.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::TicketNotFound`] or [`WorkspaceError::StatusNotFound`].
+    pub fn set_ticket_status(&mut self, id: TicketId, status: Option<StatusId>) -> Result<()> {
+        if let Some(status) = status {
+            self.ensure_status(status)?;
+        }
+        self.ticket_mut(id)?.status = status;
+        Ok(())
+    }
+
+    /// Moves a ticket to `index` of `place`, clamped to the end: within its
+    /// profile, to another profile, or under a ticket as a sub-ticket.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::NestedTicket`] when a ticket with sub-tickets would
+    /// become one, or one would go under a sub-ticket or itself, or the
+    /// not-found error of the ticket or `place`.
+    pub fn move_ticket(&mut self, id: TicketId, place: TicketPlace, index: usize) -> Result<()> {
+        let moving = self.ticket(id).ok_or(WorkspaceError::TicketNotFound(id))?;
+        if let TicketPlace::Ticket(parent) = place {
+            let target = self
+                .ticket(parent)
+                .ok_or(WorkspaceError::TicketNotFound(parent))?;
+            if parent == id || target.parent.is_some() || !moving.ticket.children.is_empty() {
+                return Err(WorkspaceError::NestedTicket);
+            }
+        } else if let TicketPlace::Profile(profile) = place {
+            self.profile_index(profile)?;
+        }
+        let ticket = self.take_ticket(id)?;
+        self.insert_ticket(place, index, ticket)
+    }
+
+    /// Removes a ticket with its links and sub-tickets.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::TicketNotFound`].
+    pub fn remove_ticket(&mut self, id: TicketId) -> Result<Ticket> {
+        let ticket = self.take_ticket(id)?;
+        self.prune_pinned();
+        Ok(ticket)
+    }
+
+    /// The address that opens a ticket: its own.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::TicketNotFound`] or [`WorkspaceError::NoTicketLink`].
+    pub fn ticket_address(&self, id: TicketId) -> Result<&TabUrl> {
+        let found = self.ticket(id).ok_or(WorkspaceError::TicketNotFound(id))?;
+        found
+            .ticket
+            .url
+            .as_ref()
+            .ok_or(WorkspaceError::NoTicketLink)
+    }
+
+    // ---- notes ----------------------------------------------------------
+
+    /// Finds a note with its profile.
+    #[must_use]
+    pub fn note(&self, id: NoteId) -> Option<(&Profile, &Note)> {
+        self.profiles.iter().find_map(|profile| {
+            profile
+                .notes
+                .iter()
+                .find(|note| note.id == id)
+                .map(|note| (profile, note))
+        })
+    }
+
+    /// Adds an empty note at the end of a profile's notes.
     ///
     /// # Errors
     ///
     /// [`WorkspaceError::EmptyName`] or [`WorkspaceError::ProfileNotFound`].
-    pub fn add_group(&mut self, profile: ProfileId, name: &str) -> Result<GroupId> {
-        let name = clean_name(name)?;
-        let id = GroupId::new();
-        self.profile_mut(profile)?.items.push(Item::Group(Group {
+    pub fn add_note(&mut self, profile: ProfileId, title: &str) -> Result<NoteId> {
+        self.add_note_as(NoteId::new(), profile, title)
+    }
+
+    /// Adds a note with an id chosen by the caller.
+    ///
+    /// # Errors
+    ///
+    /// As [`Workspace::add_note`], or [`WorkspaceError::DuplicateId`] when
+    /// the id is taken.
+    pub fn add_note_as(&mut self, id: NoteId, profile: ProfileId, title: &str) -> Result<NoteId> {
+        let title = clean_name(title)?;
+        if self.note(id).is_some() {
+            return Err(WorkspaceError::DuplicateId(id.to_string()));
+        }
+        self.profile_mut(profile)?.notes.push(Note {
             id,
-            name,
-            color: ContainerColor::None,
+            title,
             icon: None,
-            ticket_id: None,
-            note: None,
-            children: Vec::new(),
-        }));
+            body: None,
+            links: Vec::new(),
+        });
         Ok(id)
     }
 
-    /// Renames a group.
+    /// Adds a note as it is, such as one imported from an older file.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::EmptyName`] or [`WorkspaceError::GroupNotFound`].
-    pub fn rename_group(&mut self, id: GroupId, name: &str) -> Result<()> {
-        let name = clean_name(name)?;
-        self.group_mut(id)?.name = name;
+    /// [`WorkspaceError::ProfileNotFound`].
+    pub fn insert_note(&mut self, profile: ProfileId, note: Note) -> Result<()> {
+        self.profile_mut(profile)?.notes.push(note);
         Ok(())
     }
 
-    /// Moves a group to `index` among the items of `profile`, clamped to the
-    /// end. Works across profiles. Nothing changes when `profile` is unknown.
+    /// Moves a note to `index` of a profile's notes, clamped to the end.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::GroupNotFound`] or [`WorkspaceError::ProfileNotFound`].
-    pub fn move_group(&mut self, id: GroupId, profile: ProfileId, index: usize) -> Result<()> {
+    /// The not-found error of the note or the profile.
+    pub fn move_note(&mut self, id: NoteId, profile: ProfileId, index: usize) -> Result<()> {
         self.profile_index(profile)?;
-        let group = self.take_group(id)?;
-        let items = &mut self.profile_mut(profile)?.items;
-        items.insert(index.min(items.len()), Item::Group(group));
+        let note = self.take_note(id)?;
+        let notes = &mut self.profile_mut(profile)?.notes;
+        notes.insert(index.min(notes.len()), note);
         Ok(())
     }
 
-    /// Removes a group with all of its tabs and folders.
+    /// Removes a note with its links.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::GroupNotFound`].
-    pub fn remove_group(&mut self, id: GroupId) -> Result<Group> {
-        let group = self.take_group(id)?;
+    /// [`WorkspaceError::NoteNotFound`].
+    pub fn remove_note(&mut self, id: NoteId) -> Result<Note> {
+        let note = self.take_note(id)?;
         self.prune_pinned();
-        Ok(group)
+        Ok(note)
     }
 
-    // ---- folders --------------------------------------------------------
+    // ---- links ----------------------------------------------------------
 
-    /// Finds a folder with its profile and group.
+    /// Finds a link with its profile and owner.
     #[must_use]
-    pub fn find_folder(&self, id: FolderId) -> Option<FolderRef<'_>> {
-        self.profiles.iter().find_map(|profile| {
-            profile.items.iter().find_map(|item| match item {
-                Item::Folder(folder) if folder.id == id => Some(FolderRef {
+    pub fn link(&self, id: TabId) -> Option<LinkRef<'_>> {
+        fn in_ticket<'a>(
+            profile: &'a Profile,
+            ticket: &'a Ticket,
+            id: TabId,
+        ) -> Option<LinkRef<'a>> {
+            ticket
+                .links
+                .iter()
+                .find(|link| link.id == id)
+                .map(|link| LinkRef {
                     profile,
-                    group: None,
-                    folder,
-                }),
-                Item::Group(group) => group.children.iter().find_map(|node| match node {
-                    Node::Folder(folder) if folder.id == id => Some(FolderRef {
-                        profile,
-                        group: Some(group),
-                        folder,
-                    }),
-                    _ => None,
-                }),
-                Item::Folder(_) | Item::Tab(_) => None,
-            })
+                    owner: LinkOwner::Ticket(ticket.id),
+                    link,
+                })
+        }
+        self.profiles.iter().find_map(|profile| {
+            profile
+                .tickets
+                .iter()
+                .find_map(|ticket| {
+                    in_ticket(profile, ticket, id).or_else(|| {
+                        ticket
+                            .children
+                            .iter()
+                            .find_map(|child| in_ticket(profile, child, id))
+                    })
+                })
+                .or_else(|| {
+                    profile.notes.iter().find_map(|note| {
+                        note.links
+                            .iter()
+                            .find(|link| link.id == id)
+                            .map(|link| LinkRef {
+                                profile,
+                                owner: LinkOwner::Note(note.id),
+                                link,
+                            })
+                    })
+                })
         })
     }
 
-    /// Adds an empty folder at the end of a profile or group.
+    /// Adds a link at the end of a ticket's or note's links. A blank title
+    /// uses the URL.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::EmptyName`], [`WorkspaceError::NestedFolder`] for a
-    /// folder place, or the not-found error of `place`.
-    pub fn add_folder(&mut self, place: Place, name: &str) -> Result<FolderId> {
-        let name = clean_name(name)?;
-        let id = FolderId::new();
-        let folder = Folder {
-            id,
-            name,
-            color: ContainerColor::None,
-            icon: None,
-            ticket_id: None,
-            note: None,
-            collapsed: false,
-            tabs: Vec::new(),
-        };
-        self.insert_folder(place, usize::MAX, folder)?;
-        Ok(id)
-    }
-
-    /// Shows a folder collapsed or expanded.
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::FolderNotFound`].
-    pub fn set_folder_collapsed(&mut self, id: FolderId, collapsed: bool) -> Result<()> {
-        self.folder_mut(id)?.collapsed = collapsed;
-        Ok(())
-    }
-
-    /// Renames a folder.
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::EmptyName`] or [`WorkspaceError::FolderNotFound`].
-    pub fn rename_folder(&mut self, id: FolderId, name: &str) -> Result<()> {
-        let name = clean_name(name)?;
-        self.folder_mut(id)?.name = name;
-        Ok(())
-    }
-
-    /// Moves a folder to `index` within a profile or group, clamped to the
-    /// end. Nothing changes when `place` is unknown or a folder.
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::FolderNotFound`], [`WorkspaceError::NestedFolder`]
-    /// or the not-found error of `place`.
-    pub fn move_folder(&mut self, id: FolderId, place: Place, index: usize) -> Result<()> {
-        if matches!(place, Place::Folder(_)) {
-            return Err(WorkspaceError::NestedFolder);
-        }
-        self.ensure_place(place)?;
-        let folder = self.take_folder(id)?;
-        self.insert_folder(place, index, folder)
-    }
-
-    /// Removes a folder together with its tabs.
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::FolderNotFound`].
-    pub fn remove_folder(&mut self, id: FolderId) -> Result<Folder> {
-        let folder = self.take_folder(id)?;
-        self.prune_pinned();
-        Ok(folder)
-    }
-
-    // ---- tabs -----------------------------------------------------------
-
-    /// Every tab with what contains it, in display order.
-    #[must_use]
-    pub fn tabs(&self) -> Vec<TabRef<'_>> {
-        let mut found = Vec::new();
-        for profile in &self.profiles {
-            let at = |group, folder, tab| TabRef {
-                profile,
-                group,
-                folder,
-                tab,
-            };
-            for item in &profile.items {
-                match item {
-                    Item::Tab(tab) => found.push(at(None, None, tab)),
-                    Item::Folder(folder) => {
-                        found.extend(folder.tabs.iter().map(|tab| at(None, Some(folder), tab)));
-                    }
-                    Item::Group(group) => {
-                        for node in &group.children {
-                            match node {
-                                Node::Tab(tab) => found.push(at(Some(group), None, tab)),
-                                Node::Folder(folder) => found.extend(
-                                    folder
-                                        .tabs
-                                        .iter()
-                                        .map(|tab| at(Some(group), Some(folder), tab)),
-                                ),
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        found
-    }
-
-    /// Finds a tab with its profile, group and folder.
-    #[must_use]
-    pub fn find_tab(&self, id: TabId) -> Option<TabRef<'_>> {
-        self.tabs().into_iter().find(|found| found.tab.id == id)
-    }
-
-    /// Adds a tab at the end of `place`. A blank title falls back to the URL.
-    ///
-    /// # Errors
-    ///
-    /// The not-found error of `place`.
-    pub fn add_tab(&mut self, place: Place, url: TabUrl, title: &str) -> Result<TabId> {
-        let title = tab_title(title, &url);
+    /// The not-found error of `owner`.
+    pub fn add_link(&mut self, owner: LinkOwner, url: TabUrl, title: &str) -> Result<TabId> {
         let id = TabId::new();
-        let tab = Tab {
+        let title = link_title(title, &url);
+        self.links_mut(owner)?.push(Link {
             id,
             url,
             title,
             icon: None,
-            ticket_id: None,
-            note: None,
-        };
-        self.insert_tab(place, usize::MAX, tab)?;
+        });
         Ok(id)
     }
 
-    /// Changes a tab's title. A blank title falls back to the URL.
+    /// Adds a link as it is, such as one imported from an older file.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::TabNotFound`].
-    pub fn rename_tab(&mut self, id: TabId, title: &str) -> Result<()> {
-        let tab = self.tab_mut(id)?;
-        tab.title = tab_title(title, &tab.url);
+    /// The not-found error of `owner`.
+    pub fn insert_link(&mut self, owner: LinkOwner, link: Link) -> Result<()> {
+        self.links_mut(owner)?.push(link);
         Ok(())
     }
 
-    /// Changes a tab's URL. A title that was only the old URL (the fallback
-    /// for a blank title) follows the new one.
+    /// Changes where a link points.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::TabNotFound`].
-    pub fn set_tab_url(&mut self, id: TabId, url: TabUrl) -> Result<()> {
-        let tab = self.tab_mut(id)?;
-        if tab.title == tab.url.as_str() {
-            url.as_str().clone_into(&mut tab.title);
-        }
-        tab.url = url;
+    /// [`WorkspaceError::LinkNotFound`].
+    pub fn set_link_url(&mut self, id: TabId, url: TabUrl) -> Result<()> {
+        self.link_mut(id)?.url = url;
         Ok(())
     }
 
-    /// Removes a tab.
+    /// Moves a link to `index` of a ticket's or note's links, clamped.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::TabNotFound`].
-    pub fn remove_tab(&mut self, id: TabId) -> Result<Tab> {
-        let tab = self.take_tab(id).ok_or(WorkspaceError::TabNotFound(id))?;
+    /// The not-found error of the link or `owner`.
+    pub fn move_link(&mut self, id: TabId, owner: LinkOwner, index: usize) -> Result<()> {
+        self.links_mut(owner)?;
+        let link = self.take_link(id)?;
+        let links = self.links_mut(owner)?;
+        links.insert(index.min(links.len()), link);
+        Ok(())
+    }
+
+    /// Removes a link.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::LinkNotFound`].
+    pub fn remove_link(&mut self, id: TabId) -> Result<Link> {
+        let link = self.take_link(id)?;
         self.prune_pinned();
-        Ok(tab)
-    }
-
-    /// Moves a tab to `index` within `place`, clamped to the end. Works
-    /// across profiles, groups and folders. Nothing changes when `place` is
-    /// unknown.
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::TabNotFound`] or the not-found error of `place`.
-    pub fn move_tab(&mut self, id: TabId, place: Place, index: usize) -> Result<()> {
-        self.ensure_place(place)?;
-        let tab = self.take_tab(id).ok_or(WorkspaceError::TabNotFound(id))?;
-        self.insert_tab(place, index, tab)
+        Ok(link)
     }
 
     // ---- any item -------------------------------------------------------
 
-    /// Sets or clears the custom icon of a group, folder or tab.
+    /// Renames a ticket, note or link. A link with a blank title uses its URL.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::EmptyName`] for a ticket or note, or the not-found
+    /// error of `target`.
+    pub fn rename(&mut self, target: Target, name: &str) -> Result<()> {
+        match target {
+            Target::Ticket(id) => {
+                let name = clean_name(name)?;
+                self.ticket_mut(id)?.title = name;
+            }
+            Target::Note(id) => {
+                let name = clean_name(name)?;
+                self.note_mut(id)?.title = name;
+            }
+            Target::Link(id) => {
+                let link = self.link_mut(id)?;
+                link.title = link_title(name, &link.url);
+            }
+        }
+        Ok(())
+    }
+
+    /// Sets or clears the custom icon of a ticket, note or link.
     ///
     /// # Errors
     ///
     /// The not-found error of `target`.
     pub fn set_icon(&mut self, target: Target, icon: Option<Icon>) -> Result<()> {
         match target {
-            Target::Group(id) => self.group_mut(id)?.icon = icon,
-            Target::Folder(id) => self.folder_mut(id)?.icon = icon,
-            Target::Tab(id) => self.tab_mut(id)?.icon = icon,
+            Target::Ticket(id) => self.ticket_mut(id)?.icon = icon,
+            Target::Note(id) => self.note_mut(id)?.icon = icon,
+            Target::Link(id) => self.link_mut(id)?.icon = icon,
         }
         Ok(())
     }
 
-    /// Sets the color of a group or folder: one of the profile colors, its
-    /// parent's, or none.
+    /// Sets the Markdown text of a ticket (its note) or a note (its body),
+    /// trimmed; blank clears it.
     ///
     /// # Errors
     ///
-    /// The not-found error of `container`.
-    pub fn set_color(&mut self, container: Container, color: ContainerColor) -> Result<()> {
-        match container {
-            Container::Group(id) => self.group_mut(id)?.color = color,
-            Container::Folder(id) => self.folder_mut(id)?.color = color,
+    /// The not-found error of `owner`.
+    pub fn set_text(&mut self, owner: LinkOwner, text: &str) -> Result<()> {
+        let text = clean_detail(text, MAX_NOTE_LEN);
+        match owner {
+            LinkOwner::Ticket(id) => self.ticket_mut(id)?.note = text,
+            LinkOwner::Note(id) => self.note_mut(id)?.body = text,
         }
         Ok(())
     }
 
-    /// The profile a group, folder or tab belongs to.
+    /// The profile a ticket, note or link belongs to.
     #[must_use]
     pub fn target_profile(&self, target: Target) -> Option<&Profile> {
         match target {
-            Target::Group(id) => self.group_profile(id),
-            Target::Folder(id) => self.find_folder(id).map(|found| found.profile),
-            Target::Tab(id) => self.find_tab(id).map(|found| found.profile),
-        }
-    }
-
-    /// The ticket id of a group, folder or tab, if it has one.
-    #[must_use]
-    pub fn ticket_id(&self, target: Target) -> Option<&str> {
-        match target {
-            Target::Group(id) => self.group(id)?.ticket_id.as_deref(),
-            Target::Folder(id) => self.find_folder(id)?.folder.ticket_id.as_deref(),
-            Target::Tab(id) => self.find_tab(id)?.tab.ticket_id.as_deref(),
+            Target::Ticket(id) => self.ticket(id).map(|found| found.profile),
+            Target::Note(id) => self.note(id).map(|(profile, _)| profile),
+            Target::Link(id) => self.link(id).map(|found| found.profile),
         }
     }
 
@@ -718,7 +886,9 @@ impl Workspace {
     ///
     /// The not-found error of `target`.
     pub fn pin(&mut self, target: Target) -> Result<()> {
-        self.ensure_target(target)?;
+        if !self.exists(target) {
+            return Err(not_found(target));
+        }
         if !self.pinned.contains(&target) {
             self.pinned.push(target);
         }
@@ -744,42 +914,14 @@ impl Workspace {
         Ok(())
     }
 
-    /// Sets the ticket id and note of a group, folder or tab. Both are
-    /// trimmed (the note keeps its inner line breaks); a blank one is
-    /// cleared.
-    ///
-    /// # Errors
-    ///
-    /// The not-found error of `target`.
-    pub fn set_details(&mut self, target: Target, ticket_id: &str, note: &str) -> Result<()> {
-        let ticket_id = clean_detail(ticket_id, MAX_TICKET_ID_LEN);
-        let note = clean_detail(note, MAX_NOTE_LEN);
-        let (slot_ticket, slot_note) = match target {
-            Target::Group(id) => {
-                let group = self.group_mut(id)?;
-                (&mut group.ticket_id, &mut group.note)
-            }
-            Target::Folder(id) => {
-                let folder = self.folder_mut(id)?;
-                (&mut folder.ticket_id, &mut folder.note)
-            }
-            Target::Tab(id) => {
-                let tab = self.tab_mut(id)?;
-                (&mut tab.ticket_id, &mut tab.note)
-            }
-        };
-        *slot_ticket = ticket_id;
-        *slot_note = note;
-        Ok(())
-    }
-
     /// Checks the invariants a deserialized workspace must hold: at least
-    /// one profile and unique ids.
+    /// one profile, unique ids, one level of sub-tickets and known statuses.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::NoProfiles`] or the first
-    /// [`WorkspaceError::DuplicateId`] found.
+    /// [`WorkspaceError::NoProfiles`], the first
+    /// [`WorkspaceError::DuplicateId`], [`WorkspaceError::NestedTicket`] or
+    /// [`WorkspaceError::StatusNotFound`].
     pub fn validate(&self) -> Result<()> {
         if self.profiles.is_empty() {
             return Err(WorkspaceError::NoProfiles);
@@ -792,35 +934,48 @@ impl Workspace {
                 Err(WorkspaceError::DuplicateId(id))
             }
         };
-        let folder = |folder: &Folder, unique: &mut dyn FnMut(String) -> Result<()>| {
-            unique(folder.id.to_string())?;
-            folder
-                .tabs
+        for status in &self.statuses {
+            unique(status.id.to_string())?;
+        }
+        let links = |links: &[Link], unique: &mut dyn FnMut(String) -> Result<()>| {
+            links
                 .iter()
-                .try_for_each(|tab| unique(tab.id.to_string()))
+                .try_for_each(|link| unique(link.id.to_string()))
         };
         for profile in &self.profiles {
             unique(profile.id.to_string())?;
-            for item in &profile.items {
-                match item {
-                    Item::Tab(tab) => unique(tab.id.to_string())?,
-                    Item::Folder(found) => folder(found, &mut unique)?,
-                    Item::Group(group) => {
-                        unique(group.id.to_string())?;
-                        for node in &group.children {
-                            match node {
-                                Node::Tab(tab) => unique(tab.id.to_string())?,
-                                Node::Folder(found) => folder(found, &mut unique)?,
-                            }
-                        }
+            for ticket in &profile.tickets {
+                self.check_ticket(ticket, &mut unique)?;
+                links(&ticket.links, &mut unique)?;
+                for child in &ticket.children {
+                    if !child.children.is_empty() {
+                        return Err(WorkspaceError::NestedTicket);
                     }
+                    self.check_ticket(child, &mut unique)?;
+                    links(&child.links, &mut unique)?;
                 }
+            }
+            for note in &profile.notes {
+                unique(note.id.to_string())?;
+                links(&note.links, &mut unique)?;
             }
         }
         Ok(())
     }
 
     // ---- internals ------------------------------------------------------
+
+    fn check_ticket(
+        &self,
+        ticket: &Ticket,
+        unique: &mut dyn FnMut(String) -> Result<()>,
+    ) -> Result<()> {
+        unique(ticket.id.to_string())?;
+        if let Some(status) = ticket.status {
+            self.ensure_status(status)?;
+        }
+        Ok(())
+    }
 
     fn profile_index(&self, id: ProfileId) -> Result<usize> {
         self.profiles
@@ -836,60 +991,100 @@ impl Workspace {
             .ok_or(WorkspaceError::ProfileNotFound(id))
     }
 
-    fn group_mut(&mut self, id: GroupId) -> Result<&mut Group> {
-        self.profiles
-            .iter_mut()
-            .flat_map(|profile| &mut profile.items)
-            .find_map(|item| match item {
-                Item::Group(group) if group.id == id => Some(group),
-                _ => None,
-            })
-            .ok_or(WorkspaceError::GroupNotFound(id))
+    fn ensure_status(&self, id: StatusId) -> Result<()> {
+        self.status(id)
+            .map(drop)
+            .ok_or(WorkspaceError::StatusNotFound(id))
     }
 
-    fn folder_mut(&mut self, id: FolderId) -> Result<&mut Folder> {
-        self.profiles
+    fn status_mut(&mut self, id: StatusId) -> Result<&mut Status> {
+        self.statuses
             .iter_mut()
-            .flat_map(|profile| &mut profile.items)
-            .find_map(|item| match item {
-                Item::Folder(folder) => (folder.id == id).then_some(folder),
-                Item::Group(group) => group.children.iter_mut().find_map(|node| match node {
-                    Node::Folder(folder) if folder.id == id => Some(folder),
-                    _ => None,
-                }),
-                Item::Tab(_) => None,
-            })
-            .ok_or(WorkspaceError::FolderNotFound(id))
+            .find(|status| status.id == id)
+            .ok_or(WorkspaceError::StatusNotFound(id))
     }
 
-    fn tab_mut(&mut self, id: TabId) -> Result<&mut Tab> {
+    fn ticket_mut(&mut self, id: TicketId) -> Result<&mut Ticket> {
         self.profiles
             .iter_mut()
-            .flat_map(|profile| &mut profile.items)
-            .find_map(|item| match item {
-                Item::Tab(tab) => (tab.id == id).then_some(tab),
-                Item::Folder(folder) => folder.tabs.iter_mut().find(|tab| tab.id == id),
-                Item::Group(group) => group.children.iter_mut().find_map(|node| match node {
-                    Node::Tab(tab) => (tab.id == id).then_some(tab),
-                    Node::Folder(folder) => folder.tabs.iter_mut().find(|tab| tab.id == id),
-                }),
+            .flat_map(|profile| &mut profile.tickets)
+            .find_map(|ticket| {
+                if ticket.id == id {
+                    Some(ticket)
+                } else {
+                    ticket.children.iter_mut().find(|child| child.id == id)
+                }
             })
-            .ok_or(WorkspaceError::TabNotFound(id))
+            .ok_or(WorkspaceError::TicketNotFound(id))
+    }
+
+    fn note_mut(&mut self, id: NoteId) -> Result<&mut Note> {
+        self.profiles
+            .iter_mut()
+            .flat_map(|profile| &mut profile.notes)
+            .find(|note| note.id == id)
+            .ok_or(WorkspaceError::NoteNotFound(id))
+    }
+
+    fn links_mut(&mut self, owner: LinkOwner) -> Result<&mut Vec<Link>> {
+        Ok(match owner {
+            LinkOwner::Ticket(id) => &mut self.ticket_mut(id)?.links,
+            LinkOwner::Note(id) => &mut self.note_mut(id)?.links,
+        })
+    }
+
+    fn link_mut(&mut self, id: TabId) -> Result<&mut Link> {
+        let owner = self
+            .link(id)
+            .map(|found| found.owner)
+            .ok_or(WorkspaceError::LinkNotFound(id))?;
+        self.links_mut(owner)?
+            .iter_mut()
+            .find(|link| link.id == id)
+            .ok_or(WorkspaceError::LinkNotFound(id))
+    }
+
+    fn take_ticket(&mut self, id: TicketId) -> Result<Ticket> {
+        for profile in &mut self.profiles {
+            if let Some(index) = profile.tickets.iter().position(|ticket| ticket.id == id) {
+                return Ok(profile.tickets.remove(index));
+            }
+            for ticket in &mut profile.tickets {
+                if let Some(index) = ticket.children.iter().position(|child| child.id == id) {
+                    return Ok(ticket.children.remove(index));
+                }
+            }
+        }
+        Err(WorkspaceError::TicketNotFound(id))
+    }
+
+    fn take_note(&mut self, id: NoteId) -> Result<Note> {
+        for profile in &mut self.profiles {
+            if let Some(index) = profile.notes.iter().position(|note| note.id == id) {
+                return Ok(profile.notes.remove(index));
+            }
+        }
+        Err(WorkspaceError::NoteNotFound(id))
+    }
+
+    fn take_link(&mut self, id: TabId) -> Result<Link> {
+        let owner = self
+            .link(id)
+            .map(|found| found.owner)
+            .ok_or(WorkspaceError::LinkNotFound(id))?;
+        let links = self.links_mut(owner)?;
+        let index = links
+            .iter()
+            .position(|link| link.id == id)
+            .ok_or(WorkspaceError::LinkNotFound(id))?;
+        Ok(links.remove(index))
     }
 
     fn exists(&self, target: Target) -> bool {
         match target {
-            Target::Group(id) => self.group(id).is_some(),
-            Target::Folder(id) => self.find_folder(id).is_some(),
-            Target::Tab(id) => self.find_tab(id).is_some(),
-        }
-    }
-
-    fn ensure_target(&self, target: Target) -> Result<()> {
-        if self.exists(target) {
-            Ok(())
-        } else {
-            Err(not_found(target))
+            Target::Ticket(id) => self.ticket(id).is_some(),
+            Target::Note(id) => self.note(id).is_some(),
+            Target::Link(id) => self.link(id).is_some(),
         }
     }
 
@@ -901,161 +1096,33 @@ impl Workspace {
             .filter(|target| self.exists(*target))
             .collect();
     }
+}
 
-    fn ensure_place(&mut self, place: Place) -> Result<()> {
-        match place {
-            Place::Profile(id) => self.profile_index(id).map(drop),
-            Place::Group(id) => self.group_mut(id).map(drop),
-            Place::Folder(id) => self.folder_mut(id).map(drop),
-        }
-    }
-
-    fn take_group(&mut self, id: GroupId) -> Result<Group> {
-        for profile in &mut self.profiles {
-            let found = profile
-                .items
-                .iter()
-                .position(|item| matches!(item, Item::Group(group) if group.id == id));
-            if let Some(index) = found
-                && let Item::Group(group) = profile.items.remove(index)
-            {
-                return Ok(group);
-            }
-        }
-        Err(WorkspaceError::GroupNotFound(id))
-    }
-
-    fn take_folder(&mut self, id: FolderId) -> Result<Folder> {
-        for profile in &mut self.profiles {
-            let loose = profile
-                .items
-                .iter()
-                .position(|item| matches!(item, Item::Folder(folder) if folder.id == id));
-            if let Some(index) = loose
-                && let Item::Folder(folder) = profile.items.remove(index)
-            {
-                return Ok(folder);
-            }
-            for item in &mut profile.items {
-                if let Item::Group(group) = item
-                    && let Some(index) = group
-                        .children
-                        .iter()
-                        .position(|node| matches!(node, Node::Folder(folder) if folder.id == id))
-                    && let Node::Folder(folder) = group.children.remove(index)
-                {
-                    return Ok(folder);
-                }
-            }
-        }
-        Err(WorkspaceError::FolderNotFound(id))
-    }
-
-    /// Removes a tab from wherever it is.
-    fn take_tab(&mut self, id: TabId) -> Option<Tab> {
-        fn from_folder(folder: &mut Folder, id: TabId) -> Option<Tab> {
-            let index = folder.tabs.iter().position(|tab| tab.id == id)?;
-            Some(folder.tabs.remove(index))
-        }
-        for profile in &mut self.profiles {
-            let loose = profile
-                .items
-                .iter()
-                .position(|item| matches!(item, Item::Tab(tab) if tab.id == id));
-            if let Some(index) = loose
-                && let Item::Tab(tab) = profile.items.remove(index)
-            {
-                return Some(tab);
-            }
-            for item in &mut profile.items {
-                let taken = match item {
-                    Item::Tab(_) => None,
-                    Item::Folder(folder) => from_folder(folder, id),
-                    Item::Group(group) => {
-                        let loose = group
-                            .children
-                            .iter()
-                            .position(|node| matches!(node, Node::Tab(tab) if tab.id == id));
-                        match loose.map(|index| group.children.remove(index)) {
-                            Some(Node::Tab(tab)) => Some(tab),
-                            _ => group.children.iter_mut().find_map(|node| match node {
-                                Node::Folder(folder) => from_folder(folder, id),
-                                Node::Tab(_) => None,
-                            }),
-                        }
-                    }
-                };
-                if taken.is_some() {
-                    return taken;
-                }
-            }
-        }
-        None
-    }
-
-    /// Inserts a tab at `index` (clamped) within `place`.
-    fn insert_tab(&mut self, place: Place, index: usize, tab: Tab) -> Result<()> {
-        match place {
-            Place::Profile(id) => {
-                let items = &mut self.profile_mut(id)?.items;
-                items.insert(index.min(items.len()), Item::Tab(tab));
-            }
-            Place::Group(id) => {
-                let children = &mut self.group_mut(id)?.children;
-                children.insert(index.min(children.len()), Node::Tab(tab));
-            }
-            Place::Folder(id) => {
-                let tabs = &mut self.folder_mut(id)?.tabs;
-                tabs.insert(index.min(tabs.len()), tab);
-            }
-        }
-        Ok(())
-    }
-
-    /// Inserts a folder at `index` (clamped) within a profile or group.
-    fn insert_folder(&mut self, place: Place, index: usize, folder: Folder) -> Result<()> {
-        match place {
-            Place::Profile(id) => {
-                let items = &mut self.profile_mut(id)?.items;
-                items.insert(index.min(items.len()), Item::Folder(folder));
-            }
-            Place::Group(id) => {
-                let children = &mut self.group_mut(id)?.children;
-                children.insert(index.min(children.len()), Node::Folder(folder));
-            }
-            Place::Folder(_) => return Err(WorkspaceError::NestedFolder),
-        }
-        Ok(())
+/// The not-found error of a target.
+fn not_found(target: Target) -> WorkspaceError {
+    match target {
+        Target::Ticket(id) => WorkspaceError::TicketNotFound(id),
+        Target::Note(id) => WorkspaceError::NoteNotFound(id),
+        Target::Link(id) => WorkspaceError::LinkNotFound(id),
     }
 }
 
-/// Trims a title, using the URL when it is blank.
-fn tab_title(raw: &str, url: &TabUrl) -> String {
+/// Trims a link title, using the URL when it is blank.
+fn link_title(raw: &str, url: &TabUrl) -> String {
     match raw.trim() {
         "" => url.as_str().to_owned(),
         trimmed => trimmed.to_owned(),
     }
 }
 
-/// The not-found error of a target.
-fn not_found(target: Target) -> WorkspaceError {
-    match target {
-        Target::Group(id) => WorkspaceError::GroupNotFound(id),
-        Target::Folder(id) => WorkspaceError::FolderNotFound(id),
-        Target::Tab(id) => WorkspaceError::TabNotFound(id),
-    }
-}
-
-/// Where a ticket id goes in a profile's ticket URL.
-pub const TICKET_PLACEHOLDER: &str = "{ticket}";
-
-/// Longest ticket id kept, in characters.
-pub const MAX_TICKET_ID_LEN: usize = 64;
+/// Longest ticket key kept, in characters.
+pub const MAX_KEY_LEN: usize = 64;
 /// Longest note kept, in characters.
 pub const MAX_NOTE_LEN: usize = 20_000;
 
-/// Trims a ticket id or note and caps its length; `None` when blank.
-fn clean_detail(raw: &str, max: usize) -> Option<String> {
+/// Trims a key or note and caps its length; `None` when blank.
+#[must_use]
+pub fn clean_detail(raw: &str, max: usize) -> Option<String> {
     let trimmed = raw.trim();
     (!trimmed.is_empty()).then(|| trimmed.chars().take(max).collect())
 }
