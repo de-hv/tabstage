@@ -187,3 +187,33 @@ describe('ticket links', () => {
     expect(calls.filter((call) => call.cmd === 'open_ticket')).toHaveLength(2);
   });
 });
+
+describe('drag sources', () => {
+  // WebKit (the macOS app) does not start a drag on a <button>, so the part
+  // of a row or card a drag starts from must not be one.
+  it('are not buttons, yet work as buttons from the keyboard', async () => {
+    const { user } = await renderApp();
+
+    const name = within(treeRow('Status page')).getByRole('button', { name: 'Status page' });
+    expect(name.tagName).not.toBe('BUTTON');
+    for (const card of document.querySelectorAll('[draggable="true"]')) {
+      expect(card.tagName).not.toBe('BUTTON');
+      expect(card.querySelector(':scope > button.card, :scope > button.row, :scope > button.column__title')).toBeNull();
+    }
+
+    name.focus();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByRole('main', { name: 'Status page' })).toBeTruthy();
+  });
+});
+
+describe('move to menu', () => {
+  it('keeps long destinations on one line with the full name as a tooltip', async () => {
+    await renderApp();
+    await rightClick('Status page');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Move to…' }));
+    const item = await screen.findByRole('menuitem', { name: 'Trabajo / Trabajo · Jira' });
+    expect(item.getAttribute('title')).toBe('Trabajo / Trabajo · Jira');
+    expect(item.querySelector('.menu__item-label')).toBeTruthy();
+  });
+});

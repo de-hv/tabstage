@@ -6,6 +6,7 @@ import { needsSetup } from '../lib/browsers';
 import type { DragItem } from '../lib/dnd';
 import { folderMenu, groupMenu, type MenuHandlers, type NewKind, profileMenu, tabMenu } from '../lib/menus';
 import { profileColor } from '../lib/profileColors';
+import { pressable } from '../lib/pressable';
 import { countTabs, hasTicketLink, pinnedIndex, resolveColor } from '../lib/workspace';
 import type { ItemActions, Selection } from '../state/selection';
 import { useTreeState } from '../state/useTreeState';
@@ -604,8 +605,8 @@ function Row(props: RowProps) {
           />
         </div>
       ) : (
-        <button
-          type="button"
+        <div
+          {...pressable(onActivate)}
           className="tree-row__name"
           title={props.title ?? name}
           aria-current={current ? 'page' : undefined}
@@ -629,7 +630,7 @@ function Row(props: RowProps) {
           ) : (
             name
           )}
-        </button>
+        </div>
       )}
       <NoteIcon note={props.note} />
       {props.trailing}

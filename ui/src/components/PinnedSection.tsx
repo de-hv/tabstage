@@ -1,8 +1,9 @@
 import { ChevronDown, ChevronRight, PinOff } from 'lucide-react';
-import type { CSSProperties } from 'react';
+import { type CSSProperties, useEffect, useState } from 'react';
 
 import type { Command, Target, Workspace } from '../api/types';
 import type { DragItem } from '../lib/dnd';
+import { pressable } from '../lib/pressable';
 import { profileColor } from '../lib/profileColors';
 import { type PinnedItem, effectiveColor, pinnedItems } from '../lib/workspace';
 import type { ItemActions, Selection } from '../state/selection';
@@ -28,9 +29,9 @@ interface Props {
  */
 export function PinnedSection({ workspace, selection, expanded, onToggle, onSelect, actions, apply }: Props) {
   const items = pinnedItems(workspace);
-  const isDragging = useIsDragging();
+  const showDropZone = useShownWhileDragging();
   const dropOnSection = useDrop({ kind: 'pinned' });
-  if (items.length === 0 && !isDragging) return null;
+  if (items.length === 0 && !showDropZone) return null;
 
   return (
     <section className="pinned" aria-label="Pinned">
@@ -68,6 +69,26 @@ export function PinnedSection({ workspace, selection, expanded, onToggle, onSele
   );
 }
 
+/**
+ * Whether a drag is under way, turned on a moment after it starts. The empty
+ * "Drop here to pin" zone sits above the tree, so showing it during
+ * `dragstart` would move the row being dragged, and WebKit cancels a drag
+ * whose source moves then.
+ */
+function useShownWhileDragging(): boolean {
+  const isDragging = useIsDragging();
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (!isDragging) {
+      setShown(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setShown(true), 150);
+    return () => clearTimeout(timer);
+  }, [isDragging]);
+  return shown;
+}
+
 interface RowProps {
   pinned: PinnedItem;
   color: number | undefined;
@@ -94,8 +115,8 @@ function PinnedRow({ pinned, color, current, onActivate, onUnpin }: RowProps) {
         <span className="tree-row__icon pinned__icon" aria-hidden="true">
           <ItemIcon icon={pinned.item.icon} kind={pinned.kind} />
         </span>
-        <button
-          type="button"
+        <div
+          {...pressable(onActivate)}
           className="tree-row__name"
           title={pinned.kind === 'tab' ? `Open ${name}\n${pinned.item.url}` : `Show ${name}`}
           aria-current={current ? 'page' : undefined}
@@ -105,7 +126,7 @@ function PinnedRow({ pinned, color, current, onActivate, onUnpin }: RowProps) {
             <TicketChip ticketId={pinned.item.ticketId} />
             {name}
           </span>
-        </button>
+        </div>
         <span className="pinned__profile" title={pinned.profile.name}>
           <ProfileDot color={pinned.profile.color} />
         </span>

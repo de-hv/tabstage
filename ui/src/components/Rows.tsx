@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { Command, Folder, Tab, Workspace } from '../api/types';
 import { folderMenu, type MenuHandlers, tabMenu } from '../lib/menus';
 import type { ItemActions } from '../state/selection';
+import { pressable } from '../lib/pressable';
 import { useClickOrDoubleClick } from '../state/useClickOrDoubleClick';
 import { ActionMenu } from './ActionMenu';
 import { useDrag, useDrop } from './DragDrop';
@@ -71,18 +72,13 @@ export function TabItem({ tab, row }: { tab: Tab; row: RowContext }) {
           <ItemIcon icon={tab.icon} kind="tab" />
         </button>
       </IconPicker>
-      <button
-        type="button"
-        className="row"
-        title={tab.url}
-        {...clicks}
-      >
+      <div {...pressable(() => row.onSelectTab(tab.id))} className="row" title={tab.url} {...clicks}>
         <span className="row__title row__title--tab">{tab.title}</span>
         <TabUrl url={tab.url} />
         <span className="row__hint" aria-hidden="true">
           Double-click to open
         </span>
-      </button>
+      </div>
       <ActionMenu
         label={`Options for ${tab.title}`}
         open={menuOpen}
@@ -155,10 +151,10 @@ export function FolderHeader({ folder, row }: { folder: Folder; row: RowContext 
           <ItemIcon icon={folder.icon} kind="folder" />
         </button>
       </IconPicker>
-      <button type="button" className="row" onClick={() => row.onSelectFolder(folder.id)}>
+      <div {...pressable(() => row.onSelectFolder(folder.id))} className="row" onClick={() => row.onSelectFolder(folder.id)}>
         <span className="row__title folder__name">{folder.name}</span>
         <span className="row__count">{folder.tabs.length}</span>
-      </button>
+      </div>
       <button
         type="button"
         className="icon-button"

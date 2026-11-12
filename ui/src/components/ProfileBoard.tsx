@@ -5,6 +5,7 @@ import type { AppError, Command, Group, Node, Place, Profile, Snapshot } from '.
 import { profileOpensIn } from '../lib/browsers';
 import { countTabs } from '../lib/workspace';
 import type { ItemActions, Selection } from '../state/selection';
+import { pressable } from '../lib/pressable';
 import { useClickOrDoubleClick } from '../state/useClickOrDoubleClick';
 import { useDrag, useDrop } from './DragDrop';
 import { InlineInput } from './InlineInput';
@@ -141,10 +142,14 @@ function GroupHeader({ group, count, onSelect }: { group: Group; count: number; 
   const drop = useDrop((item) => (item.kind === 'group' ? { kind: 'before', node: group.id } : null));
   return (
     <header className="column__header" {...drag} {...drop}>
-      <button type="button" className="column__title" onClick={() => onSelect({ kind: 'group', id: group.id })}>
+      <div
+        {...pressable(() => onSelect({ kind: 'group', id: group.id }))}
+        className="column__title"
+        onClick={() => onSelect({ kind: 'group', id: group.id })}
+      >
         <ItemIcon icon={group.icon} kind="group" />
         <span className="column__name">{group.name}</span>
-      </button>
+      </div>
       <span className="row__count">{count}</span>
     </header>
   );
@@ -163,8 +168,8 @@ function Card({ node, actions, onSelect }: { node: Node; actions: ItemActions; o
   );
   if (node.type === 'folder') {
     return (
-      <button
-        type="button"
+      <div
+        {...pressable(() => onSelect({ kind: 'folder', id: node.id }))}
         className="card"
         title={`Show ${node.name}`}
         onClick={() => onSelect({ kind: 'folder', id: node.id })}
@@ -174,12 +179,12 @@ function Card({ node, actions, onSelect }: { node: Node; actions: ItemActions; o
         <ItemIcon icon={node.icon} kind="folder" />
         <span className="card__title">{node.name}</span>
         <span className="row__count">{node.tabs.length}</span>
-      </button>
+      </div>
     );
   }
   return (
-    <button
-      type="button"
+    <div
+      {...pressable(() => onSelect({ kind: 'tab', id: node.id }))}
       className="card"
       title={`${node.url}\nDouble-click to open`}
       {...clicks}
@@ -191,6 +196,6 @@ function Card({ node, actions, onSelect }: { node: Node; actions: ItemActions; o
         {node.title}
         <TabUrl url={node.url} />
       </span>
-    </button>
+    </div>
   );
 }

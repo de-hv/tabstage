@@ -44,6 +44,7 @@ export function ActionMenu({ label, entries, open, onOpenChange, className = '' 
           className="menu"
           align="start"
           sideOffset={4}
+          collisionPadding={8}
           onCloseAutoFocus={(event) => {
             if (keepFocus.current) event.preventDefault();
             keepFocus.current = false;
@@ -67,10 +68,10 @@ export function ActionMenu({ label, entries, open, onOpenChange, className = '' 
                     <ChevronRight className="icon menu__chevron" aria-hidden="true" />
                   </Menu.SubTrigger>
                   <Menu.Portal>
-                    <Menu.SubContent className="menu" sideOffset={4}>
+                    <Menu.SubContent className="menu" sideOffset={4} collisionPadding={8}>
                       {entry.items.map((item) => (
-                        <Menu.Item key={item.label} className="menu__item" onSelect={item.onSelect}>
-                          {item.label}
+                        <Menu.Item key={item.label} className="menu__item" title={item.label} onSelect={item.onSelect}>
+                          <span className="menu__item-label">{item.label}</span>
                         </Menu.Item>
                       ))}
                     </Menu.SubContent>
