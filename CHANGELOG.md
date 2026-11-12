@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/de-hv/tabstage-desktop/compare/v0.3.2...v0.4.0) (2026-11-12)
+
+
+### Features
+
+* Add collapsible sidebar, item colors, inline Markdown notes, ticket links and pinned items ([20a43a1](https://github.com/de-hv/tabstage-desktop/commit/20a43a17fac2aea5cf588dc13f2147a0341c1d89))
+
 ## [0.3.2](https://github.com/de-hv/tabstage-desktop/compare/v0.3.1...v0.3.2) (2026-11-11)
 
 
