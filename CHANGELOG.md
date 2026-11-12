@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/de-hv/tabstage-desktop/compare/v0.4.1...v0.5.0) (2026-11-12)
+
+
+### Features
+
+* Replace groups and folders with tickets, statuses and notes ([05ee9cb](https://github.com/de-hv/tabstage-desktop/commit/05ee9cb721b107046eb5bdd9996cd85d529c7f7c))
+
 ## [0.4.1](https://github.com/de-hv/tabstage-desktop/compare/v0.4.0...v0.4.1) (2026-11-12)
 
 
