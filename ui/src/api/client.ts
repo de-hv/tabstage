@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 
-import type { AppError, Command, DataFileInfo, OpenSummary, Opened, Relocate, Snapshot, Uuid } from './types';
+import type { AppError, Command, DataFileInfo, OpenSummary, Opened, Relocate, Snapshot, Target, Uuid } from './types';
 
 /** Typed wrappers around the IPC commands in src-tauri/src/commands.rs. */
 export const api = {
@@ -11,6 +11,8 @@ export const api = {
   hasExternalChange: () => invoke<boolean>('has_external_change'),
   refreshBrowsers: () => invoke<Snapshot>('refresh_browsers'),
   openTab: (tab: Uuid) => invoke<Opened>('open_tab', { tab }),
+  openTicket: (target: Target) => invoke<Opened>('open_ticket', { target }),
+  openUrl: (profile: Uuid, url: string) => invoke<Opened>('open_url', { profile, url }),
   openFolder: (folder: Uuid) => invoke<OpenSummary>('open_folder', { folder }),
   openGroup: (group: Uuid) => invoke<OpenSummary>('open_group', { group }),
   openProfile: (profile: Uuid) => invoke<OpenSummary>('open_profile', { profile }),

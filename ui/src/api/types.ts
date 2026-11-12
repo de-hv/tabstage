@@ -4,17 +4,10 @@
 
 export type Uuid = string;
 export type BrowserId = string;
-export type AccentColor =
-  | 'lavender'
-  | 'blue'
-  | 'sky'
-  | 'teal'
-  | 'green'
-  | 'yellow'
-  | 'peach'
-  | 'red'
-  | 'pink'
-  | 'mauve';
+/** Index into the 20 profile colors (see lib/profileColors.ts). */
+export type ColorIndex = number;
+/** A group's or folder's color: one of the profile colors, its parent's, or none (the default). */
+export type ContainerColor = ColorIndex | 'parent' | 'none';
 
 /** A custom icon; without one the UI shows the default of the item's kind. */
 export type Icon =
@@ -38,6 +31,8 @@ export interface Tab {
 export interface Folder {
   id: Uuid;
   name: string;
+  /** Its color; none when left out. */
+  color?: ContainerColor;
   icon?: Icon;
   /** Ticket key in Jira or a similar tracker, such as `PROJ-123`. */
   ticketId?: string;
@@ -53,7 +48,8 @@ export type Node = ({ type: 'tab' } & Tab) | ({ type: 'folder' } & Folder);
 export interface Group {
   id: Uuid;
   name: string;
-  color: AccentColor;
+  /** Its color; none when left out. */
+  color?: ContainerColor;
   icon?: Icon;
   /** Ticket key in Jira or a similar tracker, such as `PROJ-123`. */
   ticketId?: string;
@@ -68,13 +64,16 @@ export type Item = ({ type: 'group' } & Group) | Node;
 export interface Profile {
   id: Uuid;
   name: string;
-  /** Index into the 20 profile colors (see lib/profileColors.ts). */
-  color: number;
+  color: ColorIndex;
+  /** Address ticket ids link to, with a `{ticket}` placeholder. */
+  ticketUrl?: string;
   items: Item[];
 }
 
 export interface Workspace {
   profiles: Profile[];
+  /** Items in the sidebar's "Pinned" section, in order. */
+  pinned?: Target[];
 }
 
 export type BrowserKind = 'chromium' | 'safari' | 'firefox' | 'other';
@@ -135,9 +134,11 @@ export interface DataFileInfo {
 export type Place = { profile: Uuid } | { group: Uuid } | { folder: Uuid };
 /** A group, folder or tab. */
 export type Target = { group: Uuid } | { folder: Uuid } | { tab: Uuid };
+/** A group or folder: what can hold others and have a color. */
+export type Container = { group: Uuid } | { folder: Uuid };
 
 export type Command =
-  | { type: 'addGroup'; profile: Uuid; name: string; color: AccentColor }
+  | { type: 'addGroup'; profile: Uuid; name: string }
   | { type: 'renameGroup'; group: Uuid; name: string }
   | { type: 'moveGroup'; group: Uuid; profile: Uuid; index: number }
   | { type: 'removeGroup'; group: Uuid }
@@ -152,7 +153,12 @@ export type Command =
   | { type: 'removeTab'; tab: Uuid }
   | { type: 'moveTab'; tab: Uuid; place: Place; index: number }
   | { type: 'setIcon'; target: Target; icon: Icon | null }
+  | { type: 'setColor'; target: Container; color: ContainerColor }
+  | { type: 'pin'; target: Target }
+  | { type: 'unpin'; target: Target }
+  | { type: 'movePinned'; target: Target; index: number }
   | { type: 'setDetails'; target: Target; ticketId: string; note: string }
+  | { type: 'setTicketUrl'; profile: Uuid; url: string }
   | { type: 'addProfile'; name: string }
   | { type: 'renameProfile'; profile: Uuid; name: string }
   | { type: 'setProfileColor'; profile: Uuid; color: number }

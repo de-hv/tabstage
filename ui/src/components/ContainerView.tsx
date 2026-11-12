@@ -4,7 +4,8 @@ import { useState } from 'react';
 import type { AppError, Command, Folder, Group, Node, Place, Snapshot } from '../api/types';
 import { profileOpensIn, profileView } from '../lib/browsers';
 import { folderMenu, groupMenu } from '../lib/menus';
-import { countTabs, locate } from '../lib/workspace';
+import { profileColor } from '../lib/profileColors';
+import { countTabs, effectiveColor, hasTicketLink, locate, pinnedIndex } from '../lib/workspace';
 import type { ItemActions, Selection } from '../state/selection';
 import { ActionMenu } from './ActionMenu';
 import { AddTabForm } from './AddTabForm';
@@ -13,7 +14,7 @@ import { InlineInput } from './InlineInput';
 import { ItemIcon } from './ItemIcon';
 import { ProfileDot } from './ProfileDot';
 import type { RowContext } from './Rows';
-import { DetailsSummary } from './DetailsSummary';
+import { useDetails } from './Details';
 import { SetupNote } from './SetupNote';
 import { Tree } from './Tree';
 
@@ -25,10 +26,12 @@ interface Props {
   apply: (command: Command) => Promise<AppError | null>;
   actions: ItemActions;
   onSelect: (selection: Selection) => void;
+  /** Bumped to start editing the note. */
+  noteRequest?: number;
 }
 
 /** A group or folder as a list, with its path, actions and menu. */
-export function ContainerView({ snapshot, shown, apply, actions, onSelect }: Props) {
+export function ContainerView({ snapshot, shown, apply, actions, onSelect, noteRequest }: Props) {
   const [adding, setAdding] = useState<'tab' | 'folder' | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -41,6 +44,16 @@ export function ContainerView({ snapshot, shown, apply, actions, onSelect }: Pro
   const target = shown.kind === 'group' ? { group: item.id } : { folder: item.id };
   const nodes: Node[] = shown.kind === 'group' ? shown.item.children : shown.item.tabs.map((tab) => ({ type: 'tab', ...tab }));
   const tabCount = countTabs(item);
+  const color = effectiveColor(workspace, item.id);
+  const details = useDetails({
+    target,
+    ticketId: item.ticketId,
+    note: item.note,
+    profile,
+    apply,
+    actions,
+    noteRequest,
+  });
 
   const done = async (command: Command) => !(await apply(command));
   const row: RowContext = {
@@ -58,6 +71,8 @@ export function ContainerView({ snapshot, shown, apply, actions, onSelect }: Pro
     onRename: () => setRenaming(true),
     onIcon: () => setIconOpen(true),
     onDetails: () => actions.editDetails(target),
+    onTicket: hasTicketLink(workspace, item.id, item.ticketId) ? () => actions.openTicket(target) : undefined,
+    pin: { pinned: pinnedIndex(workspace, target) !== -1, onToggle: () => actions.togglePin(target) },
     onMove: (command: Command) => void apply(command),
     onDelete: () => actions.requestDelete(target),
   };
@@ -94,7 +109,12 @@ export function ContainerView({ snapshot, shown, apply, actions, onSelect }: Pro
           onOpenChange={setIconOpen}
           onChange={(icon) => actions.setIcon(target, icon)}
         >
-          <button type="button" className="group__icon" aria-label={`Icon of ${item.name}`}>
+          <button
+            type="button"
+            className="group__icon"
+            aria-label={`Icon of ${item.name}`}
+            style={color === undefined ? undefined : { color: profileColor(color) }}
+          >
             <ItemIcon icon={item.icon} kind={shown.kind} />
           </button>
         </IconPicker>
@@ -118,6 +138,7 @@ export function ContainerView({ snapshot, shown, apply, actions, onSelect }: Pro
             {item.name}
           </h1>
         )}
+        {details.ticket}
         <span className="group__meta">
           {tabCount} {tabCount === 1 ? 'tab' : 'tabs'}
           {profile && ` · opens in ${profileOpensIn(snapshot, profile.id)}`}
@@ -148,7 +169,7 @@ export function ContainerView({ snapshot, shown, apply, actions, onSelect }: Pro
 
       {profile && <SetupNote snapshot={snapshot} profile={profile} onConfigure={() => actions.configureProfile(profile.id)} />}
 
-      <DetailsSummary ticketId={item.ticketId} note={item.note} onEdit={() => actions.editDetails(target)} />
+      {details.noteEditor}
 
       {adding === 'tab' && (
         <AddTabForm

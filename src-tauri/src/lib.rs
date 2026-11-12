@@ -101,6 +101,8 @@ pub fn run() {
             commands::has_external_change,
             commands::refresh_browsers,
             commands::open_tab,
+            commands::open_ticket,
+            commands::open_url,
             commands::open_folder,
             commands::open_group,
             commands::open_profile,

@@ -1,11 +1,10 @@
-import { type CSSProperties, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 
-import type { Place, Snapshot, Target } from './api/types';
+import type { Place, Snapshot } from './api/types';
 import { Banner } from './components/Banner';
 import { ConfirmDelete, type PendingDelete } from './components/ConfirmDelete';
 import { ContainerView } from './components/ContainerView';
 import { DataFileDialog } from './components/DataFileDialog';
-import { DetailsDialog } from './components/DetailsDialog';
 import { DragProvider } from './components/DragDrop';
 import { NewTabDialog } from './components/NewTabDialog';
 import { Palette } from './components/Palette';
@@ -16,7 +15,7 @@ import { TabDetail } from './components/TabDetail';
 import { Settings } from './components/Settings';
 import { Sidebar } from './components/Sidebar';
 import { profileBrowser } from './lib/browsers';
-import { countTabs, findFolder, findGroup, findProfile, locate, placeLabel, targetDetails } from './lib/workspace';
+import { countTabs, findFolder, findGroup, findProfile, locate, pinnedIndex, placeLabel } from './lib/workspace';
 import type { ItemActions, Selection } from './state/selection';
 import { usePreference } from './state/usePreference';
 import { useWorkspace } from './state/useWorkspace';
@@ -33,10 +32,28 @@ export function App() {
   const [removingProfile, setRemovingProfile] = useState<string | null>(null);
   const [width, setWidth] = useState(readWidth);
   const [showUrls, setShowUrls] = usePreference('tabstage.sidebarUrls', false);
-  const [compact, setCompact] = usePreference('tabstage.sidebarCompact', false);
+  const [collapsed, setCollapsed] = usePreference('tabstage.sidebarCollapsed', false);
   const [indentGuides, setIndentGuides] = usePreference('tabstage.indentGuides', true);
-  const [editingDetails, setEditingDetails] = useState<Target | null>(null);
+  /** "Edit details…" from a menu: the item whose note to start editing. */
+  const [noteRequest, setNoteRequest] = useState<{ id: string; at: number } | null>(null);
   const { snapshot, error } = workspace;
+
+  const togglePinRef = useRef<() => void>(() => undefined);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+      if (event.key === '\\') {
+        event.preventDefault();
+        setCollapsed(!collapsed);
+      } else if (event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        togglePinRef.current();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [collapsed, setCollapsed]);
 
   if (!snapshot) {
     return error ? (
@@ -54,6 +71,7 @@ export function App() {
   const select = (next: Selection) => {
     setSelection(next);
     setSettingsOpen(false);
+    setNoteRequest(null);
   };
 
   const actions: ItemActions = {
@@ -89,18 +107,41 @@ export function App() {
       else setPendingDelete({ name: found.name, tabCount: tabs, run });
     },
     setIcon: (target, icon) => void apply({ type: 'setIcon', target, icon }),
-    editDetails: setEditingDetails,
+    editDetails: (target) => {
+      const next: Selection =
+        'group' in target
+          ? { kind: 'group', id: target.group }
+          : 'folder' in target
+            ? { kind: 'folder', id: target.folder }
+            : { kind: 'tab', id: target.tab };
+      setSelection(next);
+      setSettingsOpen(false);
+      setNoteRequest({ id: next.id, at: Date.now() });
+    },
+    openTicket: (target) => void workspace.openTicket(target),
+    togglePin: (target) =>
+      void apply(pinnedIndex(snapshot.workspace, target) === -1 ? { type: 'pin', target } : { type: 'unpin', target }),
+    openUrl: (profile, url) => void workspace.openUrl(profile, url),
     configureProfile: (profile) => {
       setFocusProfile(profile);
       setSettingsOpen(true);
     },
   };
 
+  togglePinRef.current = () => {
+    if (settingsOpen || !shown || shown.kind === 'profile') return;
+    actions.togglePin(shown.kind === 'group' ? { group: shown.id } : shown.kind === 'folder' ? { folder: shown.id } : { tab: shown.id });
+  };
+
   const removing = removingProfile ? findProfile(snapshot.workspace, removingProfile) ?? null : null;
 
   return (
     <DragProvider workspace={snapshot.workspace} apply={(command) => void apply(command)}>
-      <div className="app" style={{ '--sidebar-width': `${width}px` } as CSSProperties}>
+      <div
+        className="app"
+        data-collapsed={collapsed || undefined}
+        style={{ '--sidebar-width': `${width}px` } as CSSProperties}
+      >
         <div className="app__banner">
           {error && (
             <Banner
@@ -124,29 +165,29 @@ export function App() {
           actions={actions}
           showUrls={showUrls}
           onShowUrls={setShowUrls}
-          compact={compact}
-          onCompact={setCompact}
+          collapsed={collapsed}
+          onCollapse={setCollapsed}
           indentGuides={indentGuides}
         />
-        <ResizeHandle
-          width={width}
-          onResize={(next, done) => {
-            setWidth(next);
-            if (done) saveWidth(next);
-          }}
-        />
+        {!collapsed && (
+          <ResizeHandle
+            width={width}
+            onResize={(next, done) => {
+              setWidth(next);
+              if (done) saveWidth(next);
+            }}
+          />
+        )}
         {settingsOpen ? (
           <Settings
             snapshot={snapshot}
-            apply={(command) => void apply(command)}
+            apply={apply}
             inspectDataFolder={workspace.inspectDataFolder}
             relocate={workspace.relocate}
             onRevealDataFile={() => void workspace.revealDataFile()}
             focusProfile={focusProfile}
             showUrls={showUrls}
             onShowUrls={setShowUrls}
-            compact={compact}
-            onCompact={setCompact}
             indentGuides={indentGuides}
             onIndentGuides={setIndentGuides}
           />
@@ -158,24 +199,20 @@ export function App() {
             actions={actions}
             onSelect={select}
             notify={workspace.notify}
+            noteRequest={noteRequest}
           />
         )}
         <Palette
           snapshot={snapshot}
           openTab={(tab) => actions.open({ tab })}
           openFolder={(folder) => actions.open({ folder })}
+          openTicket={actions.openTicket}
         />
         <NewTabDialog
           place={newTabPlace}
           placeName={newTabPlace ? placeLabel(snapshot.workspace, newTabPlace) : ''}
           apply={apply}
           onClose={() => setNewTabPlace(null)}
-        />
-        <DetailsDialog
-          target={editingDetails}
-          details={editingDetails ? targetDetails(snapshot.workspace, editingDetails) : null}
-          apply={apply}
-          onClose={() => setEditingDetails(null)}
         />
         <ConfirmDelete pending={pendingDelete} onClose={() => setPendingDelete(null)} />
         <RemoveProfileDialog
@@ -203,6 +240,7 @@ function MainView({
   actions,
   onSelect,
   notify,
+  noteRequest,
 }: {
   snapshot: Snapshot;
   shown: Selection | null;
@@ -210,8 +248,10 @@ function MainView({
   actions: ItemActions;
   onSelect: (selection: Selection) => void;
   notify: (text: string) => void;
+  noteRequest: { id: string; at: number } | null;
 }) {
   const { workspace } = snapshot;
+  const requestFor = (id: string) => (noteRequest?.id === id ? noteRequest.at : 0);
   if (shown?.kind === 'tab' && locate(workspace, shown.id)) {
     return (
       <TabDetail
@@ -222,6 +262,7 @@ function MainView({
         actions={actions}
         onSelect={onSelect}
         notify={notify}
+        noteRequest={requestFor(shown.id)}
       />
     );
   }
@@ -236,6 +277,7 @@ function MainView({
           apply={apply}
           actions={actions}
           onSelect={onSelect}
+          noteRequest={requestFor(group.id)}
         />
       );
     }
@@ -251,6 +293,7 @@ function MainView({
           apply={apply}
           actions={actions}
           onSelect={onSelect}
+          noteRequest={requestFor(folder.id)}
         />
       );
     }

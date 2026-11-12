@@ -139,7 +139,6 @@ fn add_group_in(service: &mut AppService<FakeSystem>, profile: ProfileId, name: 
         .apply(Command::AddGroup {
             profile,
             name: name.to_owned(),
-            color: AccentColor::Blue,
         })
         .expect("add group");
     snapshot
@@ -256,7 +255,7 @@ fn choosing_a_local_folder_remembers_it_and_loads_data_already_there() {
     let profile = existing.workspace.profiles()[0].id;
     existing
         .workspace
-        .add_group(profile, "Kept", AccentColor::Green)
+        .add_group(profile, "Kept")
         .expect("group");
     fs::write(&path, tabstage_store::to_json(&existing)).expect("write");
 
@@ -472,7 +471,6 @@ fn groups_are_created_inside_an_existing_profile() {
     let missing = service.apply(Command::AddGroup {
         profile: ProfileId::new(),
         name: "X".into(),
-        color: AccentColor::Red,
     });
 
     assert_eq!(
@@ -786,7 +784,7 @@ fn a_version_1_file_becomes_profiles_bound_on_this_machine() {
     assert!(
         fs::read_to_string(fixture.path())
             .expect("file")
-            .contains("\"version\": 3")
+            .contains("\"version\": 4")
     );
     assert!(!service.snapshot().needs_data_file);
 }
@@ -798,10 +796,7 @@ fn change_on_disk_is_a_conflict_until_reload_or_force() {
     add_group(&mut laptop, "Mine");
     let mut other = Document::default();
     let profile = other.workspace.profiles()[0].id;
-    other
-        .workspace
-        .add_group(profile, "Theirs", AccentColor::Green)
-        .expect("group");
+    other.workspace.add_group(profile, "Theirs").expect("group");
     fs::write(fixture.path(), tabstage_store::to_json(&other)).expect("external write");
 
     assert!(laptop.has_external_change().expect("check"));
@@ -1034,7 +1029,7 @@ fn relocate_can_use_or_replace_the_data_already_there() {
     let profile = theirs.workspace.profiles()[0].id;
     theirs
         .workspace
-        .add_group(profile, "Theirs", AccentColor::Green)
+        .add_group(profile, "Theirs")
         .expect("group");
     fs::write(&new_path, tabstage_store::to_json(&theirs)).expect("write");
 
@@ -1064,10 +1059,7 @@ fn inspect_counts_groups_and_tabs_or_reports_missing() {
 
     let mut document = Document::default();
     let profile = document.workspace.profiles()[0].id;
-    let group = document
-        .workspace
-        .add_group(profile, "G", AccentColor::Blue)
-        .expect("group");
+    let group = document.workspace.add_group(profile, "G").expect("group");
     let folder = document
         .workspace
         .add_folder(Place::Group(group), "F")
@@ -1096,4 +1088,50 @@ fn error_payload_has_code_and_full_message() {
 
     assert_eq!(payload.code, "invalid");
     assert_eq!(payload.message, "name is empty");
+}
+
+#[test]
+fn ticket_links_encode_the_id() {
+    assert_eq!(
+        crate::ticket_link("https://jira.dev/browse/{ticket}", "PROJ-1"),
+        "https://jira.dev/browse/PROJ-1"
+    );
+    assert_eq!(
+        crate::ticket_link("https://x.dev/?q={ticket}", "a b/c&d"),
+        "https://x.dev/?q=a%20b%2Fc%26d"
+    );
+}
+
+#[test]
+fn a_ticket_opens_with_the_profile_ticket_url_in_its_browser() {
+    let fixture = Fixture::new();
+    let mut service = fixture.start(FakeSystem::new(Some("com.apple.Safari")));
+    let profile = first_profile(&service);
+    let group = add_group(&mut service, "Work");
+    let target = Target::Group(group);
+
+    assert!(service.open_ticket(target).is_err());
+    service
+        .apply(Command::SetDetails {
+            target,
+            ticket_id: "PROJ-7".to_owned(),
+            note: String::new(),
+        })
+        .expect("details");
+    service
+        .apply(Command::SetTicketUrl {
+            profile,
+            url: "https://jira.example.com/browse/{ticket}".to_owned(),
+        })
+        .expect("ticket url");
+
+    service.open_ticket(target).expect("open");
+    assert_eq!(
+        service.system.opened.borrow().last().map(String::as_str),
+        Some("com.apple.Safari https://jira.example.com/browse/PROJ-7")
+    );
+    assert!(matches!(
+        service.open_url(profile, "file:///etc/passwd"),
+        Err(AppError::Url(_))
+    ));
 }

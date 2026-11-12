@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::color::AccentColor;
+use crate::color::ContainerColor;
 use crate::icon::Icon;
 use crate::ids::{FolderId, GroupId, ProfileId, TabId};
 use crate::profile::{DEFAULT_PROFILE_NAME, Profile, ProfileColor};
@@ -44,6 +44,9 @@ pub struct Folder {
     pub id: FolderId,
     /// Name shown in the UI.
     pub name: String,
+    /// Its color; none by default.
+    #[serde(default, skip_serializing_if = "ContainerColor::is_none")]
+    pub color: ContainerColor,
     /// Custom icon; the UI shows the default folder icon without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<Icon>,
@@ -78,8 +81,9 @@ pub struct Group {
     pub id: GroupId,
     /// Name shown in the UI.
     pub name: String,
-    /// Accent color.
-    pub color: AccentColor,
+    /// Its color; none by default.
+    #[serde(default, skip_serializing_if = "ContainerColor::is_none")]
+    pub color: ContainerColor,
     /// Custom icon; the UI shows the default group icon without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<Icon>,
@@ -128,6 +132,16 @@ pub enum Target {
     Folder(FolderId),
     /// A tab.
     Tab(TabId),
+}
+
+/// A group or folder: the items that hold others and can have a color.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Container {
+    /// A group.
+    Group(GroupId),
+    /// A folder.
+    Folder(FolderId),
 }
 
 /// A tab together with what contains it.
@@ -184,6 +198,9 @@ pub enum WorkspaceError {
     /// A workspace must have at least one profile.
     #[error("the workspace has no profiles")]
     NoProfiles,
+    /// A ticket URL must be an http(s) address with a `{ticket}` placeholder.
+    #[error("the ticket URL must start with http:// or https:// and contain {{ticket}}")]
+    InvalidTicketUrl,
 }
 
 /// Result type for workspace changes.
@@ -193,6 +210,9 @@ pub type Result<T> = std::result::Result<T, WorkspaceError>;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Workspace {
     profiles: Vec<Profile>,
+    /// Items shown in the sidebar's "Pinned" section, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pinned: Vec<Target>,
 }
 
 impl Default for Workspace {
@@ -210,8 +230,10 @@ impl Workspace {
                 id: ProfileId::new(),
                 name: DEFAULT_PROFILE_NAME.to_owned(),
                 color: ProfileColor::default(),
+                ticket_url: None,
                 items: Vec::new(),
             }],
+            pinned: Vec::new(),
         }
     }
 
@@ -219,7 +241,10 @@ impl Workspace {
     /// trusting it.
     #[must_use]
     pub fn from_profiles(profiles: Vec<Profile>) -> Self {
-        Self { profiles }
+        Self {
+            profiles,
+            pinned: Vec::new(),
+        }
     }
 
     // ---- profiles -------------------------------------------------------
@@ -250,6 +275,7 @@ impl Workspace {
             id,
             name,
             color,
+            ticket_url: None,
             items: Vec::new(),
         });
         Ok(id)
@@ -262,6 +288,28 @@ impl Workspace {
     /// [`WorkspaceError::ProfileNotFound`].
     pub fn set_profile_color(&mut self, id: ProfileId, color: ProfileColor) -> Result<()> {
         self.profile_mut(id)?.color = color;
+        Ok(())
+    }
+
+    /// Sets or clears the address a profile's ticket ids link to, such as
+    /// `https://jira.example.com/browse/{ticket}`. A blank one clears it.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::InvalidTicketUrl`] or [`WorkspaceError::ProfileNotFound`].
+    pub fn set_ticket_url(&mut self, id: ProfileId, url: &str) -> Result<()> {
+        let url = url.trim();
+        let url = if url.is_empty() {
+            None
+        } else {
+            let lower = url.to_ascii_lowercase();
+            let web = lower.starts_with("http://") || lower.starts_with("https://");
+            if !web || !url.contains(TICKET_PLACEHOLDER) || url.chars().any(char::is_whitespace) {
+                return Err(WorkspaceError::InvalidTicketUrl);
+            }
+            Some(url.to_owned())
+        };
+        self.profile_mut(id)?.ticket_url = url;
         Ok(())
     }
 
@@ -345,18 +393,13 @@ impl Workspace {
     /// # Errors
     ///
     /// [`WorkspaceError::EmptyName`] or [`WorkspaceError::ProfileNotFound`].
-    pub fn add_group(
-        &mut self,
-        profile: ProfileId,
-        name: &str,
-        color: AccentColor,
-    ) -> Result<GroupId> {
+    pub fn add_group(&mut self, profile: ProfileId, name: &str) -> Result<GroupId> {
         let name = clean_name(name)?;
         let id = GroupId::new();
         self.profile_mut(profile)?.items.push(Item::Group(Group {
             id,
             name,
-            color,
+            color: ContainerColor::None,
             icon: None,
             ticket_id: None,
             note: None,
@@ -396,7 +439,9 @@ impl Workspace {
     ///
     /// [`WorkspaceError::GroupNotFound`].
     pub fn remove_group(&mut self, id: GroupId) -> Result<Group> {
-        self.take_group(id)
+        let group = self.take_group(id)?;
+        self.prune_pinned();
+        Ok(group)
     }
 
     // ---- folders --------------------------------------------------------
@@ -436,6 +481,7 @@ impl Workspace {
         let folder = Folder {
             id,
             name,
+            color: ContainerColor::None,
             icon: None,
             ticket_id: None,
             note: None,
@@ -489,7 +535,9 @@ impl Workspace {
     ///
     /// [`WorkspaceError::FolderNotFound`].
     pub fn remove_folder(&mut self, id: FolderId) -> Result<Folder> {
-        self.take_folder(id)
+        let folder = self.take_folder(id)?;
+        self.prune_pinned();
+        Ok(folder)
     }
 
     // ---- tabs -----------------------------------------------------------
@@ -588,7 +636,9 @@ impl Workspace {
     ///
     /// [`WorkspaceError::TabNotFound`].
     pub fn remove_tab(&mut self, id: TabId) -> Result<Tab> {
-        self.take_tab(id).ok_or(WorkspaceError::TabNotFound(id))
+        let tab = self.take_tab(id).ok_or(WorkspaceError::TabNotFound(id))?;
+        self.prune_pinned();
+        Ok(tab)
     }
 
     /// Moves a tab to `index` within `place`, clamped to the end. Works
@@ -617,6 +667,80 @@ impl Workspace {
             Target::Folder(id) => self.folder_mut(id)?.icon = icon,
             Target::Tab(id) => self.tab_mut(id)?.icon = icon,
         }
+        Ok(())
+    }
+
+    /// Sets the color of a group or folder: one of the profile colors, its
+    /// parent's, or none.
+    ///
+    /// # Errors
+    ///
+    /// The not-found error of `container`.
+    pub fn set_color(&mut self, container: Container, color: ContainerColor) -> Result<()> {
+        match container {
+            Container::Group(id) => self.group_mut(id)?.color = color,
+            Container::Folder(id) => self.folder_mut(id)?.color = color,
+        }
+        Ok(())
+    }
+
+    /// The profile a group, folder or tab belongs to.
+    #[must_use]
+    pub fn target_profile(&self, target: Target) -> Option<&Profile> {
+        match target {
+            Target::Group(id) => self.group_profile(id),
+            Target::Folder(id) => self.find_folder(id).map(|found| found.profile),
+            Target::Tab(id) => self.find_tab(id).map(|found| found.profile),
+        }
+    }
+
+    /// The ticket id of a group, folder or tab, if it has one.
+    #[must_use]
+    pub fn ticket_id(&self, target: Target) -> Option<&str> {
+        match target {
+            Target::Group(id) => self.group(id)?.ticket_id.as_deref(),
+            Target::Folder(id) => self.find_folder(id)?.folder.ticket_id.as_deref(),
+            Target::Tab(id) => self.find_tab(id)?.tab.ticket_id.as_deref(),
+        }
+    }
+
+    // ---- pinned ---------------------------------------------------------
+
+    /// Items pinned to the top of the sidebar, in order.
+    #[must_use]
+    pub fn pinned(&self) -> &[Target] {
+        &self.pinned
+    }
+
+    /// Pins an item at the end; pinning it again changes nothing.
+    ///
+    /// # Errors
+    ///
+    /// The not-found error of `target`.
+    pub fn pin(&mut self, target: Target) -> Result<()> {
+        self.ensure_target(target)?;
+        if !self.pinned.contains(&target) {
+            self.pinned.push(target);
+        }
+        Ok(())
+    }
+
+    /// Unpins an item; unpinning one that is not pinned changes nothing.
+    pub fn unpin(&mut self, target: Target) {
+        self.pinned.retain(|pinned| *pinned != target);
+    }
+
+    /// Moves a pinned item to `index`, clamped to the end.
+    ///
+    /// # Errors
+    ///
+    /// The not-found error of `target` when it is not pinned.
+    pub fn move_pinned(&mut self, target: Target, index: usize) -> Result<()> {
+        let Some(from) = self.pinned.iter().position(|pinned| *pinned == target) else {
+            return Err(not_found(target));
+        };
+        self.pinned.remove(from);
+        self.pinned.insert(index.min(self.pinned.len()), target);
         Ok(())
     }
 
@@ -751,6 +875,31 @@ impl Workspace {
                 }),
             })
             .ok_or(WorkspaceError::TabNotFound(id))
+    }
+
+    fn exists(&self, target: Target) -> bool {
+        match target {
+            Target::Group(id) => self.group(id).is_some(),
+            Target::Folder(id) => self.find_folder(id).is_some(),
+            Target::Tab(id) => self.find_tab(id).is_some(),
+        }
+    }
+
+    fn ensure_target(&self, target: Target) -> Result<()> {
+        if self.exists(target) {
+            Ok(())
+        } else {
+            Err(not_found(target))
+        }
+    }
+
+    /// Drops pinned items that no longer exist, after a removal.
+    fn prune_pinned(&mut self) {
+        let pinned = std::mem::take(&mut self.pinned);
+        self.pinned = pinned
+            .into_iter()
+            .filter(|target| self.exists(*target))
+            .collect();
     }
 
     fn ensure_place(&mut self, place: Place) -> Result<()> {
@@ -888,10 +1037,22 @@ fn tab_title(raw: &str, url: &TabUrl) -> String {
     }
 }
 
+/// The not-found error of a target.
+fn not_found(target: Target) -> WorkspaceError {
+    match target {
+        Target::Group(id) => WorkspaceError::GroupNotFound(id),
+        Target::Folder(id) => WorkspaceError::FolderNotFound(id),
+        Target::Tab(id) => WorkspaceError::TabNotFound(id),
+    }
+}
+
+/// Where a ticket id goes in a profile's ticket URL.
+pub const TICKET_PLACEHOLDER: &str = "{ticket}";
+
 /// Longest ticket id kept, in characters.
 pub const MAX_TICKET_ID_LEN: usize = 64;
 /// Longest note kept, in characters.
-pub const MAX_NOTE_LEN: usize = 5000;
+pub const MAX_NOTE_LEN: usize = 20_000;
 
 /// Trims a ticket id or note and caps its length; `None` when blank.
 fn clean_detail(raw: &str, max: usize) -> Option<String> {

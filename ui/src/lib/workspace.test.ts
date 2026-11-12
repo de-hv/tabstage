@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { snapshotFixture } from '../test/ipc';
-import { allGroups, allTabs, countTabs, locate, placeLabel } from './workspace';
+import { allGroups, allTabs, countTabs, effectiveColor, locate, pinnedIndex, pinnedItems, placeLabel } from './workspace';
 
 const TRABAJO = '00000000-0000-0000-0000-0000000000c1';
 const JIRA = '00000000-0000-0000-0000-0000000000a1';
@@ -49,5 +49,42 @@ describe('placeLabel', () => {
     expect(placeLabel(workspace(), { group: JIRA })).toBe('Trabajo / Trabajo · Jira');
     expect(placeLabel(workspace(), { folder: SPRINT })).toBe('Trabajo / Trabajo · Jira / Sprint 42');
     expect(placeLabel(workspace(), { folder: ONBOARDING })).toBe('Trabajo / Onboarding');
+  });
+});
+
+describe('effectiveColor', () => {
+  const IN_TEST = '00000000-0000-0000-0000-0000000000a4';
+  const INCIDENTS = '00000000-0000-0000-0000-0000000000f2';
+  const STAGING = '00000000-0000-0000-0000-000000000b07';
+  const INCIDENT_TAB = '00000000-0000-0000-0000-000000000b03';
+
+  it('is the chosen color, the parent one when asked for, else none', () => {
+    const workspace = snapshotFixture().workspace;
+    expect(effectiveColor(workspace, TRABAJO)).toBe(0);
+    expect(effectiveColor(workspace, JIRA)).toBeUndefined();
+    expect(effectiveColor(workspace, SPRINT)).toBeUndefined();
+    expect(effectiveColor(workspace, STATUS_PAGE)).toBeUndefined();
+    expect(effectiveColor(workspace, '00000000-0000-0000-0000-0000000000a2')).toBe(1);
+    expect(effectiveColor(workspace, IN_TEST)).toBe(3);
+    expect(effectiveColor(workspace, STAGING)).toBe(3);
+    expect(effectiveColor(workspace, INCIDENTS)).toBe(15);
+    expect(effectiveColor(workspace, INCIDENT_TAB)).toBe(15);
+    expect(effectiveColor(workspace, ONBOARDING)).toBeUndefined();
+    expect(effectiveColor(workspace, WIKI)).toBeUndefined();
+    expect(effectiveColor(workspace, 'missing')).toBeUndefined();
+  });
+});
+
+describe('pinnedItems', () => {
+  it('lists pinned items that still exist, in order, with their profile', () => {
+    const workspace = { ...snapshotFixture().workspace };
+    workspace.pinned = [{ tab: STATUS_PAGE }, { group: 'gone' }, { folder: SPRINT }];
+    const pinned = pinnedItems(workspace);
+    expect(pinned.map((entry) => [entry.kind, entry.item.id, entry.profile.id])).toEqual([
+      ['tab', STATUS_PAGE, TRABAJO],
+      ['folder', SPRINT, TRABAJO],
+    ]);
+    expect(pinnedIndex(workspace, { folder: SPRINT })).toBe(2);
+    expect(pinnedIndex(workspace, { tab: SPRINT })).toBe(-1);
   });
 });

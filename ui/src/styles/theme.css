@@ -155,14 +155,3 @@ input {
     animation-duration: 0s !important;
   }
 }
-
-[data-color='lavender'] { --color: var(--c-lavender); }
-[data-color='blue'] { --color: var(--c-blue); }
-[data-color='sky'] { --color: var(--c-sky); }
-[data-color='teal'] { --color: var(--c-teal); }
-[data-color='green'] { --color: var(--c-green); }
-[data-color='yellow'] { --color: var(--c-yellow); }
-[data-color='peach'] { --color: var(--c-peach); }
-[data-color='red'] { --color: var(--c-red); }
-[data-color='pink'] { --color: var(--c-pink); }
-[data-color='mauve'] { --color: var(--c-mauve); }

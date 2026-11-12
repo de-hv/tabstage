@@ -852,14 +852,68 @@
 
 .swatches {
   z-index: 20;
-  display: grid;
-  grid-template-columns: repeat(5, 24px);
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   padding: 10px;
   border: 1px solid var(--surface1);
   border-radius: 8px;
   background: var(--base);
   box-shadow: var(--shadow);
+}
+
+.swatches__grid {
+  display: grid;
+  grid-template-columns: repeat(5, 24px);
+  gap: 8px;
+}
+
+.swatches__inherit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.swatches__inherit:hover {
+  background: var(--crust);
+}
+
+.swatches__inherit .icon {
+  margin-left: auto;
+  color: var(--subtext0);
+}
+
+.swatch--small {
+  width: 18px;
+  height: 18px;
+}
+
+/* No color: an empty circle crossed out. */
+.swatch--none {
+  border: 1px solid var(--surface2);
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.75px),
+    var(--overlay1) calc(50% - 0.75px) calc(50% + 0.75px),
+    transparent calc(50% + 0.75px)
+  );
+}
+
+.swatch--none .swatch__check {
+  color: var(--text);
+}
+
+.swatches__inherit[aria-checked='true'] {
+  font-weight: 500;
 }
 
 .swatch {
@@ -1744,62 +1798,350 @@ button.column__title:hover {
   height: 13px;
 }
 
-.details-dialog__ticket {
-  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+.ticket-field__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
-.details-dialog__note {
-  height: auto;
-  min-height: 96px;
-  padding: 6px 8px;
-  line-height: 1.4;
-  resize: vertical;
-}
-
-.details-summary {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  max-width: 720px;
-}
-
-.details-summary__list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-  margin: 0;
-}
-
-.details-summary__item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.details-summary__item dd {
-  margin: 0;
-}
-
-.details-summary__ticket {
-  align-self: flex-start;
-  padding: 1px 8px;
-  border-radius: 5px;
+.ticket-field {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
   background: var(--surface0);
   color: var(--c-blue);
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
 }
 
-.details-summary__note {
-  padding: 8px 12px;
+.ticket-field .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.ticket-field:hover {
+  border-color: var(--surface2);
+}
+
+.ticket-field--link {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 3px;
+}
+
+.ticket-field--empty {
+  border: 1px dashed var(--surface2);
+  background: transparent;
+  color: var(--subtext0);
+  font-family: inherit;
+  font-weight: 400;
+}
+
+.ticket-field--empty:hover {
+  border-color: var(--overlay1);
+  color: var(--text);
+}
+
+.ticket-field--editing {
+  border-color: var(--c-blue);
+  background: var(--base);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-blue) 18%, transparent);
+  color: var(--subtext0);
+  cursor: text;
+}
+
+.ticket-field__input {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+.ticket-field__edit {
+  color: var(--subtext0);
+  opacity: 0;
+  transition: opacity var(--motion) ease-out;
+}
+
+.ticket-field__group:hover .ticket-field__edit,
+.ticket-field__edit:focus-visible {
+  opacity: 1;
+}
+
+.ticket-field__edit .icon {
+  width: 13px;
+  height: 13px;
+}
+
+/* Note: rendered Markdown, edited in place. */
+
+.note {
+  display: flex;
+  flex-direction: column;
+  max-width: 760px;
+  overflow: hidden;
   border: 1px solid var(--surface0);
-  border-radius: 8px;
+  border-radius: 10px;
+}
+
+.note__bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 6px 4px 12px;
+  border-bottom: 1px solid var(--surface0);
   background: var(--mantle);
+  color: var(--subtext0);
+  font-size: 12px;
+}
+
+.note__label {
+  font-weight: 500;
+}
+
+.note__tools {
+  display: flex;
+  gap: 1px;
+  margin-left: 6px;
+}
+
+.note__tools .icon-button {
+  color: var(--subtext0);
+}
+
+.note__tools .icon-button:hover {
+  color: var(--text);
+}
+
+.note__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.note__status .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.note__status[data-status='saving'] .icon {
+  animation: spin 1s linear infinite;
+}
+
+.note__status[data-status='saved'] {
+  color: var(--c-green);
+}
+
+.note__status[data-status='failed'] {
+  color: var(--danger);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.note__size {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--surface0);
+  border-radius: 6px;
+}
+
+.note__size .icon-button {
+  width: 24px;
+  height: 24px;
+  color: var(--subtext0);
+}
+
+.note__size .icon-button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.note__size .icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.note__size-value {
+  min-width: 40px;
+  height: 24px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.note__size-value:hover {
+  background: var(--crust);
+}
+
+.note__toggle {
+  height: 26px;
+  font-size: 12px;
+}
+
+.note__editor {
+  width: 100%;
+  min-height: 160px;
+  padding: 12px 14px;
+  border: 0;
+  outline: none;
+  background: var(--base);
+  color: var(--text);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: calc(12.5px * var(--note-scale, 1));
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.note__hint {
+  margin: 0;
+  padding: 6px 12px;
+  border-top: 1px solid var(--surface0);
+  color: var(--overlay1);
+  font-size: 11px;
+}
+
+.note__hint kbd {
+  font-family: inherit;
+  padding: 0 4px;
+  border: 1px solid var(--surface1);
+  border-radius: 4px;
+}
+
+.note__empty {
+  padding: 14px;
+  font-size: calc(13px * var(--note-scale, 1));
+  border: 0;
+  background: transparent;
+  color: var(--overlay1);
+  text-align: left;
+  cursor: text;
+}
+
+.note__empty:hover {
+  color: var(--subtext0);
+}
+
+.note__view {
+  padding: 10px 14px;
+  font-size: calc(13px * var(--note-scale, 1));
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
+  cursor: text;
   user-select: text;
+}
+
+.markdown {
+  line-height: 1.55;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown :is(p, ul, ol, pre, blockquote, table) {
+  margin: 0 0 8px;
+}
+
+.markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 12px 0 6px;
+  font-family: var(--font-condensed);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.markdown h1 {
+  font-size: 1.4em;
+}
+
+.markdown h2 {
+  font-size: 1.25em;
+}
+
+.markdown :is(h3, h4, h5, h6) {
+  font-size: 1.1em;
+}
+
+.markdown :is(ul, ol) {
+  padding-left: 20px;
+}
+
+.markdown li.task-list-item {
+  list-style: none;
+  margin-left: -20px;
+}
+
+.markdown li.task-list-item input {
+  margin: 0 6px 0 0;
+  vertical-align: -1px;
+  cursor: pointer;
+}
+
+.markdown a {
+  color: var(--c-blue);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.markdown code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--mantle);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.92em;
+}
+
+.markdown pre {
+  padding: 8px 10px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--mantle);
+}
+
+.markdown pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown blockquote {
+  padding-left: 10px;
+  border-left: 2px solid var(--surface1);
+  color: var(--subtext0);
+}
+
+.markdown table {
+  border-collapse: collapse;
+}
+
+.markdown :is(th, td) {
+  padding: 4px 8px;
+  border: 1px solid var(--surface0);
+}
+
+.markdown hr {
+  border: 0;
+  border-top: 1px solid var(--surface0);
 }
 
 /* Indent guides (Settings → Sidebar, on by default): a line under each
@@ -1825,37 +2167,327 @@ button.column__title:hover {
   pointer-events: none;
 }
 
-/* Compact sidebar: shorter rows and smaller text. */
+/* Sidebar header: collapse, title and search. */
 
-.sidebar[data-compact] .tree-row {
-  min-height: 22px;
+.sidebar__header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 38px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--surface0);
+  color: var(--subtext0);
+}
+
+.sidebar__header .icon-button {
+  color: var(--subtext0);
+}
+
+.sidebar__header .icon-button:hover {
+  color: var(--text);
+}
+
+.sidebar__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Collapsed sidebar: a rail of icons. */
+
+.app[data-collapsed] {
+  grid-template-columns: 48px minmax(0, 1fr);
+}
+
+.sidebar--rail .sidebar__header {
+  justify-content: center;
+  padding: 0;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0;
+}
+
+.rail__profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding-top: 6px;
+  margin-top: 4px;
+  border-top: 1px solid var(--surface0);
+}
+
+.rail__button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--subtext0);
+  cursor: pointer;
+}
+
+.rail__button:hover,
+.rail__button[data-state='open'] {
+  background: var(--crust);
+  color: var(--text);
+}
+
+.rail__button[aria-current='page'] {
+  background: var(--surface0);
+  color: var(--text);
+}
+
+.rail__footer {
+  align-items: center;
+  padding: 6px 0 8px;
+}
+
+.rail-flyout {
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  max-width: 300px;
+  max-height: 60vh;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--surface1);
+  border-radius: 8px;
+  background: var(--base);
+  box-shadow: var(--shadow);
+}
+
+.rail-flyout__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rail-flyout__item:hover,
+.rail-flyout__item:focus-visible {
+  background: var(--crust);
+}
+
+.rail-flyout__item[aria-current='page'] {
+  background: var(--surface0);
+}
+
+.rail-flyout__head {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.rail-flyout__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-flyout__empty {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--subtext0);
+}
+
+/* Colors: a row's background is a light tint of its parent's color, and the
+   icon of a profile, group or folder takes its own. */
+
+:root {
+  --tint: 13%;
+  --tint-hover: 22%;
+  --tint-current: 32%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tint: 12%;
+    --tint-hover: 20%;
+    --tint-current: 30%;
+  }
+}
+
+.tree-list .tree-list {
+  gap: 0;
+}
+
+.tree-row[data-tinted] {
+  border-radius: 0;
+  background: color-mix(in oklch, var(--parent) var(--tint), transparent);
+}
+
+.tree-row[data-tinted]:hover {
+  background: color-mix(in oklch, var(--parent) var(--tint-hover), transparent);
+}
+
+.tree-row[data-tinted][data-current] {
+  background: color-mix(in oklch, var(--parent) var(--tint-current), transparent);
+}
+
+.tree-row[data-tinted][data-drop] {
+  background: color-mix(in srgb, var(--c-blue) 12%, transparent);
+}
+
+.tree-row[data-own] .tree-row__icon {
+  color: var(--own);
+}
+
+/* With indent guides, the guide next to a row takes its parent's color. */
+.sidebar[data-guides] .tree-row[data-tinted]::before {
+  background:
+    linear-gradient(var(--parent), var(--parent)) no-repeat calc(var(--indent) - 7px) 0 / 2px 100%,
+    repeating-linear-gradient(to right, transparent 0 8px, var(--surface1) 8px 9px, transparent 9px 14px);
+}
+
+/* Ticket links of a profile (Settings → Profiles). */
+
+.ticket-url {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 8px;
+  width: 100%;
+}
+
+.profile-card__fields .ticket-url__input {
+  width: 100%;
+  min-width: 0;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: 12px;
 }
 
-.sidebar[data-compact] .tree-row[data-kind='profile'] {
-  min-height: 24px;
-  margin-top: 2px;
+.ticket-url__presets,
+.ticket-url__help,
+.ticket-url .add-form__error {
+  grid-column: 2;
 }
 
-.sidebar[data-compact] .tree-row__name {
-  height: 20px;
+.ticket-url__presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
-.sidebar[data-compact] .tree-row--two-line {
-  min-height: 30px;
+.ticket-url__preset {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
 }
 
-.sidebar[data-compact] .tree-row--two-line .tree-row__name {
-  height: auto;
-  padding: 1px 4px;
+.ticket-url__help {
+  margin: 0;
+  color: var(--subtext0);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
-.sidebar[data-compact] .tree-row__icon,
-.sidebar[data-compact] .tree-row__chevron {
-  height: 18px;
+.rail__button[data-own] {
+  color: var(--own, var(--subtext0));
 }
 
-.sidebar[data-compact] .ticket {
-  font-size: 10px;
-  line-height: 14px;
+/* Pinned section at the top of the sidebar. */
+
+.pinned {
+  margin-bottom: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--surface0);
+}
+
+.pinned__head {
+  border-radius: 6px;
+}
+
+.pinned__head[data-drop],
+.pinned__drop[data-drop] {
+  background: color-mix(in srgb, var(--c-blue) 12%, transparent);
+  box-shadow: inset 0 0 0 1px var(--c-blue);
+}
+
+.pinned__toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 24px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--subtext0);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pinned__toggle .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.pinned__drop {
+  margin: 2px 0;
+  padding: 8px;
+  border: 1px dashed var(--surface2);
+  border-radius: 6px;
+  color: var(--subtext0);
+  font-size: 12px;
+  text-align: center;
+}
+
+.pinned__row {
+  padding-left: 4px;
+}
+
+.pinned__icon {
+  cursor: default;
+}
+
+.pinned__icon:hover {
+  background: transparent;
+}
+
+.pinned__profile {
+  display: grid;
+  place-items: center;
+  width: 16px;
+}
+
+.pinned__profile .profile-dot {
+  width: 8px;
+  height: 8px;
+}
+
+.pinned__unpin {
+  width: 22px;
+  height: 22px;
+  color: var(--subtext0);
+  opacity: 0;
+}
+
+.pinned__row:hover .pinned__unpin,
+.pinned__unpin:focus-visible {
+  opacity: 1;
 }

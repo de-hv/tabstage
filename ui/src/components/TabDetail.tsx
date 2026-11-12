@@ -4,14 +4,15 @@ import { useState } from 'react';
 import type { AppError, Command, Snapshot, Tab } from '../api/types';
 import { profileBrowser, profileView } from '../lib/browsers';
 import { tabMenu } from '../lib/menus';
-import { locate } from '../lib/workspace';
+import { profileColor } from '../lib/profileColors';
+import { effectiveColor, hasTicketLink, locate, pinnedIndex } from '../lib/workspace';
 import type { ItemActions, Selection } from '../state/selection';
 import { ActionMenu } from './ActionMenu';
 import { IconPicker } from './IconPicker';
 import { InlineInput } from './InlineInput';
 import { ItemIcon } from './ItemIcon';
 import { ProfileDot } from './ProfileDot';
-import { DetailsSummary } from './DetailsSummary';
+import { useDetails } from './Details';
 import { SetupNote } from './SetupNote';
 import { UrlEditor } from './UrlEditor';
 
@@ -22,10 +23,12 @@ interface Props {
   actions: ItemActions;
   onSelect: (selection: Selection) => void;
   notify: (text: string) => void;
+  /** Bumped to start editing the note. */
+  noteRequest?: number;
 }
 
 /** A tab's details: where it lives, its full (editable) address and a button to open it. */
-export function TabDetail({ snapshot, tab: id, apply, actions, onSelect, notify }: Props) {
+export function TabDetail({ snapshot, tab: id, apply, actions, onSelect, notify, noteRequest }: Props) {
   const [renaming, setRenaming] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [iconOpen, setIconOpen] = useState(false);
@@ -34,7 +37,17 @@ export function TabDetail({ snapshot, tab: id, apply, actions, onSelect, notify 
   const at = locate(workspace, id);
   const container = at?.folder ? at.folder.tabs : at?.group ? at.group.children : at?.profile.items;
   const tab = container?.find((item) => item.id === id) as Tab | undefined;
+  const details = useDetails({
+    target: { tab: id },
+    ticketId: tab?.ticketId,
+    note: tab?.note,
+    profile: at?.profile,
+    apply,
+    actions,
+    noteRequest,
+  });
   if (!at || !tab) return null;
+  const color = effectiveColor(workspace, id);
   const { profile, group, folder } = at;
   const browser = profileBrowser(snapshot, profile.id)?.name;
   const canFocus = profileView(snapshot, profile.id)?.canFocusTabs ?? false;
@@ -86,7 +99,12 @@ export function TabDetail({ snapshot, tab: id, apply, actions, onSelect, notify 
           onOpenChange={setIconOpen}
           onChange={(icon) => actions.setIcon({ tab: tab.id }, icon)}
         >
-          <button type="button" className="group__icon" aria-label={`Icon of ${tab.title}`}>
+          <button
+            type="button"
+            className="group__icon"
+            aria-label={`Icon of ${tab.title}`}
+            style={color === undefined ? undefined : { color: profileColor(color) }}
+          >
             <ItemIcon icon={tab.icon} kind="tab" />
           </button>
         </IconPicker>
@@ -106,6 +124,7 @@ export function TabDetail({ snapshot, tab: id, apply, actions, onSelect, notify 
             {tab.title}
           </h1>
         )}
+        {details.ticket}
         <div className="group__actions">
           <button type="button" className="button button--accent" onClick={() => actions.open({ tab: tab.id })}>
             <ExternalLink className="icon" aria-hidden="true" />
@@ -123,6 +142,11 @@ export function TabDetail({ snapshot, tab: id, apply, actions, onSelect, notify 
               onIcon: () => setIconOpen(true),
               onMove: (command) => void apply(command),
               onDetails: () => actions.editDetails({ tab: tab.id }),
+              onTicket: hasTicketLink(workspace, tab.id, tab.ticketId) ? () => actions.openTicket({ tab: tab.id }) : undefined,
+              pin: {
+                pinned: pinnedIndex(workspace, { tab: tab.id }) !== -1,
+                onToggle: () => actions.togglePin({ tab: tab.id }),
+              },
               onDelete: () => actions.requestDelete({ tab: tab.id }),
             })}
           />
@@ -130,8 +154,6 @@ export function TabDetail({ snapshot, tab: id, apply, actions, onSelect, notify 
       </header>
 
       <SetupNote snapshot={snapshot} profile={profile} onConfigure={() => actions.configureProfile(profile.id)} />
-
-      <DetailsSummary ticketId={tab.ticketId} note={tab.note} onEdit={() => actions.editDetails({ tab: tab.id })} />
 
       <section className="tab-detail__section" aria-labelledby="tab-address">
         <h2 id="tab-address" className="tab-detail__label">
@@ -166,6 +188,8 @@ export function TabDetail({ snapshot, tab: id, apply, actions, onSelect, notify 
           it too.
         </p>
       </section>
+
+      {details.noteEditor}
     </main>
   );
 }
