@@ -91,6 +91,7 @@
               },
               {
                 "collapsed": true,
+                "color": 15,
                 "icon": {
                   "kind": "text",
                   "value": "77"
@@ -126,7 +127,6 @@
                 "url": "https://wiki.example.com/runbook"
               }
             ],
-            "color": "blue",
             "id": "00000000-0000-0000-0000-0000000000a1",
             "name": "Trabajo · Jira",
             "type": "group"
@@ -140,7 +140,7 @@
                 "url": "https://staging.example.com/"
               }
             ],
-            "color": "peach",
+            "color": 3,
             "icon": {
               "kind": "emoji",
               "value": "🧪"
@@ -169,7 +169,8 @@
             "url": "https://status.example.com/"
           }
         ],
-        "name": "Trabajo"
+        "name": "Trabajo",
+        "ticketUrl": "https://jira.example.com/browse/{ticket}"
       },
       {
         "color": 1,
@@ -184,7 +185,7 @@
                 "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Caching"
               }
             ],
-            "color": "mauve",
+            "color": "parent",
             "id": "00000000-0000-0000-0000-0000000000a2",
             "name": "Investigación",
             "type": "group"
@@ -198,7 +199,6 @@
         "items": [
           {
             "children": [],
-            "color": "peach",
             "id": "00000000-0000-0000-0000-0000000000a3",
             "name": "Docs Rust",
             "type": "group"

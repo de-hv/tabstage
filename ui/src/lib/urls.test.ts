@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { readableUrl } from './urls';
+import { readableUrl, ticketLink } from './urls';
 
 describe('readableUrl', () => {
   it('keeps the whole path of a Jira ticket, with the ticket as the tail', () => {
@@ -47,5 +47,17 @@ describe('readableUrl', () => {
 
   it('shows what it cannot parse as is', () => {
     expect(readableUrl('not a url')).toEqual({ host: '', head: 'not a url', tail: '' });
+  });
+});
+
+describe('ticketLink', () => {
+  it('puts the encoded ticket id in place of {ticket}', () => {
+    expect(ticketLink('https://jira.dev/browse/{ticket}', 'PROJ-1')).toBe('https://jira.dev/browse/PROJ-1');
+    expect(ticketLink('https://x.dev/?q={ticket}', 'a b/ñ')).toBe('https://x.dev/?q=a%20b%2F%C3%B1');
+  });
+
+  it('is undefined without a template or a ticket', () => {
+    expect(ticketLink(undefined, 'PROJ-1')).toBeUndefined();
+    expect(ticketLink('https://jira.dev/{ticket}', undefined)).toBeUndefined();
   });
 });

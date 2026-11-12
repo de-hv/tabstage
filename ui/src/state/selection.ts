@@ -18,7 +18,13 @@ export interface ItemActions {
   /** Deletes, asking first when it holds tabs. */
   requestDelete: (target: AnyTarget) => void;
   setIcon: (target: Target, icon: Icon | null) => void;
-  /** Opens the dialog for the name, ticket id and note of a group, folder or tab. */
+  /** Shows a group, folder or tab and starts editing its note. */
   editDetails: (target: Target) => void;
+  /** Opens the item's ticket with its profile's ticket URL. */
+  openTicket: (target: Target) => void;
+  /** Pins an item to the top of the sidebar, or unpins it. */
+  togglePin: (target: Target) => void;
+  /** Opens a link, such as one in a note, in a profile's browser. */
+  openUrl: (profile: Uuid, url: string) => void;
   configureProfile: (profile: Uuid) => void;
 }

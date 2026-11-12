@@ -38,3 +38,19 @@ export function readableUrl(raw: string): ReadableUrl {
   }
   return { host, head: rest.slice(0, slash + 1), tail: rest.slice(slash + 1) };
 }
+
+/** Where a ticket id goes in a profile's ticket URL. */
+export const TICKET_PLACEHOLDER = '{ticket}';
+
+/**
+ * A profile's ticket URL with the ticket id in place of `{ticket}`, encoded
+ * the same way the app does when it opens it.
+ */
+export function ticketLink(template: string | undefined, ticketId: string | undefined): string | undefined {
+  if (!template || !ticketId) return undefined;
+  const encoded = Array.from(new TextEncoder().encode(ticketId), (byte) => {
+    const char = String.fromCharCode(byte);
+    return /[A-Za-z0-9\-_.~]/.test(char) ? char : `%${byte.toString(16).toUpperCase().padStart(2, '0')}`;
+  }).join('');
+  return template.split(TICKET_PLACEHOLDER).join(encoded);
+}

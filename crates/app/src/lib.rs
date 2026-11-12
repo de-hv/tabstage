@@ -19,8 +19,9 @@ use tabstage_browsers::{
     find_installed, open_tab,
 };
 use tabstage_core::{
-    AccentColor, BrowserId, FolderId, GroupId, Icon, Item, Node, Place, ProfileColor, ProfileId,
-    Tab, TabId, TabUrl, TabUrlError, Target, Workspace, WorkspaceError,
+    BrowserId, Container, ContainerColor, FolderId, GroupId, Icon, Item, Node, Place, ProfileColor,
+    ProfileId, TICKET_PLACEHOLDER, Tab, TabId, TabUrl, TabUrlError, Target, Workspace,
+    WorkspaceError,
 };
 use tabstage_store::{Document, FileStore, Settings, StoreError};
 use thiserror::Error;
@@ -46,8 +47,6 @@ pub enum Command {
         profile: ProfileId,
         /// Group name.
         name: String,
-        /// Accent color.
-        color: AccentColor,
     },
     /// Rename a group.
     RenameGroup {
@@ -149,6 +148,30 @@ pub enum Command {
         /// The icon, or `None` for the default one.
         icon: Option<Icon>,
     },
+    /// Set or clear the own color of a group or folder.
+    SetColor {
+        /// What gets the color.
+        target: Container,
+        /// One of the profile colors, `"parent"` or `"none"`.
+        color: ContainerColor,
+    },
+    /// Pin a group, folder or tab to the top of the sidebar.
+    Pin {
+        /// What to pin.
+        target: Target,
+    },
+    /// Remove an item from the pinned section.
+    Unpin {
+        /// What to unpin.
+        target: Target,
+    },
+    /// Reorder the pinned section.
+    MovePinned {
+        /// Pinned item to move.
+        target: Target,
+        /// New position.
+        index: usize,
+    },
     /// Set the ticket id and note of a group, folder or tab.
     SetDetails {
         /// What gets the details.
@@ -176,6 +199,13 @@ pub enum Command {
         profile: ProfileId,
         /// Its new color.
         color: ProfileColor,
+    },
+    /// Set or clear the address a profile's ticket ids link to.
+    SetTicketUrl {
+        /// Profile to configure.
+        profile: ProfileId,
+        /// Address with a `{ticket}` placeholder; blank clears it.
+        url: String,
     },
     /// Move a profile in the sidebar.
     MoveProfile {
@@ -735,6 +765,49 @@ impl<S: System> AppService<S> {
         )?)
     }
 
+    /// Opens the ticket of a group, folder or tab with its profile's ticket
+    /// URL, in the profile's browser.
+    ///
+    /// # Errors
+    ///
+    /// When the item is unknown, has no ticket, its profile has no ticket
+    /// URL, no browser is installed or opening fails.
+    pub fn open_ticket(&self, target: Target) -> Result<Opened> {
+        let workspace = &self.document.workspace;
+        let profile = workspace.target_profile(target).ok_or(match target {
+            Target::Group(id) => WorkspaceError::GroupNotFound(id),
+            Target::Folder(id) => WorkspaceError::FolderNotFound(id),
+            Target::Tab(id) => WorkspaceError::TabNotFound(id),
+        })?;
+        let (Some(template), Some(ticket)) =
+            (profile.ticket_url.as_deref(), workspace.ticket_id(target))
+        else {
+            return Err(WorkspaceError::InvalidTicketUrl.into());
+        };
+        self.open_url(profile.id, &ticket_link(template, ticket))
+    }
+
+    /// Opens an address, such as a link in a note, in a profile's browser.
+    ///
+    /// # Errors
+    ///
+    /// When the profile is unknown, the address is not a web address, no
+    /// browser is installed or opening fails.
+    pub fn open_url(&self, profile: ProfileId, url: &str) -> Result<Opened> {
+        if self.document.workspace.profile(profile).is_none() {
+            return Err(WorkspaceError::ProfileNotFound(profile).into());
+        }
+        let url = TabUrl::parse(url)?;
+        let browser = self.resolve(profile).browser.ok_or(AppError::NoBrowser)?;
+        Ok(open_tab(
+            browser,
+            &url,
+            self.platform,
+            &self.system,
+            &self.system,
+        )?)
+    }
+
     /// Opens every tab of a folder, in order.
     ///
     /// # Errors
@@ -873,11 +946,7 @@ impl<S: System> AppService<S> {
     fn execute(&self, document: &mut Document, command: Command) -> Result<()> {
         let workspace = &mut document.workspace;
         match command {
-            Command::AddGroup {
-                profile,
-                name,
-                color,
-            } => workspace.add_group(profile, &name, color).map(drop)?,
+            Command::AddGroup { profile, name } => workspace.add_group(profile, &name).map(drop)?,
             Command::RenameGroup { group, name } => workspace.rename_group(group, &name)?,
             Command::MoveGroup {
                 group,
@@ -908,6 +977,10 @@ impl<S: System> AppService<S> {
             Command::RemoveTab { tab } => workspace.remove_tab(tab).map(drop)?,
             Command::MoveTab { tab, place, index } => workspace.move_tab(tab, place, index)?,
             Command::SetIcon { target, icon } => workspace.set_icon(target, icon)?,
+            Command::SetColor { target, color } => workspace.set_color(target, color)?,
+            Command::Pin { target } => workspace.pin(target)?,
+            Command::Unpin { target } => workspace.unpin(target),
+            Command::MovePinned { target, index } => workspace.move_pinned(target, index)?,
             Command::SetDetails {
                 target,
                 ticket_id,
@@ -918,6 +991,7 @@ impl<S: System> AppService<S> {
             Command::SetProfileColor { profile, color } => {
                 workspace.set_profile_color(profile, color)?;
             }
+            Command::SetTicketUrl { profile, url } => workspace.set_ticket_url(profile, &url)?,
             Command::MoveProfile { profile, index } => workspace.move_profile(profile, index)?,
             Command::RemoveProfile {
                 profile,
@@ -928,6 +1002,21 @@ impl<S: System> AppService<S> {
         }
         Ok(())
     }
+}
+
+/// A profile's ticket URL with the ticket id in place of `{ticket}`,
+/// percent-encoded so an id cannot change the rest of the address.
+#[must_use]
+pub fn ticket_link(template: &str, ticket: &str) -> String {
+    let mut encoded = String::new();
+    for byte in ticket.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    template.replace(TICKET_PLACEHOLDER, &encoded)
 }
 
 #[cfg(test)]

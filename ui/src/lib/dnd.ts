@@ -1,5 +1,5 @@
-import type { Command, Place, Workspace } from '../api/types';
-import { listLength, type Location, locate, placeLabel, samePlace } from './workspace';
+import type { Command, Place, Target, Workspace } from '../api/types';
+import { listLength, type Location, locate, pinnedIndex, placeLabel, samePlace } from './workspace';
 
 /** What is being dragged. */
 export type DragItem =
@@ -15,7 +15,9 @@ export type DropTarget =
   /** On a profile, group or folder (header, sidebar row or board column): go to its end. */
   | { kind: 'into'; place: Place }
   /** The space after a list: go to its end, also from within the same list. */
-  | { kind: 'end'; place: Place };
+  | { kind: 'end'; place: Place }
+  /** The "Pinned" section: pin it, or reorder it, before `before` or at the end. */
+  | { kind: 'pinned'; before?: Target };
 
 /**
  * The index to send for "put it at `index` of `place`": the Rust side removes
@@ -34,12 +36,14 @@ function destination(workspace: Workspace, target: DropTarget): { place: Place; 
     const length = listLength(workspace, target.place);
     return length === null ? null : { place: target.place, index: length };
   }
+  if (target.kind === 'pinned') return null;
   const at = locate(workspace, target.node);
   return at ? { place: at.place, index: at.index } : null;
 }
 
 /** The command a drop means, or `null` when it would change nothing. */
 export function dropCommand(item: DragItem, target: DropTarget, workspace: Workspace): Command | null {
+  if (target.kind === 'pinned') return dropPinned(item, target.before, workspace);
   if (item.kind === 'profile') return dropProfile(item.profile, target, workspace);
   const id = item.kind === 'tab' ? item.tab : item.kind === 'folder' ? item.folder : item.group;
   if (target.kind === 'before' && target.node === id) return null;
@@ -64,8 +68,36 @@ export function dropCommand(item: DragItem, target: DropTarget, workspace: Works
   }
 }
 
+/** The target a dragged group, folder or tab stands for. */
+export function dragTarget(item: DragItem): Target | null {
+  switch (item.kind) {
+    case 'tab':
+      return { tab: item.tab };
+    case 'folder':
+      return { folder: item.folder };
+    case 'group':
+      return { group: item.group };
+    case 'profile':
+      return null;
+  }
+}
+
+/** Pins what is dropped on the "Pinned" section, or moves it there when it already is. */
+function dropPinned(item: DragItem, before: Target | undefined, workspace: Workspace): Command | null {
+  const target = dragTarget(item);
+  if (!target) return null;
+  const from = pinnedIndex(workspace, target);
+  if (from === -1) return { type: 'pin', target };
+  const count = workspace.pinned?.length ?? 0;
+  const to = before ? pinnedIndex(workspace, before) : count;
+  if (to === -1) return null;
+  // The Rust side removes the item first, so a move down lands one slot earlier.
+  const index = from < to ? to - 1 : to;
+  return index === from ? null : { type: 'movePinned', target, index };
+}
+
 function dropProfile(profile: string, target: DropTarget, workspace: Workspace): Command | null {
-  if (target.kind === 'before' || !('profile' in target.place) || target.place.profile === profile) return null;
+  if (target.kind === 'pinned' || target.kind === 'before' || !('profile' in target.place) || target.place.profile === profile) return null;
   const onto = target.place.profile;
   const index = workspace.profiles.findIndex((candidate) => candidate.id === onto);
   return index === -1 ? null : { type: 'moveProfile', profile, index };

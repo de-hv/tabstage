@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { api, asAppError } from '../api/client';
-import type { AppError, Command, DataFileInfo, Opened, Relocate, Snapshot } from '../api/types';
+import type { AppError, Command, DataFileInfo, Opened, Relocate, Snapshot, Target } from '../api/types';
 
 /** Errors a form shows next to its own fields instead of in the banner. */
 const INLINE_CODES: ReadonlySet<AppError['code']> = new Set(['invalidUrl', 'invalid', 'cloudFolder']);
@@ -19,6 +19,10 @@ export interface WorkspaceState {
   dismissError: () => void;
   /** Opens a tab; `browserName` is for the "already open" notice. */
   openTab: (tab: string, browserName: string) => Promise<void>;
+  /** Opens the ticket of an item with its profile's ticket URL. */
+  openTicket: (target: Target) => Promise<void>;
+  /** Opens an address, such as a link in a note, in a profile's browser. */
+  openUrl: (profile: string, url: string) => Promise<void>;
   openFolder: (folder: string) => Promise<void>;
   openGroup: (group: string) => Promise<void>;
   openProfile: (profile: string) => Promise<void>;
@@ -97,6 +101,8 @@ export function useWorkspace(): WorkspaceState {
         const opened: Opened = await api.openTab(tab);
         if (opened === 'focusedExisting') show(`Already open in ${browserName}`);
       }),
+    openTicket: (target) => attempt(async () => void (await api.openTicket(target))),
+    openUrl: (profile, url) => attempt(async () => void (await api.openUrl(profile, url))),
     openFolder: (folder) => attempt(async () => void (await api.openFolder(folder))),
     openGroup: (group) => attempt(async () => void (await api.openGroup(group))),
     openProfile: (profile) => attempt(async () => void (await api.openProfile(profile))),

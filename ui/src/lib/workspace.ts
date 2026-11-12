@@ -1,4 +1,4 @@
-import type { Folder, Group, Item, Place, Profile, Tab, Target, Uuid, Workspace } from '../api/types';
+import type { ContainerColor, Folder, Group, Item, Place, Profile, Tab, Target, Uuid, Workspace } from '../api/types';
 
 /** Where a group, folder or tab sits: its container and its index there. */
 export interface Location {
@@ -118,23 +118,76 @@ export function placeLabel(workspace: Workspace, place: Place): string {
   return [at.profile.name, at.group?.id !== id ? at.group?.name : undefined, own].filter(Boolean).join(' / ');
 }
 
-/** The editable fields of a group, folder or tab, for the details dialog. */
-export interface TargetDetails {
-  kind: 'group' | 'folder' | 'tab';
-  name: string;
-  ticketId?: string;
-  note?: string;
+/**
+ * The color a group or folder shows: its own, its parent's when it chose
+ * "parent", else none (`undefined`), which is the default.
+ */
+export function resolveColor(own: ContainerColor | undefined, parent: number | undefined): number | undefined {
+  if (typeof own === 'number') return own;
+  return own === 'parent' ? parent : undefined;
 }
 
-export function targetDetails(workspace: Workspace, target: Target): TargetDetails | null {
-  if ('group' in target) {
-    const group = findGroup(workspace, target.group);
-    return group ? { kind: 'group', name: group.name, ticketId: group.ticketId, note: group.note } : null;
-  }
-  if ('folder' in target) {
-    const folder = findFolder(workspace, target.folder);
-    return folder ? { kind: 'folder', name: folder.name, ticketId: folder.ticketId, note: folder.note } : null;
-  }
-  const tab = allTabs(workspace).find((ref) => ref.tab.id === target.tab)?.tab;
-  return tab ? { kind: 'tab', name: tab.title, ticketId: tab.ticketId, note: tab.note } : null;
+/**
+ * The color an item shows, as a profile color index, or `undefined` for no
+ * color. A profile shows its own (its dot); a group or folder the one it
+ * chose; a tab, which has none of its own, its group's or folder's. A tab
+ * directly in a profile has none.
+ */
+export function effectiveColor(workspace: Workspace, id: Uuid): number | undefined {
+  const profile = findProfile(workspace, id);
+  if (profile) return profile.color;
+  const at = locate(workspace, id);
+  if (!at) return undefined;
+  const group = at.group ?? findGroup(workspace, id);
+  const folder = at.folder ?? findFolder(workspace, id);
+  const groupColor = group ? resolveColor(group.color, at.profile.color) : undefined;
+  if (folder) return resolveColor(folder.color, group ? groupColor : at.profile.color);
+  return groupColor;
+}
+
+/** Whether an item's ticket can open: it has one and its profile has a ticket URL. */
+export function hasTicketLink(workspace: Workspace, id: Uuid, ticketId: string | undefined): boolean {
+  return Boolean(ticketId && locate(workspace, id)?.profile.ticketUrl);
+}
+
+/** The id a target points at. */
+export function targetId(target: Target): Uuid {
+  return 'group' in target ? target.group : 'folder' in target ? target.folder : target.tab;
+}
+
+export function sameTarget(a: Target, b: Target): boolean {
+  if ('group' in a) return 'group' in b && a.group === b.group;
+  if ('folder' in a) return 'folder' in b && a.folder === b.folder;
+  return 'tab' in b && a.tab === b.tab;
+}
+
+/** Position of an item in the "Pinned" section, or -1. */
+export function pinnedIndex(workspace: Workspace, target: Target): number {
+  return (workspace.pinned ?? []).findIndex((pinned) => sameTarget(pinned, target));
+}
+
+/** A pinned item with what the sidebar shows of it. */
+export type PinnedItem = { target: Target; profile: Profile } & (
+  | { kind: 'group'; item: Group }
+  | { kind: 'folder'; item: Folder }
+  | { kind: 'tab'; item: Tab }
+);
+
+/** The pinned items that still exist, in order. */
+export function pinnedItems(workspace: Workspace): PinnedItem[] {
+  return (workspace.pinned ?? []).flatMap((target): PinnedItem[] => {
+    const at = locate(workspace, targetId(target));
+    if (!at) return [];
+    const { profile } = at;
+    if ('group' in target) {
+      const item = findGroup(workspace, target.group);
+      return item ? [{ target, profile, kind: 'group', item }] : [];
+    }
+    if ('folder' in target) {
+      const item = findFolder(workspace, target.folder);
+      return item ? [{ target, profile, kind: 'folder', item }] : [];
+    }
+    const item = allTabs(workspace).find((ref) => ref.tab.id === target.tab)?.tab;
+    return item ? [{ target, profile, kind: 'tab', item }] : [];
+  });
 }

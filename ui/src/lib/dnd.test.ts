@@ -127,3 +127,34 @@ describe('move destinations', () => {
     expect(moveDestinations(group(JIRA), workspace()).map((move) => move.label)).toEqual(['Personal', 'QA']);
   });
 });
+
+describe('dropping on the pinned section', () => {
+  const pinnedWorkspace = (): Workspace => ({
+    ...workspace(),
+    pinned: [{ tab: LOGIN }, { folder: SPRINT }, { tab: GRAFANA }],
+  });
+
+  it('pins what is not pinned yet', () => {
+    expect(dropCommand(tab(STATUS_PAGE), { kind: 'pinned' }, pinnedWorkspace())).toEqual({
+      type: 'pin',
+      target: { tab: STATUS_PAGE },
+    });
+    expect(dropCommand({ kind: 'profile', profile: TRABAJO }, { kind: 'pinned' }, pinnedWorkspace())).toBeNull();
+  });
+
+  it('reorders pinned items, accounting for the removal first', () => {
+    const before = (target: { tab: string } | { folder: string }) => ({ kind: 'pinned', before: target }) as const;
+    expect(dropCommand(tab(GRAFANA), before({ tab: LOGIN }), pinnedWorkspace())).toEqual({
+      type: 'movePinned',
+      target: { tab: GRAFANA },
+      index: 0,
+    });
+    expect(dropCommand(tab(LOGIN), { kind: 'pinned' }, pinnedWorkspace())).toEqual({
+      type: 'movePinned',
+      target: { tab: LOGIN },
+      index: 2,
+    });
+    expect(dropCommand(tab(LOGIN), before({ folder: SPRINT }), pinnedWorkspace())).toBeNull();
+    expect(dropCommand(tab(GRAFANA), { kind: 'pinned' }, pinnedWorkspace())).toBeNull();
+  });
+});

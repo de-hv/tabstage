@@ -11,7 +11,7 @@ use tabstage_app::{
 };
 use tabstage_browsers::Opened;
 use tabstage_browsers::system::System;
-use tabstage_core::{FolderId, GroupId, ProfileId, TabId};
+use tabstage_core::{FolderId, GroupId, ProfileId, TabId, Target};
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
 
@@ -83,6 +83,20 @@ pub fn refresh_browsers(service: State<'_, Service>) -> Reply<Snapshot> {
 #[tauri::command(async)]
 pub fn open_tab(service: State<'_, Service>, tab: TabId) -> Reply<Opened> {
     lock(&service)?.open_tab(tab).map_err(|e| payload(&e))
+}
+
+/// Opens the ticket of a group, folder or tab with its profile's ticket URL.
+#[tauri::command(async)]
+pub fn open_ticket(service: State<'_, Service>, target: Target) -> Reply<Opened> {
+    lock(&service)?.open_ticket(target).map_err(|e| payload(&e))
+}
+
+/// Opens an address, such as a link in a note, in a profile's browser.
+#[tauri::command(async)]
+pub fn open_url(service: State<'_, Service>, profile: ProfileId, url: String) -> Reply<Opened> {
+    lock(&service)?
+        .open_url(profile, &url)
+        .map_err(|e| payload(&e))
 }
 
 /// Opens every tab of a folder.

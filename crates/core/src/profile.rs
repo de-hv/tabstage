@@ -85,6 +85,9 @@ pub struct Profile {
     pub name: String,
     /// Color of its dot in the UI.
     pub color: ProfileColor,
+    /// Address its ticket ids link to, with a `{ticket}` placeholder.
+    #[serde(default, rename = "ticketUrl", skip_serializing_if = "Option::is_none")]
+    pub ticket_url: Option<String>,
     /// Groups, folders and tabs in display order.
     #[serde(default)]
     pub items: Vec<Item>,

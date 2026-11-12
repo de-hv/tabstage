@@ -22,7 +22,7 @@ use thiserror::Error;
 pub const APP: &str = "tabstage-desktop";
 
 /// Version of the file format this build writes.
-pub const FORMAT_VERSION: u32 = 3;
+pub const FORMAT_VERSION: u32 = 4;
 
 /// App-wide settings shared by every machine. Empty for now: browser
 /// choices are machine-local since format 2.
@@ -113,6 +113,9 @@ pub fn from_json(text: &str) -> Result<Document> {
     migrate::fill_profile_colors(&mut value);
     if header.version < 3 {
         migrate::upgrade_v2(&mut value);
+    }
+    if header.version < 4 {
+        migrate::upgrade_v3(&mut value);
     }
     let file: FileOwned = serde_json::from_value(value).map_err(StoreError::Parse)?;
     file.workspace.validate()?;
@@ -284,14 +287,12 @@ fn fingerprint(bytes: &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tabstage_core::{AccentColor, Icon, Place, TabUrl, Target};
+    use tabstage_core::{Icon, Place, TabUrl, Target};
 
     fn sample() -> Document {
         let mut workspace = Workspace::new();
         let work = workspace.add_profile("Trabajo").expect("profile");
-        let group = workspace
-            .add_group(work, "Work", AccentColor::Blue)
-            .expect("group");
+        let group = workspace.add_group(work, "Work").expect("group");
         let folder = workspace
             .add_folder(Place::Group(group), "Sprint 42")
             .expect("folder");
@@ -410,7 +411,7 @@ mod tests {
             Some(document.workspace.profiles()[1].id)
         );
         assert_eq!(document.migrated.len(), 2);
-        assert!(to_json(&document).contains("\"version\": 3"));
+        assert!(to_json(&document).contains("\"version\": 4"));
     }
 
     #[test]

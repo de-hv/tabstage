@@ -3,7 +3,6 @@ import { useState } from 'react';
 
 import type { AppError, Command, Group, Node, Place, Profile, Snapshot } from '../api/types';
 import { profileOpensIn } from '../lib/browsers';
-import { nextGroupColor } from '../lib/colors';
 import { countTabs } from '../lib/workspace';
 import type { ItemActions, Selection } from '../state/selection';
 import { useClickOrDoubleClick } from '../state/useClickOrDoubleClick';
@@ -75,12 +74,7 @@ export function ProfileBoard({ snapshot, profile, apply, actions, onSelect }: Pr
           onSubmit={async (name) => {
             const command: Command =
               adding === 'group'
-                ? {
-                    type: 'addGroup',
-                    profile: profile.id,
-                    name,
-                    color: nextGroupColor(snapshot.workspace),
-                  }
+                ? { type: 'addGroup', profile: profile.id, name }
                 : { type: 'addFolder', place, name };
             const failure = await apply(command);
             if (!failure) setAdding(null);

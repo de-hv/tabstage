@@ -2,17 +2,18 @@ import {
   ExternalLink,
   FolderInput,
   FolderPlus,
-  FoldVertical,
   Globe,
   Layers,
   Link,
   NotebookPen,
   Palette,
   Pencil,
+  Pin,
+  PinOff,
   Settings,
   Smile,
+  Ticket,
   Trash2,
-  UnfoldVertical,
 } from 'lucide-react';
 
 import type { Command, Workspace } from '../api/types';
@@ -30,6 +31,12 @@ export interface MenuHandlers {
   onIcon: () => void;
   /** Edit the name, ticket id and note; groups, folders and tabs only. */
   onDetails?: () => void;
+  /** Pick a color; profiles, groups and folders only. */
+  onColor?: () => void;
+  /** Open the item's ticket; only when it has one and its profile a ticket URL. */
+  onTicket?: () => void;
+  /** Pin to or unpin from the top of the sidebar; groups, folders and tabs only. */
+  pin?: { pinned: boolean; onToggle: () => void };
   onMove: (command: Command) => void;
   onDelete: () => void;
 }
@@ -59,8 +66,25 @@ const icon = (handlers: MenuHandlers, separated = false): MenuEntry => ({
   onSelect: handlers.onIcon,
 });
 
+const color = (handlers: MenuHandlers): MenuEntry[] =>
+  handlers.onColor ? [{ label: 'Change color…', icon: Palette, onSelect: handlers.onColor }] : [];
+
+const pin = (handlers: MenuHandlers): MenuEntry[] =>
+  handlers.pin
+    ? [
+        {
+          label: handlers.pin.pinned ? 'Unpin' : 'Pin to top',
+          icon: handlers.pin.pinned ? PinOff : Pin,
+          onSelect: handlers.pin.onToggle,
+        },
+      ]
+    : [];
+
+const ticket = (handlers: MenuHandlers): MenuEntry[] =>
+  handlers.onTicket ? [{ label: 'Open ticket', icon: Ticket, onSelect: handlers.onTicket }] : [];
+
 const details = (handlers: MenuHandlers): MenuEntry[] =>
-  handlers.onDetails ? [{ label: 'Edit details…', icon: NotebookPen, onSelect: handlers.onDetails }] : [];
+  handlers.onDetails ? [{ label: 'Edit note', icon: NotebookPen, onSelect: handlers.onDetails }] : [];
 
 const remove = (handlers: MenuHandlers, label = 'Delete…'): MenuEntry => ({
   label,
@@ -78,9 +102,6 @@ export function profileMenu(
     /** Whether the sidebar shows URLs under tabs, and how to flip it. */
     showsUrls: boolean;
     onToggleUrls: () => void;
-    /** Whether the sidebar is compact, and how to flip it. */
-    isCompact: boolean;
-    onToggleCompact: () => void;
   },
 ): MenuEntry[] {
   return [
@@ -92,11 +113,6 @@ export function profileMenu(
     { label: 'Change color…', icon: Palette, onSelect: handlers.onColor },
     { label: 'Choose browser…', icon: Settings, onSelect: handlers.onConfigure },
     { label: handlers.showsUrls ? 'Hide URLs' : 'Show URLs', icon: Link, onSelect: handlers.onToggleUrls },
-    {
-      label: handlers.isCompact ? 'Comfortable sidebar' : 'Compact sidebar',
-      icon: handlers.isCompact ? UnfoldVertical : FoldVertical,
-      onSelect: handlers.onToggleCompact,
-    },
     ...(handlers.canDelete ? [remove(handlers)] : []),
   ];
 }
@@ -106,7 +122,10 @@ export function groupMenu(group: string, handlers: MenuHandlers): MenuEntry[] {
     { label: 'New folder', icon: FolderPlus, keepsFocus: true, onSelect: () => handlers.onNew('folder') },
     { label: 'New tab…', icon: Globe, onSelect: () => handlers.onNew('tab') },
     { label: 'Open all', icon: ExternalLink, separated: true, onSelect: handlers.onOpen },
+    ...pin(handlers),
+    ...ticket(handlers),
     icon(handlers),
+    ...color(handlers),
     rename(handlers),
     ...details(handlers),
     moves({ kind: 'group', group }, handlers),
@@ -118,7 +137,10 @@ export function folderMenu(folder: string, handlers: MenuHandlers): MenuEntry[] 
   return [
     { label: 'New tab…', icon: Globe, onSelect: () => handlers.onNew('tab') },
     { label: 'Open all', icon: ExternalLink, separated: true, onSelect: handlers.onOpen },
+    ...pin(handlers),
+    ...ticket(handlers),
     icon(handlers),
+    ...color(handlers),
     rename(handlers),
     ...details(handlers),
     moves({ kind: 'folder', folder }, handlers),
@@ -129,6 +151,8 @@ export function folderMenu(folder: string, handlers: MenuHandlers): MenuEntry[] 
 export function tabMenu(tab: string, handlers: MenuHandlers): MenuEntry[] {
   return [
     { label: 'Open', icon: ExternalLink, onSelect: handlers.onOpen },
+    ...pin(handlers),
+    ...ticket(handlers),
     icon(handlers, true),
     rename(handlers),
     ...details(handlers),

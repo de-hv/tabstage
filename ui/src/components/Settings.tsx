@@ -3,12 +3,12 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { AlertTriangle, Folder, FolderInput, HardDrive } from 'lucide-react';
 import { useState } from 'react';
 
-import type { Command, DataFileInfo, DataLocationKind, Relocate, Snapshot } from '../api/types';
+import type { AppError, Command, DataFileInfo, DataLocationKind, Relocate, Snapshot } from '../api/types';
 import { ProfilesEditor } from './ProfilesEditor';
 
 interface Props {
   snapshot: Snapshot;
-  apply: (command: Command) => void;
+  apply: (command: Command) => Promise<AppError | null>;
   inspectDataFolder: (folder: string) => Promise<DataFileInfo | null>;
   relocate: (folder: string, mode: Relocate) => Promise<void>;
   onRevealDataFile: () => void;
@@ -16,8 +16,6 @@ interface Props {
   focusProfile?: string | null;
   showUrls: boolean;
   onShowUrls: (show: boolean) => void;
-  compact: boolean;
-  onCompact: (compact: boolean) => void;
   indentGuides: boolean;
   onIndentGuides: (show: boolean) => void;
 }
@@ -36,8 +34,6 @@ export function Settings({
   focusProfile = null,
   showUrls,
   onShowUrls,
-  compact,
-  onCompact,
   indentGuides,
   onIndentGuides,
 }: Props) {
@@ -79,10 +75,6 @@ export function Settings({
         <label className="checkbox">
           <input type="checkbox" checked={indentGuides} onChange={(event) => onIndentGuides(event.target.checked)} />
           Show indent guides
-        </label>
-        <label className="checkbox">
-          <input type="checkbox" checked={compact} onChange={(event) => onCompact(event.target.checked)} />
-          Compact sidebar
         </label>
       </section>
 
