@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/de-hv/tabstage-desktop/compare/v0.4.0...v0.4.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* Let rows and cards be dragged in the macOS app and keep menus inside the window ([1c4eca7](https://github.com/de-hv/tabstage-desktop/commit/1c4eca746770a29f4eb9c0f679c1e5faf5760bb3))
+
 ## [0.4.0](https://github.com/de-hv/tabstage-desktop/compare/v0.3.2...v0.4.0) (2026-11-12)
 
 
