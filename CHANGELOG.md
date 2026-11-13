@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.3](https://github.com/de-hv/tabstage/compare/v0.7.2...v0.7.3) (2026-11-13)
+
+
+### Bug Fixes
+
+* Name the app Tabstage everywhere, dropping tabstage-desktop ([7dd3815](https://github.com/de-hv/tabstage/commit/7dd3815daf8053cbac801033033d2faf2e479030))
+
 ## [0.7.2](https://github.com/de-hv/tabstage/compare/v0.7.1...v0.7.2) (2026-11-13)
 
 
