@@ -211,6 +211,69 @@
   line-height: 1.2;
 }
 
+.group__name-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: -2px -6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: text;
+}
+
+.group__name-edit:hover {
+  background: var(--crust);
+}
+
+.group__name-edit:focus-visible {
+  outline: 2px solid var(--focus);
+}
+
+.group__name-pencil {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--subtext0);
+  opacity: 0;
+  transition: opacity var(--motion) ease-out;
+}
+
+.group__name-edit:hover .group__name-pencil,
+.group__name-edit:focus-visible .group__name-pencil {
+  opacity: 1;
+}
+
+/* Default icons of ticket kinds: tasks green, bugs red, spikes yellow. */
+.sub-row__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  color: var(--subtext0);
+}
+
+.sub-row__icon .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.sub-row__icon[data-kind='task'],
+.tree-row[data-ticket-kind='task'][data-ticket-kind] .tree-row__icon,
+.menu__item[data-kind='task'] .icon {
+  color: var(--c-green);
+}
+
+.sub-row__icon[data-kind='bug'],
+.tree-row[data-ticket-kind='bug'][data-ticket-kind] .tree-row__icon,
+.menu__item[data-kind='bug'] .icon {
+  color: var(--c-red);
+}
+
+.sub-row__icon[data-kind='spike'],
+.tree-row[data-ticket-kind='spike'][data-ticket-kind] .tree-row__icon,
+.menu__item[data-kind='spike'] .icon {
+  color: var(--c-yellow);
+}
+
 .group__actions {
   display: flex;
   gap: 6px;
@@ -913,6 +976,69 @@
   color: var(--base);
 }
 
+.swatches__custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--surface0);
+}
+
+.swatch--custom {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+}
+
+/* No custom color yet: a rainbow ring says "any color". */
+.swatch--custom[data-empty] {
+  background: conic-gradient(
+    oklch(0.7 0.15 0),
+    oklch(0.7 0.15 90),
+    oklch(0.7 0.15 180),
+    oklch(0.7 0.15 270),
+    oklch(0.7 0.15 360)
+  );
+}
+
+.swatch--custom .swatch__check {
+  color: #fff;
+  filter: drop-shadow(0 0 1px rgb(0 0 0 / 60%));
+}
+
+.swatch__native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.swatches__hex {
+  width: 0;
+  flex: 1;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--surface0);
+  border-radius: 6px;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+.swatches__hex:focus {
+  border-color: var(--c-blue);
+}
+
+.swatches__hex[aria-invalid='true'] {
+  border-color: var(--c-red);
+}
+
 /* Data location card */
 
 .data-card {
@@ -991,6 +1117,36 @@
   background: var(--crust);
 }
 
+/* Drag handle: in the indent before the chevron, shown on hover. The whole
+   row drags; the handle says so. */
+.tree-row[draggable='true'] {
+  position: relative;
+}
+
+.tree-row__grip {
+  position: absolute;
+  top: 50%;
+  left: max(2px, calc(var(--indent) - 12px));
+  display: grid;
+  place-items: center;
+  width: 12px;
+  color: var(--overlay1);
+  opacity: 0;
+  transform: translateY(-50%);
+  cursor: grab;
+  transition: opacity var(--motion) ease-out;
+}
+
+.tree-row__grip .icon {
+  width: 12px;
+  height: 12px;
+}
+
+.tree-row:hover .tree-row__grip {
+  opacity: 1;
+}
+
+
 .tree-row[data-current] {
   background: var(--surface0);
 }
@@ -1007,6 +1163,44 @@
 .tree-row[data-drop] {
   background: color-mix(in srgb, var(--c-blue) 12%, transparent);
   box-shadow: inset 0 0 0 1px var(--c-blue);
+}
+
+/* Lands before or after the row, not in it: a line on that edge. */
+.tree-row[data-drop][data-drop-edge],
+.lane__head[data-drop][data-drop-edge] {
+  background: none;
+  box-shadow: none;
+}
+
+.tree-row[data-drop-edge],
+.lane__head[data-drop-edge] {
+  position: relative;
+}
+
+.tree-row[data-drop-edge]::after,
+.lane__head[data-drop-edge]::after {
+  position: absolute;
+  right: 4px;
+  left: calc(var(--depth, 0) * 14px + 6px);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--c-blue);
+  content: '';
+  pointer-events: none;
+}
+
+.lane__head[data-drop-edge]::after {
+  left: 18px;
+}
+
+.tree-row[data-drop-edge='top']::after,
+.lane__head[data-drop-edge='top']::after {
+  top: -1px;
+}
+
+.tree-row[data-drop-edge='bottom']::after,
+.lane__head[data-drop-edge='bottom']::after {
+  bottom: -1px;
 }
 
 .tree-row__chevron {
@@ -1064,12 +1258,15 @@ span.tree-row__chevron {
 }
 
 .tree-row__name {
+  /* Not a <button> (see lib/pressable.ts): a flex box centers the chip and
+     the text on the icon, whatever the fonts' line metrics. */
+  display: flex;
   flex: 1;
+  align-items: center;
   min-width: 0;
   height: 26px;
   padding: 0 4px;
-  /* Not a <button> (see lib/pressable.ts), so center the text by hand. */
-  line-height: 26px;
+  line-height: 1.3;
   overflow: hidden;
   border: 0;
   background: transparent;
@@ -1720,13 +1917,6 @@ button.column__title:hover {
   text-overflow: ellipsis;
 }
 
-.checkbox {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
 /* Ticket id and note: a chip before the name and a marker with the note as
    its tooltip, in the sidebar; a summary in the main views. */
 
@@ -1749,7 +1939,20 @@ button.column__title:hover {
 }
 
 .tree-row__name > .tree-row__title {
-  display: block;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.tree-row__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-row__title > .ticket {
+  vertical-align: baseline;
 }
 
 .tree-row--two-line .tree-row__title,
@@ -1852,9 +2055,64 @@ button.column__title:hover {
   opacity: 1;
 }
 
+.ticket-field__copy {
+  color: var(--subtext0);
+}
+
+.ticket-field__copy .icon,
 .ticket-field__edit .icon {
   width: 13px;
   height: 13px;
+}
+
+/* Ticket ID and link, edited together. */
+.ticket-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  width: min(420px, 100%);
+  padding: 6px 8px;
+  border: 1px solid var(--c-blue);
+  border-radius: 8px;
+  background: var(--base);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-blue) 18%, transparent);
+}
+
+.ticket-form__row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.ticket-form__label {
+  color: var(--subtext0);
+  font-size: 11px;
+}
+
+.ticket-form__input {
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--surface0);
+  border-radius: 5px;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+}
+
+.ticket-form__input:focus {
+  border-color: var(--c-blue);
+}
+
+.ticket-form__input[aria-invalid='true'] {
+  border-color: var(--c-red);
+}
+
+.ticket-form__error {
+  margin: 0;
 }
 
 /* Note: rendered Markdown, edited in place. */
@@ -2116,29 +2374,6 @@ button.column__title:hover {
 .markdown hr {
   border: 0;
   border-top: 1px solid var(--surface0);
-}
-
-/* Indent guides (Settings → Sidebar, on by default): a line under each
-   parent's chevron, down through its children. */
-
-.sidebar[data-guides] .tree-row {
-  position: relative;
-}
-
-.sidebar[data-guides] .tree-row::before {
-  content: '';
-  position: absolute;
-  top: -1px;
-  bottom: 0;
-  left: 0;
-  width: var(--indent);
-  background: repeating-linear-gradient(
-    to right,
-    transparent 0 8px,
-    var(--surface1) 8px 9px,
-    transparent 9px 14px
-  );
-  pointer-events: none;
 }
 
 /* Sidebar header: collapse, title and search. */
@@ -2411,6 +2646,12 @@ button.column__title:hover {
   box-shadow: inset 0 0 0 1px var(--c-blue);
 }
 
+/* A line, not a highlight, when the ticket lands next to the row: keep the status tint. */
+.tree-row[data-lane][data-drop][data-drop-edge] {
+  background: color-mix(in oklch, var(--lane) var(--lane-tint), transparent);
+  box-shadow: inset 3px 0 0 var(--lane);
+}
+
 .tree-row[data-lane] .tree-row__icon {
   color: var(--lane);
 }
@@ -2437,6 +2678,31 @@ button.column__title:hover {
   background: var(--surface0);
   color: var(--subtext0);
   font-weight: 400;
+}
+
+.status-pill__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-pill__count {
+  color: color-mix(in srgb, currentColor 65%, transparent);
+  font-weight: 400;
+}
+
+/* A collapsed lane: dashed outline in the status color, and "…". */
+.status-pill[data-collapsed] {
+  outline: 1px dashed var(--lane, var(--overlay1));
+  outline-offset: 1px;
+}
+
+.status-pill__more {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-left: -1px;
+  opacity: 0.75;
 }
 
 .status-pill__dot {
@@ -2484,12 +2750,57 @@ button.column__title:hover {
 }
 
 .lane__head {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   min-height: 24px;
   padding: 2px 2px 2px 18px;
   border-radius: 6px;
+}
+
+/* Drag handle of a status: shown on hover in the indent before the pill. */
+.lane__grip {
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  color: var(--overlay1);
+  opacity: 0;
+  transform: translateY(-50%);
+  cursor: grab;
+  transition: opacity var(--motion) ease-out;
+}
+
+.lane__grip .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.lane__head:hover .lane__grip {
+  opacity: 1;
+}
+
+.lane__toggle {
+  display: flex;
+  min-width: 0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.lane__toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.lane__toggle:hover .status-pill {
+  background: color-mix(in oklch, var(--lane, var(--overlay0)) 32%, transparent);
+}
+
+.lane__toggle:hover .status-pill[data-none] {
+  background: var(--surface1);
 }
 
 .lane__head[data-drop] {

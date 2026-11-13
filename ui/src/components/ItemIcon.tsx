@@ -1,11 +1,12 @@
-import { Globe, NotebookText, Ticket } from 'lucide-react';
+import { Bug, Globe, Lightbulb, NotebookText, SquareCheck, Ticket } from 'lucide-react';
 import { DynamicIcon, type IconName, iconNames } from 'lucide-react/dynamic';
 
 import type { Icon } from '../api/types';
 
-export type ItemKind = 'ticket' | 'note' | 'link';
+/** What an item is, for its default icon: a kind of ticket, a note, or anything else (`web`). */
+export type ItemKind = 'ticket' | 'task' | 'bug' | 'spike' | 'note' | 'web';
 
-const DEFAULTS = { ticket: Ticket, note: NotebookText, link: Globe } as const;
+const DEFAULTS = { ticket: Ticket, task: SquareCheck, bug: Bug, spike: Lightbulb, note: NotebookText, web: Globe } as const;
 
 const KNOWN = new Set<string>(iconNames);
 
@@ -15,7 +16,7 @@ export function isIconName(name: string): name is IconName {
 
 /** An icon from the icon set by name, loaded on demand. */
 export function SymbolIcon({ name, fallback }: { name: string; fallback?: ItemKind }) {
-  const Default = DEFAULTS[fallback ?? 'link'];
+  const Default = DEFAULTS[fallback ?? 'web'];
   if (!isIconName(name)) return <Default className="icon" aria-hidden="true" />;
   return (
     <DynamicIcon
@@ -27,7 +28,7 @@ export function SymbolIcon({ name, fallback }: { name: string; fallback?: ItemKi
   );
 }
 
-/** The custom icon of a ticket, note or link, or the default of its kind. */
+/** The custom icon of a ticket or note, or the default of its kind. */
 export function ItemIcon({ icon, kind }: { icon?: Icon | undefined; kind: ItemKind }) {
   switch (icon?.kind) {
     case 'emoji':

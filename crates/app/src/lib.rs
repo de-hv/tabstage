@@ -21,8 +21,8 @@ use tabstage_browsers::{
 };
 
 use tabstage_core::{
-    BrowserId, Icon, LinkOwner, NoteId, ProfileColor, ProfileId, StatusId, TabId, TabUrl,
-    TabUrlError, Target, TicketId, TicketPlace, Workspace, WorkspaceError,
+    BrowserId, Icon, NoteId, ProfileColor, ProfileId, StatusId, TabUrl, TabUrlError, Target,
+    TextOwner, TicketId, TicketKind, TicketPlace, Workspace, WorkspaceError,
 };
 use tabstage_store::{
     Document, FileStore, ImportSummary, LegacyTree, Role, Settings, StoreError, import_legacy,
@@ -59,6 +59,16 @@ pub enum Command {
         key: Option<String>,
         /// Its status, if any.
         status: Option<StatusId>,
+        /// What kind of work it is; a plain ticket when absent.
+        #[serde(default)]
+        kind: Option<TicketKind>,
+    },
+    /// Set what kind of work a ticket is.
+    SetTicketKind {
+        /// The ticket.
+        ticket: TicketId,
+        /// Its kind.
+        kind: TicketKind,
     },
     /// Set a ticket's key, such as `PROJ-123`; blank clears it.
     SetTicketKey {
@@ -93,7 +103,7 @@ pub enum Command {
         #[serde(default)]
         lane: Option<Lane>,
     },
-    /// Remove a ticket with its links and sub-tickets.
+    /// Remove a ticket with its sub-tickets.
     RemoveTicket {
         /// The ticket.
         ticket: TicketId,
@@ -117,7 +127,7 @@ pub enum Command {
         /// Position there.
         index: usize,
     },
-    /// Remove a note with its links.
+    /// Remove a note.
     RemoveNote {
         /// The note.
         note: NoteId,
@@ -125,48 +135,18 @@ pub enum Command {
     /// Set the Markdown text of a ticket (its note) or a note (its body).
     SetText {
         /// The ticket or note.
-        owner: LinkOwner,
+        owner: TextOwner,
         /// The text; blank clears it.
         text: String,
     },
-    /// Add a link to a ticket or note.
-    AddLink {
-        /// The ticket or note.
-        owner: LinkOwner,
-        /// Its address.
-        url: String,
-        /// Its title; blank uses the address.
-        title: String,
-    },
-    /// Change where a link points.
-    SetLinkUrl {
-        /// The link.
-        link: TabId,
-        /// Its new address.
-        url: String,
-    },
-    /// Move a link to a ticket or note.
-    MoveLink {
-        /// The link.
-        link: TabId,
-        /// Ticket or note it goes to.
-        owner: LinkOwner,
-        /// Position there.
-        index: usize,
-    },
-    /// Remove a link.
-    RemoveLink {
-        /// The link.
-        link: TabId,
-    },
-    /// Rename a ticket, note or link.
+    /// Rename a ticket or note.
     Rename {
         /// What to rename.
         target: Target,
         /// The new name.
         name: String,
     },
-    /// Set or clear the custom icon of a ticket, note or link.
+    /// Set or clear the custom icon of a ticket or note.
     SetIcon {
         /// What gets the icon.
         target: Target,
@@ -442,7 +422,6 @@ impl AppError {
             Self::Workspace(
                 WorkspaceError::TicketNotFound(_)
                 | WorkspaceError::NoteNotFound(_)
-                | WorkspaceError::LinkNotFound(_)
                 | WorkspaceError::StatusNotFound(_)
                 | WorkspaceError::ProfileNotFound(_),
             ) => "notFound",
@@ -810,20 +789,6 @@ impl<S: System> AppService<S> {
         Ok(self.snapshot())
     }
 
-    /// Opens a link with its profile's browser, focusing it if already open.
-    ///
-    /// # Errors
-    ///
-    /// When the link is unknown, no browser is installed or opening fails.
-    pub fn open_link(&self, link: TabId) -> Result<Opened> {
-        let found = self
-            .document
-            .workspace
-            .link(link)
-            .ok_or(WorkspaceError::LinkNotFound(link))?;
-        self.open_in(found.profile.id, &found.link.url)
-    }
-
     /// Opens a ticket's own address in its profile's browser.
     ///
     /// # Errors
@@ -841,8 +806,7 @@ impl<S: System> AppService<S> {
         self.open_in(profile, url)
     }
 
-    /// Opens everything a ticket points to: its address, its links, and its
-    /// sub-tickets' addresses and links, in order.
+    /// Opens a ticket's address and its sub-tickets' addresses, in order.
     ///
     /// # Errors
     ///
@@ -856,23 +820,8 @@ impl<S: System> AppService<S> {
         let mut urls = Vec::new();
         for item in std::iter::once(found.ticket).chain(&found.ticket.children) {
             urls.extend(item.url.iter());
-            urls.extend(item.links.iter().map(|link| &link.url));
         }
         self.open_all(found.profile.id, urls.into_iter())
-    }
-
-    /// Opens every link of a note, in order.
-    ///
-    /// # Errors
-    ///
-    /// When the note is unknown, no browser is installed or opening fails.
-    pub fn open_note(&self, note: NoteId) -> Result<OpenSummary> {
-        let (profile, found) = self
-            .document
-            .workspace
-            .note(note)
-            .ok_or(WorkspaceError::NoteNotFound(note))?;
-        self.open_all(profile.id, found.links.iter().map(|link| &link.url))
     }
 
     /// Opens an address, such as a link in a note, in a profile's browser.
@@ -1068,12 +1017,17 @@ impl<S: System> AppService<S> {
                 title,
                 key,
                 status,
+                kind,
             } => {
                 let id = workspace.add_ticket_as(id.unwrap_or_default(), place, &title, status)?;
                 if let Some(key) = key {
                     workspace.set_ticket_key(id, &key)?;
                 }
+                if let Some(kind) = kind {
+                    workspace.set_ticket_kind(id, kind)?;
+                }
             }
+            Command::SetTicketKind { ticket, kind } => workspace.set_ticket_kind(ticket, kind)?,
             Command::SetTicketKey { ticket, key } => workspace.set_ticket_key(ticket, &key)?,
             Command::SetTicketUrl { ticket, url } => {
                 let url = if url.trim().is_empty() {
@@ -1110,16 +1064,6 @@ impl<S: System> AppService<S> {
             } => workspace.move_note(note, profile, index)?,
             Command::RemoveNote { note } => workspace.remove_note(note).map(drop)?,
             Command::SetText { owner, text } => workspace.set_text(owner, &text)?,
-            Command::AddLink { owner, url, title } => {
-                let url = TabUrl::parse(&url)?;
-                workspace.add_link(owner, url, &title).map(drop)?;
-            }
-            Command::SetLinkUrl { link, url } => {
-                let url = TabUrl::parse(&url)?;
-                workspace.set_link_url(link, url)?;
-            }
-            Command::MoveLink { link, owner, index } => workspace.move_link(link, owner, index)?,
-            Command::RemoveLink { link } => workspace.remove_link(link).map(drop)?,
             Command::Rename { target, name } => workspace.rename(target, &name)?,
             Command::SetIcon { target, icon } => workspace.set_icon(target, icon)?,
             Command::Pin { target } => workspace.pin(target)?,

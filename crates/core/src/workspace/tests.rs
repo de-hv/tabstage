@@ -99,7 +99,7 @@ fn tickets_take_a_key_an_address_a_status_and_a_note() {
         .set_ticket_address(ticket, Some(url("https://jira.dev/browse/CAR-5899")))
         .expect("address");
     workspace
-        .set_text(LinkOwner::Ticket(ticket), "  ## Steps\n- [ ] QA  ")
+        .set_text(TextOwner::Ticket(ticket), "  ## Steps\n- [ ] QA  ")
         .expect("note");
     workspace
         .set_ticket_status(ticket, None)
@@ -198,11 +198,7 @@ fn removing_a_ticket_removes_its_sub_tickets_and_unpins_them() {
     let child = workspace
         .add_ticket(TicketPlace::Ticket(ticket), "Child", None)
         .expect("child");
-    let link = workspace
-        .add_link(LinkOwner::Ticket(child), url("https://a.dev"), "")
-        .expect("link");
     workspace.pin(Target::Ticket(child)).expect("pin child");
-    workspace.pin(Target::Link(link)).expect("pin link");
 
     workspace.remove_ticket(ticket).expect("remove");
 
@@ -210,73 +206,43 @@ fn removing_a_ticket_removes_its_sub_tickets_and_unpins_them() {
     assert!(workspace.pinned().is_empty());
 }
 
-// ---- notes and links --------------------------------------------------------
+// ---- notes and kinds --------------------------------------------------------
 
 #[test]
-fn notes_hold_a_body_and_links() {
+fn notes_hold_a_body() {
     let mut workspace = Workspace::new();
     let profile = first_profile(&workspace);
     let note = workspace.add_note(profile, "Standup notes").expect("note");
     workspace
-        .set_text(LinkOwner::Note(note), "Talk about CAR-6210")
+        .set_text(TextOwner::Note(note), "Talk about CAR-6210")
         .expect("body");
-    let link = workspace
-        .add_link(LinkOwner::Note(note), url("https://board.dev"), " ")
-        .expect("link");
 
     let (_, found) = workspace.note(note).expect("note");
     assert_eq!(found.body.as_deref(), Some("Talk about CAR-6210"));
-    assert_eq!(found.links[0].title, "https://board.dev/");
-    assert_eq!(
-        workspace.link(link).map(|found| found.owner),
-        Some(LinkOwner::Note(note))
-    );
 }
 
 #[test]
-fn links_move_between_tickets_and_notes_and_can_be_renamed() {
-    let (mut workspace, profile, _, ticket) = work();
-    let note = workspace.add_note(profile, "Notes").expect("note");
-    let link = workspace
-        .add_link(LinkOwner::Ticket(ticket), url("https://pr.dev/1"), "PR")
-        .expect("link");
-
-    workspace
-        .move_link(link, LinkOwner::Note(note), 0)
-        .expect("move");
-    workspace.rename(Target::Link(link), "").expect("rename");
-    workspace
-        .set_link_url(link, url("https://pr.dev/2"))
-        .expect("url");
-
-    assert!(
-        workspace
-            .ticket(ticket)
-            .expect("ticket")
-            .ticket
-            .links
-            .is_empty()
-    );
-    let found = workspace.link(link).expect("link");
-    assert_eq!(found.owner, LinkOwner::Note(note));
-    assert_eq!(found.link.title, "https://pr.dev/1");
-    assert_eq!(found.link.url.as_str(), "https://pr.dev/2");
-}
-
-#[test]
-fn renaming_a_ticket_or_note_needs_a_name() {
+fn tickets_have_a_kind_that_is_saved_only_when_not_the_default() {
     let (mut workspace, _, _, ticket) = work();
+    let child = workspace
+        .add_ticket(TicketPlace::Ticket(ticket), "Fix crash", None)
+        .expect("child");
     assert_eq!(
-        workspace.rename(Target::Ticket(ticket), "  "),
-        Err(WorkspaceError::EmptyName)
+        workspace.ticket(child).expect("child").ticket.kind,
+        TicketKind::Ticket
     );
+
     workspace
-        .rename(Target::Ticket(ticket), "New")
-        .expect("rename");
+        .set_ticket_kind(child, TicketKind::Bug)
+        .expect("kind");
+
     assert_eq!(
-        workspace.ticket(ticket).expect("ticket").ticket.title,
-        "New"
+        workspace.ticket(child).expect("child").ticket.kind,
+        TicketKind::Bug
     );
+    let json = serde_json::to_string(&workspace).expect("json");
+    assert_eq!(json.matches("\"kind\"").count(), 1, "{json}");
+    assert!(json.contains("\"kind\":\"bug\""));
 }
 
 // ---- profiles ---------------------------------------------------------------
@@ -345,7 +311,7 @@ fn empty_fields_are_left_out_of_the_json() {
         "\"key\"",
         "\"url\"",
         "\"note\"",
-        "\"links\"",
+        "\"kind\"",
         "\"children\"",
         "\"pinned\"",
     ] {

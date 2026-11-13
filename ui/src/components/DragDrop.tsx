@@ -50,37 +50,76 @@ export function useDrag(item: DragItem) {
   };
 }
 
-/** A drop target, or a function that picks one for what is being dragged. */
-export type DropSpec = DropTarget | ((item: DragItem) => DropTarget | null) | null;
+/** Where the pointer is over a drop target, from its top edge. */
+export interface DropPoint {
+  offset: number;
+  height: number;
+}
+
+/** A drop target with the edge where a line shows where the item lands. */
+export interface DropHit {
+  target: DropTarget;
+  edge?: 'top' | 'bottom';
+}
+
+/**
+ * A drop target, or a function that picks one for what is being dragged
+ * and where the pointer is.
+ */
+export type DropSpec = DropTarget | ((item: DragItem, at: DropPoint) => DropTarget | DropHit | null) | null;
+
+/** Where an item lands next to a row: no line, since the row itself lights up. */
+function asHit(found: DropTarget | DropHit | null): DropHit | null {
+  if (!found) return null;
+  return 'target' in found ? found : { target: found };
+}
 
 /**
  * Props that make an element a drop target. It only accepts drops that
  * would change something, so the cursor shows when a drop does nothing.
+ * While something is over it, `data-drop` is set, and `data-drop-edge` when
+ * the item lands before or after it rather than in it.
  */
 export function useDrop(spec: DropSpec) {
   const { item, setItem, workspace, apply } = useDragState();
-  const [over, setOver] = useState(false);
-  const target = item && typeof spec === 'function' ? spec(item) : typeof spec === 'function' ? null : spec;
-  const command = item && target ? dropCommand(item, target, workspace) : null;
+  const [over, setOver] = useState<DropHit | null>(null);
 
   if (!spec) return {};
+  const resolve = (event: DragEvent): { hit: DropHit; command: Command } | null => {
+    if (!item) return null;
+    let hit: DropHit | null;
+    if (typeof spec === 'function') {
+      const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+      hit = asHit(spec(item, { offset: event.clientY - rect.top, height: rect.height }));
+    } else {
+      hit = { target: spec };
+    }
+    const command = hit ? dropCommand(item, hit.target, workspace) : null;
+    return hit && command ? { hit, command } : null;
+  };
   return {
-    'data-drop': (over && command !== null) || undefined,
+    'data-drop': over ? true : undefined,
+    'data-drop-edge': over?.edge,
     onDragOver: (event: DragEvent) => {
-      if (!command) return;
+      const found = resolve(event);
+      if (!found) {
+        if (over) setOver(null);
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-      setOver(true);
+      if (over?.edge !== found.hit.edge || over?.target.kind !== found.hit.target.kind) setOver(found.hit);
     },
-    onDragLeave: () => setOver(false),
+    onDragLeave: () => setOver(null),
     onDrop: (event: DragEvent) => {
-      setOver(false);
-      if (!command) return;
+      setOver(null);
+      const found = resolve(event);
+      if (!found) return;
       event.preventDefault();
       event.stopPropagation();
       setItem(null);
-      apply(command);
+      apply(found.command);
     },
   };
 }

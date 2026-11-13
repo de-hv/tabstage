@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { createEvent, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { App } from '../App';
@@ -20,10 +20,6 @@ export const REMOVE_MAP = id(0x7003);
 /** "Onboarding wiki": no status, no key, one link. */
 export const ONBOARDING = id(0x7004);
 export const CACHING = id(0x7005);
-export const PR_LINK = id(0xb001);
-export const STAGING_LINK = id(0xb002);
-export const WIKI_LINK = id(0xb003);
-export const BOARD_LINK = id(0xb004);
 /** "Standup notes", which mentions CAR-6163. */
 export const STANDUP = id(0x9001);
 
@@ -54,9 +50,9 @@ export function treeRow(name: string): HTMLElement {
   return row;
 }
 
-/** Opens a sidebar row's menu with a right-click and returns the menu. */
-export async function rightClick(name: string) {
-  fireEvent.contextMenu(treeRow(name));
+/** Opens a sidebar row's menu with its ⋯ button and returns the menu. */
+export async function openRowMenu(name: string) {
+  fireEvent.keyDown(within(sidebar()).getByRole('button', { name: `Options for ${name}` }), { key: 'Enter' });
   return screen.findByRole('menu');
 }
 
@@ -70,6 +66,22 @@ export function drag(source: HTMLElement, target: HTMLElement) {
   fireEvent.dragEnter(target, { dataTransfer: transfer });
   fireEvent.dragOver(target, { dataTransfer: transfer });
   fireEvent.drop(target, { dataTransfer: transfer });
+  fireEvent.dragEnd(source, { dataTransfer: transfer });
+}
+
+/**
+ * Drags onto `target` with the pointer `offset` px below its top, giving the
+ * target a `height` px box (happy-dom gives every element an empty one).
+ */
+export function dragAt(source: HTMLElement, target: HTMLElement, offset: number, height = 28) {
+  target.getBoundingClientRect = () => ({ top: 0, bottom: height, height, left: 0, right: 200, width: 200, x: 0, y: 0, toJSON: () => ({}) });
+  const transfer = dataTransfer();
+  fireEvent.dragStart(source, { dataTransfer: transfer });
+  for (const make of [createEvent.dragEnter, createEvent.dragOver, createEvent.drop]) {
+    const event = make(target, { dataTransfer: transfer });
+    Object.defineProperty(event, 'clientY', { value: offset });
+    fireEvent(target, event);
+  }
   fireEvent.dragEnd(source, { dataTransfer: transfer });
 }
 

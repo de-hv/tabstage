@@ -2,14 +2,13 @@ import { listen } from '@tauri-apps/api/event';
 import { Command } from 'cmdk';
 import { useEffect, useState } from 'react';
 
-import type { Link, Profile, Snapshot } from '../api/types';
+import type { Profile, Snapshot } from '../api/types';
 import { profileBrowser } from '../lib/browsers';
 import { allTickets, findStatus } from '../lib/workspace';
 import type { Selection } from '../state/selection';
 import { BrowserBadge } from './BrowserBadge';
 import { ItemIcon } from './ItemIcon';
 import { StatusPill } from './StatusPill';
-import { TabUrl } from './TabUrl';
 
 /** Emitted by the shell for the global shortcut. */
 export const OPEN_PALETTE_EVENT = 'open-palette';
@@ -25,24 +24,10 @@ interface Props {
   snapshot: Snapshot;
   /** Shows a ticket or note. */
   onSelect: (selection: Selection) => void;
-  /** Opens a link in its profile's browser. */
-  openLink: (link: string) => void;
 }
 
-/** Every link with the profile and the ticket or note that holds it. */
-function allLinks(snapshot: Snapshot): { link: Link; profile: Profile; owner: string }[] {
-  return snapshot.workspace.profiles.flatMap((profile) => [
-    ...profile.tickets.flatMap((ticket) =>
-      [ticket, ...(ticket.children ?? [])].flatMap((holder) =>
-        (holder.links ?? []).map((link) => ({ link, profile, owner: holder.key ? `${holder.key} ${holder.title}` : holder.title })),
-      ),
-    ),
-    ...profile.notes.flatMap((note) => (note.links ?? []).map((link) => ({ link, profile, owner: note.title }))),
-  ]);
-}
-
-/** Search across every profile: tickets (also by key and status), notes and links. */
-export function Palette({ snapshot, onSelect, openLink }: Props) {
+/** Search across every profile: tickets (also by key and status) and notes. */
+export function Palette({ snapshot, onSelect }: Props) {
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
@@ -92,7 +77,7 @@ export function Palette({ snapshot, onSelect, openLink }: Props) {
       overlayClassName="dialog__overlay"
       contentClassName="palette__content"
     >
-      <Command.Input className="palette__input" placeholder="Search tickets, notes and links" aria-label="Search" />
+      <Command.Input className="palette__input" placeholder="Search tickets and notes" aria-label="Search" />
       <Command.List className="palette__list">
         <Command.Empty className="palette__empty">Nothing matches.</Command.Empty>
         {allTickets(snapshot.workspace).map(({ ticket, parent, profile }) => {
@@ -128,21 +113,6 @@ export function Palette({ snapshot, onSelect, openLink }: Props) {
             </Command.Item>
           )),
         )}
-        {allLinks(snapshot).map(({ link, profile, owner }) => (
-          <Command.Item
-            key={link.id}
-            value={`${link.title} ${link.url} ${owner} ${profile.name} ${link.id}`}
-            className="palette__item"
-            onSelect={() => run(() => openLink(link.id))}
-          >
-            <ItemIcon icon={link.icon} kind="link" />
-            <span className="palette__title palette__title--tab">
-              {link.title}
-              <TabUrl url={link.url} />
-            </span>
-            {meta(profile, owner)}
-          </Command.Item>
-        ))}
       </Command.List>
     </Command.Dialog>
   );

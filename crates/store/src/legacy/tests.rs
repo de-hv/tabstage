@@ -80,7 +80,7 @@ fn reads_old_files_as_a_tree() {
     assert_eq!(profile.items.len(), 5);
     let test = &profile.items[0];
     assert_eq!(
-        (test.kind, test.color.map(ProfileColor::index)),
+        (test.kind, test.color.and_then(ProfileColor::index)),
         (LegacyKind::Group, Some(0))
     );
     assert_eq!(test.children[0].children.len(), 3);
@@ -110,7 +110,7 @@ fn suggested_roles_turn_the_screenshot_into_statuses_tickets_and_a_note() {
     let colors: Vec<_> = workspace
         .statuses()
         .iter()
-        .map(|s| s.color.index())
+        .filter_map(|s| s.color.index())
         .collect();
     assert_eq!(&colors[..3], [0, 5, 7]);
 
@@ -182,7 +182,7 @@ fn chosen_roles_win_and_change_what_their_children_suggest() {
     let chosen = HashMap::from([
         // The review folder as one ticket: its tabs become sub-tickets.
         ("f-dec".to_owned(), Role::Ticket),
-        // In STG as a note: its tabs become links.
+        // In STG as a note: its tabs become links in its body.
         ("g-stg".to_owned(), Role::Note),
         // A role that does not fit a tab is ignored.
         ("t-6080".to_owned(), Role::Status),
@@ -205,8 +205,9 @@ fn chosen_roles_win_and_change_what_their_children_suggest() {
         .iter()
         .find(|n| n.title == "In STG")
         .expect("note");
-    assert_eq!(stg.links.len(), 2);
-    assert_eq!(stg.links[0].title, "CAR-6100 CSUI GQL to REST");
+    let body = stg.body.as_deref().expect("body");
+    assert_eq!(body.lines().filter(|line| line.starts_with("- [")).count(), 2);
+    assert!(body.starts_with("- [CAR-6100 CSUI GQL to REST]("), "{body}");
     assert_eq!(summary.roles["t-6080"], Role::Ticket);
 }
 
@@ -227,7 +228,7 @@ fn importing_into_a_used_workspace_reuses_profiles_and_statuses() {
         "the default profile stays: it was not alone"
     );
     assert_eq!(workspace.statuses().len(), 4);
-    assert_eq!(workspace.statuses()[0].color.index(), 9);
+    assert_eq!(workspace.statuses()[0].color.index(), Some(9));
     assert_eq!(workspace.profile(mine).expect("mine").tickets.len(), 9);
 }
 

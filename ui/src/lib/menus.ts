@@ -1,10 +1,10 @@
 import {
   CircleDot,
+  Copy,
   CornerLeftUp,
   ExternalLink,
   FolderInput,
-  Globe,
-  Link,
+  Layers,
   ListTree,
   NotebookPen,
   NotebookText,
@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 
 import type { Command, Ticket as TicketData, Workspace } from '../api/types';
+import { TICKET_KINDS } from './ticketKinds';
 import type { MenuEntry } from '../components/ActionMenu';
 import type { ItemActions } from '../state/selection';
 import { findNote, findTicket, pinnedIndex } from './workspace';
@@ -68,7 +69,14 @@ export function ticketMenu(id: string, row: RowControls, context: Context): Menu
   const { actions, apply, workspace } = context;
   const current = ticket.status ?? null;
   const entries: MenuEntry[] = [];
-  if (ticket.url) entries.push({ label: 'Open', icon: ExternalLink, onSelect: () => actions.openTicket(id) });
+  if (ticket.url) {
+    const url = ticket.url;
+    entries.push(
+      { label: 'Open', icon: ExternalLink, onSelect: () => actions.openTicket(id) },
+      { label: 'Copy link', icon: Copy, onSelect: () => actions.copyLink(url) },
+    );
+  }
+  const kind = ticket.kind ?? 'ticket';
   entries.push(
     { label: 'Open all', icon: ExternalLink, onSelect: () => actions.openTicketAll(id) },
     pin(context, { ticket: id }),
@@ -84,6 +92,14 @@ export function ticketMenu(id: string, row: RowControls, context: Context): Menu
         { label: `${current === null ? '✓ ' : ''}No status`, onSelect: () => apply({ type: 'setTicketStatus', ticket: id, status: null }) },
         { label: 'Edit statuses…', onSelect: actions.editStatuses },
       ],
+    },
+    {
+      label: 'Type',
+      icon: Layers,
+      items: TICKET_KINDS.map((option) => ({
+        label: `${option.kind === kind ? '✓ ' : ''}${option.label}`,
+        onSelect: () => apply({ type: 'setTicketKind', ticket: id, kind: option.kind }),
+      })),
     },
   );
   if (parent) {
@@ -115,7 +131,6 @@ export function ticketMenu(id: string, row: RowControls, context: Context): Menu
     entries.push(moveToProfile(context, profile.id, (to) => ({ type: 'moveTicket', ticket: id, place: { profile: to }, index: Number.MAX_SAFE_INTEGER })));
   }
   entries.push(
-    { label: 'Add link…', icon: Link, onSelect: () => actions.addLink({ ticket: id }) },
     icon(row),
     rename(row),
     { label: 'Edit note', icon: NotebookPen, onSelect: () => actions.editText({ ticket: id }) },
@@ -129,25 +144,12 @@ export function noteMenu(id: string, row: RowControls, context: Context): MenuEn
   if (!found) return [];
   const { actions } = context;
   return [
-    { label: 'Open all links', icon: ExternalLink, onSelect: () => actions.openNote(id) },
     pin(context, { note: id }),
-    { label: 'Add link…', icon: Link, separated: true, onSelect: () => actions.addLink({ note: id }) },
     icon(row),
     rename(row),
     { label: 'Edit note', icon: NotebookPen, onSelect: () => actions.editText({ note: id }) },
     moveToProfile(context, found.profile.id, (to) => ({ type: 'moveNote', note: id, profile: to, index: Number.MAX_SAFE_INTEGER })),
     remove(() => actions.requestDelete({ note: id })),
-  ];
-}
-
-export function linkMenu(id: string, row: RowControls, context: Context): MenuEntry[] {
-  const { actions } = context;
-  return [
-    { label: 'Open', icon: ExternalLink, onSelect: () => actions.openLink(id) },
-    pin(context, { link: id }),
-    icon(row),
-    rename(row),
-    remove(() => actions.requestDelete({ link: id }), 'Delete'),
   ];
 }
 
@@ -158,9 +160,6 @@ export function profileMenu(
     onNewTicket: () => void;
     onNewNote: () => void;
     canDelete: boolean;
-    /** Whether the sidebar shows addresses under links, and how to flip it. */
-    showsUrls: boolean;
-    onToggleUrls: () => void;
   },
 ): MenuEntry[] {
   const { actions } = context;
@@ -170,7 +169,6 @@ export function profileMenu(
     rename(row),
     { label: 'Change color…', icon: Palette, separated: true, onSelect: row.openLeading },
     { label: 'Choose browser…', icon: Settings, onSelect: () => actions.configureProfile(id) },
-    { label: context.showsUrls ? 'Hide addresses' : 'Show addresses', icon: Globe, onSelect: context.onToggleUrls },
     ...(context.canDelete ? [remove(() => actions.requestDelete({ profile: id }))] : []),
   ];
 }

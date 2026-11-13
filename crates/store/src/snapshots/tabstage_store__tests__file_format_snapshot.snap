@@ -5,7 +5,7 @@ expression: to_json_redacted(&sample())
 {
   "app": "tabstage-desktop",
   "settings": {},
-  "version": 5,
+  "version": 6,
   "workspace": {
     "profiles": [
       {
@@ -16,7 +16,7 @@ expression: to_json_redacted(&sample())
         "tickets": []
       },
       {
-        "color": 1,
+        "color": "#ff6a3d",
         "id": "[uuid]",
         "name": "Trabajo",
         "notes": [
@@ -31,22 +31,16 @@ expression: to_json_redacted(&sample())
             "children": [
               {
                 "id": "[uuid]",
+                "kind": "task",
                 "title": "Money card"
               }
             ],
+            "icon": {
+              "kind": "text",
+              "value": "142"
+            },
             "id": "[uuid]",
             "key": "CAR-5899",
-            "links": [
-              {
-                "icon": {
-                  "kind": "text",
-                  "value": "142"
-                },
-                "id": "[uuid]",
-                "title": "PR",
-                "url": "https://a.dev/issue/1"
-              }
-            ],
             "status": "[uuid]",
             "title": "Carrier Commissions"
           }

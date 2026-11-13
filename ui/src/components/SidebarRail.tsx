@@ -16,12 +16,10 @@ interface Props {
   onSelect: (selection: Selection) => void;
   onOpenSettings: () => void;
   onExpand: () => void;
-  /** Opens a pinned link in its browser. */
-  onOpenLink: (link: string) => void;
 }
 
 /** The collapsed sidebar: pinned items and profiles as icons, with names as tooltips. */
-export function SidebarRail({ workspace, selection, settingsOpen, onSelect, onOpenSettings, onExpand, onOpenLink }: Props) {
+export function SidebarRail({ workspace, selection, settingsOpen, onSelect, onOpenSettings, onExpand }: Props) {
   const pinned = pinnedItems(workspace);
   const isCurrent = (kind: Selection['kind'], id: string) => !settingsOpen && selection?.kind === kind && selection.id === id;
 
@@ -47,14 +45,12 @@ export function SidebarRail({ workspace, selection, settingsOpen, onSelect, onOp
                   className="rail__button"
                   data-lane={lane !== undefined || undefined}
                   style={lane === undefined ? undefined : ({ '--lane': profileColor(lane) } as CSSProperties)}
-                  title={entry.kind === 'link' ? `Open ${entry.item.title}` : entry.item.title}
+                  title={entry.item.title}
                   aria-label={`Pinned: ${entry.item.title}`}
-                  aria-current={entry.kind !== 'link' && isCurrent(entry.kind, entry.item.id) ? 'page' : undefined}
-                  onClick={() =>
-                    entry.kind === 'link' ? onOpenLink(entry.item.id) : onSelect({ kind: entry.kind, id: entry.item.id })
-                  }
+                  aria-current={isCurrent(entry.kind, entry.item.id) ? 'page' : undefined}
+                  onClick={() => onSelect({ kind: entry.kind, id: entry.item.id })}
                 >
-                  <ItemIcon icon={entry.item.icon} kind={entry.kind} />
+                  <ItemIcon icon={entry.item.icon} kind={entry.kind === 'ticket' ? (entry.item.kind ?? 'ticket') : 'note'} />
                 </button>
               );
             })}

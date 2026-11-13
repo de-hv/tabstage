@@ -1,50 +1,130 @@
 import * as Popover from '@radix-ui/react-popover';
 import { Check } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import type { Profile } from '../api/types';
-import { PROFILE_COLOR_NAMES, profileColor } from '../lib/profileColors';
+import type { Color, Profile } from '../api/types';
+import { PROFILE_COLOR_NAMES, isCustomColor, parseHexColor, profileColor } from '../lib/profileColors';
 
 /** A profile's filled circle, for places that only show it. */
-export function ProfileDot({ color }: { color: number }) {
+export function ProfileDot({ color }: { color: Color }) {
   return <span className="profile-dot" style={{ background: profileColor(color) }} aria-hidden="true" />;
 }
 
-/** The 20 colors as radio items; `value` is the checked one, if any. */
-export function Swatches({ value, onPick }: { value: number | undefined; onPick: (color: number) => void }) {
+/**
+ * The 20 palette colors as radio items, then a custom color: a swatch that
+ * opens the system color picker and a hex field. `value` is the checked one.
+ */
+export function Swatches({ value, onPick }: { value: Color | undefined; onPick: (color: Color) => void }) {
   return (
-    <div className="swatches__grid">
-      {PROFILE_COLOR_NAMES.map((name, index) => {
-        const checked = index === value;
-        return (
-          <button
-            key={name}
-            type="button"
-            role="menuitemradio"
-            aria-checked={checked}
-            aria-label={name}
-            title={name}
-            className="swatch"
-            style={{ background: profileColor(index) }}
-            onClick={() => onPick(index)}
-          >
-            {checked && <Check className="swatch__check" aria-hidden="true" />}
-          </button>
-        );
-      })}
+    <>
+      <div className="swatches__grid">
+        {PROFILE_COLOR_NAMES.map((name, index) => {
+          const checked = index === value;
+          return (
+            <button
+              key={name}
+              type="button"
+              role="menuitemradio"
+              aria-checked={checked}
+              aria-label={name}
+              title={name}
+              className="swatch"
+              style={{ background: profileColor(index) }}
+              onClick={() => onPick(index)}
+            >
+              {checked && <Check className="swatch__check" aria-hidden="true" />}
+            </button>
+          );
+        })}
+      </div>
+      <CustomColor value={isCustomColor(value) ? value : undefined} onPick={onPick} />
+    </>
+  );
+}
+
+/** A custom `#rrggbb` color: the system picker behind a swatch, and a hex field. */
+function CustomColor({ value, onPick }: { value: string | undefined; onPick: (color: string) => void }) {
+  const [draft, setDraft] = useState(value ?? '');
+  const [invalid, setInvalid] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+  const shown = parseHexColor(draft) ?? value;
+
+  // The native "change" fires once the system picker is closed, unlike
+  // React's onChange, which fires on every move.
+  useEffect(() => {
+    const input = picker.current;
+    if (!input) return;
+    const onChange = () => onPick(input.value.toLowerCase());
+    input.addEventListener('change', onChange);
+    return () => input.removeEventListener('change', onChange);
+  }, [onPick]);
+
+  const submit = () => {
+    const hex = parseHexColor(draft);
+    if (!hex) {
+      setInvalid(draft.trim() !== '');
+      return;
+    }
+    if (hex !== value) onPick(hex);
+  };
+
+  return (
+    <div className="swatches__custom">
+      <label
+        className="swatch swatch--custom"
+        role="menuitemradio"
+        aria-checked={value !== undefined}
+        title="Pick a custom color"
+        style={shown ? { background: shown } : undefined}
+        data-empty={shown ? undefined : true}
+      >
+        {value !== undefined && <Check className="swatch__check" aria-hidden="true" />}
+        <input
+          ref={picker}
+          type="color"
+          className="swatch__native"
+          aria-label="Custom color"
+          value={shown ?? '#888888'}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setInvalid(false);
+          }}
+        />
+      </label>
+      <input
+        className="swatches__hex"
+        aria-label="Custom color as hex"
+        aria-invalid={invalid || undefined}
+        placeholder="#ff6a3d"
+        value={draft}
+        maxLength={7}
+        spellCheck={false}
+        autoComplete="off"
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setInvalid(false);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            submit();
+          }
+        }}
+        onBlur={submit}
+      />
     </div>
   );
 }
 
 interface ColorProps {
   profile: Pick<Profile, 'name' | 'color'>;
-  onChange: (color: number) => void;
+  onChange: (color: Color) => void;
   /** Controlled open state, so a menu item can open the picker too. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
 
-/** The profile's dot as a button; it opens a 4×5 grid of the 20 colors. */
+/** The profile's dot as a button; it opens the 20 palette colors and a custom one. */
 export function ProfileColorButton({ profile, onChange, open, onOpenChange }: ColorProps) {
   const [ownOpen, setOwnOpen] = useState(false);
   const isOpen = open ?? ownOpen;

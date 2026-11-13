@@ -7,16 +7,12 @@ import {
   IN_TEST,
   MONEY,
   ONBOARDING,
-  PR_LINK,
   REMOVE_MAP,
   REVIEW,
-  STAGING_LINK,
   STANDUP,
   TRABAJO,
 } from '../test/render';
 import {
-  countLinks,
-  findLink,
   findTicket,
   laneIndex,
   lanes,
@@ -30,12 +26,10 @@ const workspace = () => snapshotFixture().workspace;
 const trabajo = () => workspace().profiles[0]!;
 
 describe('lookups', () => {
-  it('finds tickets, sub-tickets and links with what holds them', () => {
+  it('finds tickets and sub-tickets with what holds them', () => {
     expect(findTicket(workspace(), MONEY)).toMatchObject({ profile: { id: TRABAJO }, parent: { id: CARRIER } });
     expect(findTicket(workspace(), CARRIER)?.parent).toBeUndefined();
-    expect(findLink(workspace(), STAGING_LINK)).toMatchObject({ owner: { ticket: MONEY }, index: 0 });
-    expect(findLink(workspace(), 'nope')).toBeNull();
-    expect(countLinks(findTicket(workspace(), CARRIER)!.ticket)).toBe(2);
+    expect(findTicket(workspace(), 'nope')).toBeNull();
   });
 
   it('finds the notes that mention a key, whole words only', () => {
@@ -81,9 +75,9 @@ describe('lanes', () => {
 
 describe('pinned', () => {
   it('lists pinned items that still exist, in order', () => {
-    const changed = { ...workspace(), pinned: [{ link: PR_LINK }, { ticket: 'gone' }, { ticket: MONEY }] };
+    const changed = { ...workspace(), pinned: [{ note: STANDUP }, { ticket: 'gone' }, { ticket: MONEY }] };
     expect(pinnedItems(changed).map((entry) => [entry.kind, entry.item.id])).toEqual([
-      ['link', PR_LINK],
+      ['note', STANDUP],
       ['ticket', MONEY],
     ]);
     expect(pinnedIndex(changed, { ticket: MONEY })).toBe(2);

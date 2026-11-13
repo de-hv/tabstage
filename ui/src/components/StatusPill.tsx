@@ -1,20 +1,32 @@
 import * as Menu from '@radix-ui/react-dropdown-menu';
-import { Check, ChevronDown, Settings2 } from 'lucide-react';
+import { Check, ChevronDown, Ellipsis, Settings2 } from 'lucide-react';
 import type { CSSProperties } from 'react';
 
-import type { Status } from '../api/types';
+import type { Color, Status } from '../api/types';
 import { profileColor } from '../lib/profileColors';
 
+interface PillProps {
+  name: string;
+  color?: Color;
+  /** How many tickets it holds, shown after the name. */
+  count?: number;
+  /** A collapsed lane: an outlined pill with "…" at the end. */
+  collapsed?: boolean;
+}
+
 /** A status's name on its color, as in the lanes and the board; grey for "No status". */
-export function StatusPill({ name, color }: { name: string; color?: number }) {
+export function StatusPill({ name, color, count, collapsed }: PillProps) {
   return (
     <span
       className="status-pill"
       data-none={color === undefined || undefined}
+      data-collapsed={collapsed || undefined}
       style={color === undefined ? undefined : ({ '--lane': profileColor(color) } as CSSProperties)}
     >
       <span className="status-pill__dot" aria-hidden="true" />
-      {name}
+      <span className="status-pill__name">{name}</span>
+      {count !== undefined && <span className="status-pill__count">{count}</span>}
+      {collapsed && <Ellipsis className="status-pill__more" aria-hidden="true" />}
     </span>
   );
 }

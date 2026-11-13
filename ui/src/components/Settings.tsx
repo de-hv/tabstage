@@ -15,10 +15,6 @@ interface Props {
   onRevealDataFile: () => void;
   /** Profile whose browser the user wants to choose. */
   focusProfile?: string | null;
-  showUrls: boolean;
-  onShowUrls: (show: boolean) => void;
-  indentGuides: boolean;
-  onIndentGuides: (show: boolean) => void;
   /** Scroll to the statuses, e.g. from "Edit statuses…". */
   focusStatuses?: boolean;
   /** Opens the import assistant for a file from before tickets. */
@@ -37,10 +33,6 @@ export function Settings({
   relocate,
   onRevealDataFile,
   focusProfile = null,
-  showUrls,
-  onShowUrls,
-  indentGuides,
-  onIndentGuides,
   focusStatuses = false,
   onImport,
 }: Props) {
@@ -91,20 +83,6 @@ export function Settings({
           Profiles keep personal, work and client tabs apart. Each one opens in the browser you choose here.
         </p>
         <ProfilesEditor snapshot={snapshot} apply={apply} focus={focusProfile} />
-      </section>
-
-      <section className="settings__section" aria-labelledby="sidebar-settings">
-        <h2 id="sidebar-settings" className="settings__heading">
-          Sidebar
-        </h2>
-        <label className="checkbox">
-          <input type="checkbox" checked={showUrls} onChange={(event) => onShowUrls(event.target.checked)} />
-          Show addresses under links in the sidebar
-        </label>
-        <label className="checkbox">
-          <input type="checkbox" checked={indentGuides} onChange={(event) => onIndentGuides(event.target.checked)} />
-          Show indent guides
-        </label>
       </section>
 
       <DataLocationCard snapshot={snapshot} onReveal={onRevealDataFile} onMove={() => void chooseFolder()} />

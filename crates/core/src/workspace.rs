@@ -1,9 +1,8 @@
 //! The workspace: profiles that hold tickets and notes, and the statuses
 //! tickets move through.
 //!
-//! A profile holds tickets and notes. A ticket holds links and sub-tickets
-//! (one level: a sub-ticket holds links only); a note holds links. Statuses
-//! are shared by every profile. Order is the position in each `Vec`, so there
+//! A profile holds tickets and notes. A ticket holds sub-tickets (one
+//! level: a sub-ticket holds none). Statuses are shared by every profile. Order is the position in each `Vec`, so there
 //! are no order fields that can get out of sync. Every change goes through a
 //! [`Workspace`] method that checks its references and returns a
 //! [`WorkspaceError`] instead of panicking.
@@ -14,25 +13,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::icon::Icon;
-use crate::ids::{NoteId, ProfileId, StatusId, TabId, TicketId};
+use crate::ids::{NoteId, ProfileId, StatusId, TicketId};
 use crate::profile::{DEFAULT_PROFILE_NAME, Profile, ProfileColor};
 use crate::url::TabUrl;
 
-/// A saved tab of a ticket or a note.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Link {
-    /// Stable id.
-    pub id: TabId,
-    /// Where it points.
-    pub url: TabUrl,
-    /// Title shown in the UI.
-    pub title: String,
-    /// Custom icon; the UI shows the default link icon without one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub icon: Option<Icon>,
-}
-
-/// A piece of work, such as a Jira issue, with its links and sub-tickets.
+/// A piece of work, such as a Jira issue, with its sub-tickets.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Ticket {
     /// Stable id.
@@ -48,21 +33,21 @@ pub struct Ticket {
     /// Where it is in the workflow; none until one is chosen.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<StatusId>,
-    /// Custom icon; the UI shows the default ticket icon without one.
+    /// What kind of work it is, such as a task or a bug.
+    #[serde(default, skip_serializing_if = "TicketKind::is_ticket")]
+    pub kind: TicketKind,
+    /// Custom icon; the UI shows the icon of its kind without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<Icon>,
     /// Free-form note in Markdown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// Other tabs that belong to the ticket.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub links: Vec<Link>,
     /// Sub-tickets. Always empty for a sub-ticket.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<Ticket>,
 }
 
-/// Something that is not a ticket, such as standup notes, with its links.
+/// Something that is not a ticket, such as standup notes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Note {
     /// Stable id.
@@ -75,9 +60,29 @@ pub struct Note {
     /// The note itself, in Markdown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
-    /// Tabs that belong to the note.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub links: Vec<Link>,
+}
+
+/// What kind of work a ticket is. Sub-tickets are often tasks or bugs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TicketKind {
+    /// A plain ticket.
+    #[default]
+    Ticket,
+    /// A piece of a ticket's work.
+    Task,
+    /// Something broken.
+    Bug,
+    /// Research or an experiment.
+    Spike,
+}
+
+impl TicketKind {
+    /// Whether this is the default kind, which is not saved.
+    #[must_use]
+    pub fn is_ticket(&self) -> bool {
+        *self == Self::Ticket
+    }
 }
 
 /// A step of the workflow, such as "In review", shared by every profile.
@@ -102,17 +107,17 @@ pub enum TicketPlace {
     Ticket(TicketId),
 }
 
-/// What holds links: a ticket (or sub-ticket) or a note.
+/// What holds Markdown text: a ticket (or sub-ticket) or a note.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum LinkOwner {
+pub enum TextOwner {
     /// A ticket or sub-ticket.
     Ticket(TicketId),
     /// A note.
     Note(NoteId),
 }
 
-/// A ticket, note or link, for changes that apply to any of them.
+/// A ticket or note, for changes that apply to either.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Target {
@@ -120,8 +125,6 @@ pub enum Target {
     Ticket(TicketId),
     /// A note.
     Note(NoteId),
-    /// A link.
-    Link(TabId),
 }
 
 /// A ticket together with what contains it.
@@ -133,17 +136,6 @@ pub struct TicketRef<'a> {
     pub parent: Option<&'a Ticket>,
     /// The ticket.
     pub ticket: &'a Ticket,
-}
-
-/// A link together with what contains it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LinkRef<'a> {
-    /// The profile it belongs to.
-    pub profile: &'a Profile,
-    /// The ticket or note that holds it.
-    pub owner: LinkOwner,
-    /// The link.
-    pub link: &'a Link,
 }
 
 /// Errors returned by [`Workspace`] changes.
@@ -158,9 +150,6 @@ pub enum WorkspaceError {
     /// No note has this id.
     #[error("note {0} not found")]
     NoteNotFound(NoteId),
-    /// No link has this id.
-    #[error("link {0} not found")]
-    LinkNotFound(TabId),
     /// No status has this id.
     #[error("status {0} not found")]
     StatusNotFound(StatusId),
@@ -497,9 +486,9 @@ impl Workspace {
             key: None,
             url: None,
             status,
+            kind: TicketKind::default(),
             icon: None,
             note: None,
-            links: Vec::new(),
             children: Vec::new(),
         };
         self.insert_ticket(place, usize::MAX, ticket)?;
@@ -558,6 +547,16 @@ impl Workspace {
         Ok(())
     }
 
+    /// Sets what kind of work a ticket is.
+    ///
+    /// # Errors
+    ///
+    /// [`WorkspaceError::TicketNotFound`].
+    pub fn set_ticket_kind(&mut self, id: TicketId, kind: TicketKind) -> Result<()> {
+        self.ticket_mut(id)?.kind = kind;
+        Ok(())
+    }
+
     /// Sets or clears a ticket's status.
     ///
     /// # Errors
@@ -595,7 +594,7 @@ impl Workspace {
         self.insert_ticket(place, index, ticket)
     }
 
-    /// Removes a ticket with its links and sub-tickets.
+    /// Removes a ticket with its sub-tickets.
     ///
     /// # Errors
     ///
@@ -659,7 +658,6 @@ impl Workspace {
             title,
             icon: None,
             body: None,
-            links: Vec::new(),
         });
         Ok(id)
     }
@@ -687,7 +685,7 @@ impl Workspace {
         Ok(())
     }
 
-    /// Removes a note with its links.
+    /// Removes a note.
     ///
     /// # Errors
     ///
@@ -698,123 +696,13 @@ impl Workspace {
         Ok(note)
     }
 
-    // ---- links ----------------------------------------------------------
-
-    /// Finds a link with its profile and owner.
-    #[must_use]
-    pub fn link(&self, id: TabId) -> Option<LinkRef<'_>> {
-        fn in_ticket<'a>(
-            profile: &'a Profile,
-            ticket: &'a Ticket,
-            id: TabId,
-        ) -> Option<LinkRef<'a>> {
-            ticket
-                .links
-                .iter()
-                .find(|link| link.id == id)
-                .map(|link| LinkRef {
-                    profile,
-                    owner: LinkOwner::Ticket(ticket.id),
-                    link,
-                })
-        }
-        self.profiles.iter().find_map(|profile| {
-            profile
-                .tickets
-                .iter()
-                .find_map(|ticket| {
-                    in_ticket(profile, ticket, id).or_else(|| {
-                        ticket
-                            .children
-                            .iter()
-                            .find_map(|child| in_ticket(profile, child, id))
-                    })
-                })
-                .or_else(|| {
-                    profile.notes.iter().find_map(|note| {
-                        note.links
-                            .iter()
-                            .find(|link| link.id == id)
-                            .map(|link| LinkRef {
-                                profile,
-                                owner: LinkOwner::Note(note.id),
-                                link,
-                            })
-                    })
-                })
-        })
-    }
-
-    /// Adds a link at the end of a ticket's or note's links. A blank title
-    /// uses the URL.
-    ///
-    /// # Errors
-    ///
-    /// The not-found error of `owner`.
-    pub fn add_link(&mut self, owner: LinkOwner, url: TabUrl, title: &str) -> Result<TabId> {
-        let id = TabId::new();
-        let title = link_title(title, &url);
-        self.links_mut(owner)?.push(Link {
-            id,
-            url,
-            title,
-            icon: None,
-        });
-        Ok(id)
-    }
-
-    /// Adds a link as it is, such as one imported from an older file.
-    ///
-    /// # Errors
-    ///
-    /// The not-found error of `owner`.
-    pub fn insert_link(&mut self, owner: LinkOwner, link: Link) -> Result<()> {
-        self.links_mut(owner)?.push(link);
-        Ok(())
-    }
-
-    /// Changes where a link points.
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::LinkNotFound`].
-    pub fn set_link_url(&mut self, id: TabId, url: TabUrl) -> Result<()> {
-        self.link_mut(id)?.url = url;
-        Ok(())
-    }
-
-    /// Moves a link to `index` of a ticket's or note's links, clamped.
-    ///
-    /// # Errors
-    ///
-    /// The not-found error of the link or `owner`.
-    pub fn move_link(&mut self, id: TabId, owner: LinkOwner, index: usize) -> Result<()> {
-        self.links_mut(owner)?;
-        let link = self.take_link(id)?;
-        let links = self.links_mut(owner)?;
-        links.insert(index.min(links.len()), link);
-        Ok(())
-    }
-
-    /// Removes a link.
-    ///
-    /// # Errors
-    ///
-    /// [`WorkspaceError::LinkNotFound`].
-    pub fn remove_link(&mut self, id: TabId) -> Result<Link> {
-        let link = self.take_link(id)?;
-        self.prune_pinned();
-        Ok(link)
-    }
-
     // ---- any item -------------------------------------------------------
 
-    /// Renames a ticket, note or link. A link with a blank title uses its URL.
+    /// Renames a ticket or note.
     ///
     /// # Errors
     ///
-    /// [`WorkspaceError::EmptyName`] for a ticket or note, or the not-found
-    /// error of `target`.
+    /// [`WorkspaceError::EmptyName`], or the not-found error of `target`.
     pub fn rename(&mut self, target: Target, name: &str) -> Result<()> {
         match target {
             Target::Ticket(id) => {
@@ -825,15 +713,11 @@ impl Workspace {
                 let name = clean_name(name)?;
                 self.note_mut(id)?.title = name;
             }
-            Target::Link(id) => {
-                let link = self.link_mut(id)?;
-                link.title = link_title(name, &link.url);
-            }
         }
         Ok(())
     }
 
-    /// Sets or clears the custom icon of a ticket, note or link.
+    /// Sets or clears the custom icon of a ticket or note.
     ///
     /// # Errors
     ///
@@ -842,7 +726,6 @@ impl Workspace {
         match target {
             Target::Ticket(id) => self.ticket_mut(id)?.icon = icon,
             Target::Note(id) => self.note_mut(id)?.icon = icon,
-            Target::Link(id) => self.link_mut(id)?.icon = icon,
         }
         Ok(())
     }
@@ -853,22 +736,21 @@ impl Workspace {
     /// # Errors
     ///
     /// The not-found error of `owner`.
-    pub fn set_text(&mut self, owner: LinkOwner, text: &str) -> Result<()> {
+    pub fn set_text(&mut self, owner: TextOwner, text: &str) -> Result<()> {
         let text = clean_detail(text, MAX_NOTE_LEN);
         match owner {
-            LinkOwner::Ticket(id) => self.ticket_mut(id)?.note = text,
-            LinkOwner::Note(id) => self.note_mut(id)?.body = text,
+            TextOwner::Ticket(id) => self.ticket_mut(id)?.note = text,
+            TextOwner::Note(id) => self.note_mut(id)?.body = text,
         }
         Ok(())
     }
 
-    /// The profile a ticket, note or link belongs to.
+    /// The profile a ticket or note belongs to.
     #[must_use]
     pub fn target_profile(&self, target: Target) -> Option<&Profile> {
         match target {
             Target::Ticket(id) => self.ticket(id).map(|found| found.profile),
             Target::Note(id) => self.note(id).map(|(profile, _)| profile),
-            Target::Link(id) => self.link(id).map(|found| found.profile),
         }
     }
 
@@ -937,27 +819,19 @@ impl Workspace {
         for status in &self.statuses {
             unique(status.id.to_string())?;
         }
-        let links = |links: &[Link], unique: &mut dyn FnMut(String) -> Result<()>| {
-            links
-                .iter()
-                .try_for_each(|link| unique(link.id.to_string()))
-        };
         for profile in &self.profiles {
             unique(profile.id.to_string())?;
             for ticket in &profile.tickets {
                 self.check_ticket(ticket, &mut unique)?;
-                links(&ticket.links, &mut unique)?;
                 for child in &ticket.children {
                     if !child.children.is_empty() {
                         return Err(WorkspaceError::NestedTicket);
                     }
                     self.check_ticket(child, &mut unique)?;
-                    links(&child.links, &mut unique)?;
                 }
             }
             for note in &profile.notes {
                 unique(note.id.to_string())?;
-                links(&note.links, &mut unique)?;
             }
         }
         Ok(())
@@ -1026,24 +900,6 @@ impl Workspace {
             .ok_or(WorkspaceError::NoteNotFound(id))
     }
 
-    fn links_mut(&mut self, owner: LinkOwner) -> Result<&mut Vec<Link>> {
-        Ok(match owner {
-            LinkOwner::Ticket(id) => &mut self.ticket_mut(id)?.links,
-            LinkOwner::Note(id) => &mut self.note_mut(id)?.links,
-        })
-    }
-
-    fn link_mut(&mut self, id: TabId) -> Result<&mut Link> {
-        let owner = self
-            .link(id)
-            .map(|found| found.owner)
-            .ok_or(WorkspaceError::LinkNotFound(id))?;
-        self.links_mut(owner)?
-            .iter_mut()
-            .find(|link| link.id == id)
-            .ok_or(WorkspaceError::LinkNotFound(id))
-    }
-
     fn take_ticket(&mut self, id: TicketId) -> Result<Ticket> {
         for profile in &mut self.profiles {
             if let Some(index) = profile.tickets.iter().position(|ticket| ticket.id == id) {
@@ -1067,24 +923,10 @@ impl Workspace {
         Err(WorkspaceError::NoteNotFound(id))
     }
 
-    fn take_link(&mut self, id: TabId) -> Result<Link> {
-        let owner = self
-            .link(id)
-            .map(|found| found.owner)
-            .ok_or(WorkspaceError::LinkNotFound(id))?;
-        let links = self.links_mut(owner)?;
-        let index = links
-            .iter()
-            .position(|link| link.id == id)
-            .ok_or(WorkspaceError::LinkNotFound(id))?;
-        Ok(links.remove(index))
-    }
-
     fn exists(&self, target: Target) -> bool {
         match target {
             Target::Ticket(id) => self.ticket(id).is_some(),
             Target::Note(id) => self.note(id).is_some(),
-            Target::Link(id) => self.link(id).is_some(),
         }
     }
 
@@ -1103,15 +945,6 @@ fn not_found(target: Target) -> WorkspaceError {
     match target {
         Target::Ticket(id) => WorkspaceError::TicketNotFound(id),
         Target::Note(id) => WorkspaceError::NoteNotFound(id),
-        Target::Link(id) => WorkspaceError::LinkNotFound(id),
-    }
-}
-
-/// Trims a link title, using the URL when it is blank.
-fn link_title(raw: &str, url: &TabUrl) -> String {
-    match raw.trim() {
-        "" => url.as_str().to_owned(),
-        trimmed => trimmed.to_owned(),
     }
 }
 

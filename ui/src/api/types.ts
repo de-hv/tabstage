@@ -4,8 +4,11 @@
 
 export type Uuid = string;
 export type BrowserId = string;
-/** Index into the 20 profile colors (see lib/profileColors.ts). */
-export type ColorIndex = number;
+/**
+ * A profile or status color: an index into the 20 palette colors (see
+ * lib/profileColors.ts), or a custom `#rrggbb` color.
+ */
+export type Color = number | string;
 
 /** A custom icon; without one the UI shows the default of the item's kind. */
 export type Icon =
@@ -15,13 +18,8 @@ export type Icon =
   /** One to three characters, such as `142` or `★`. */
   | { kind: 'text'; value: string };
 
-/** A saved tab of a ticket or a note. */
-export interface Link {
-  id: Uuid;
-  url: string;
-  title: string;
-  icon?: Icon;
-}
+/** What kind of work a ticket is; `ticket` when absent. */
+export type TicketKind = 'ticket' | 'task' | 'bug' | 'spike';
 
 /** A piece of work, such as a Jira issue. A sub-ticket has no `children`. */
 export interface Ticket {
@@ -32,10 +30,10 @@ export interface Ticket {
   /** The ticket's own address. */
   url?: string;
   status?: Uuid;
+  kind?: TicketKind;
   icon?: Icon;
   /** Markdown. */
   note?: string;
-  links?: Link[];
   children?: Ticket[];
 }
 
@@ -46,20 +44,19 @@ export interface Note {
   icon?: Icon;
   /** Markdown. */
   body?: string;
-  links?: Link[];
 }
 
 /** A step of the workflow, shared by every profile. */
 export interface Status {
   id: Uuid;
   name: string;
-  color: ColorIndex;
+  color: Color;
 }
 
 export interface Profile {
   id: Uuid;
   name: string;
-  color: ColorIndex;
+  color: Color;
   tickets: Ticket[];
   notes: Note[];
 }
@@ -128,15 +125,16 @@ export interface DataFileInfo {
   notes: number;
 }
 
-/** A ticket, note or link. */
-export type Target = { ticket: Uuid } | { note: Uuid } | { link: Uuid };
-/** What holds links. */
-export type LinkOwner = { ticket: Uuid } | { note: Uuid };
+/** A ticket or note. */
+export type Target = { ticket: Uuid } | { note: Uuid };
+/** What holds Markdown text: a ticket (its note) or a note (its body). */
+export type TextOwner = { ticket: Uuid } | { note: Uuid };
 /** Where a ticket goes: a profile, or under a ticket as a sub-ticket. */
 export type TicketPlace = { profile: Uuid } | { ticket: Uuid };
 
 export type Command =
-  | { type: 'addTicket'; id?: Uuid; place: TicketPlace; title: string; key?: string; status: Uuid | null }
+  | { type: 'addTicket'; id?: Uuid; place: TicketPlace; title: string; key?: string; status: Uuid | null; kind?: TicketKind }
+  | { type: 'setTicketKind'; ticket: Uuid; kind: TicketKind }
   | { type: 'setTicketKey'; ticket: Uuid; key: string }
   | { type: 'setTicketUrl'; ticket: Uuid; url: string }
   | { type: 'setTicketStatus'; ticket: Uuid; status: Uuid | null }
@@ -145,24 +143,20 @@ export type Command =
   | { type: 'addNote'; id?: Uuid; profile: Uuid; title: string }
   | { type: 'moveNote'; note: Uuid; profile: Uuid; index: number }
   | { type: 'removeNote'; note: Uuid }
-  | { type: 'setText'; owner: LinkOwner; text: string }
-  | { type: 'addLink'; owner: LinkOwner; url: string; title: string }
-  | { type: 'setLinkUrl'; link: Uuid; url: string }
-  | { type: 'moveLink'; link: Uuid; owner: LinkOwner; index: number }
-  | { type: 'removeLink'; link: Uuid }
+  | { type: 'setText'; owner: TextOwner; text: string }
   | { type: 'rename'; target: Target; name: string }
   | { type: 'setIcon'; target: Target; icon: Icon | null }
   | { type: 'pin'; target: Target }
   | { type: 'unpin'; target: Target }
   | { type: 'movePinned'; target: Target; index: number }
-  | { type: 'addStatus'; name: string; color: ColorIndex }
+  | { type: 'addStatus'; name: string; color: Color }
   | { type: 'renameStatus'; status: Uuid; name: string }
-  | { type: 'setStatusColor'; status: Uuid; color: ColorIndex }
+  | { type: 'setStatusColor'; status: Uuid; color: Color }
   | { type: 'moveStatus'; status: Uuid; index: number }
   | { type: 'removeStatus'; status: Uuid }
   | { type: 'addProfile'; name: string }
   | { type: 'renameProfile'; profile: Uuid; name: string }
-  | { type: 'setProfileColor'; profile: Uuid; color: ColorIndex }
+  | { type: 'setProfileColor'; profile: Uuid; color: Color }
   | { type: 'moveProfile'; profile: Uuid; index: number }
   | { type: 'removeProfile'; profile: Uuid; moveItemsTo: Uuid }
   | { type: 'bindProfile'; profile: Uuid; browser: BrowserId | null };
@@ -206,14 +200,14 @@ export interface LegacyItem {
   key?: string;
   note?: string;
   icon?: Icon;
-  color?: ColorIndex;
+  color?: Color;
   children: LegacyItem[];
 }
 
 export interface LegacyProfile {
   id: Uuid;
   name: string;
-  color: ColorIndex;
+  color: Color;
   items: LegacyItem[];
 }
 

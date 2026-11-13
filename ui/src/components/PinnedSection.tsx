@@ -27,7 +27,7 @@ interface Props {
  * pinned link opens with a click; a ticket or note is shown. Drop an item
  * here to pin it; drag pinned ones to reorder them.
  */
-export function PinnedSection({ workspace, selection, expanded, onToggle, onSelect, actions, apply }: Props) {
+export function PinnedSection({ workspace, selection, expanded, onToggle, onSelect, apply }: Props) {
   const items = pinnedItems(workspace);
   const showDropZone = useShownWhileDragging();
   const dropOnSection = useDrop({ kind: 'pinned' });
@@ -53,9 +53,7 @@ export function PinnedSection({ workspace, selection, expanded, onToggle, onSele
                 key={`${pinned.kind}-${pinned.item.id}`}
                 pinned={pinned}
                 current={selection?.kind === pinned.kind && selection.id === pinned.item.id}
-                onActivate={() =>
-                  pinned.kind === 'link' ? actions.openLink(pinned.item.id) : onSelect({ kind: pinned.kind, id: pinned.item.id })
-                }
+                onActivate={() => onSelect({ kind: pinned.kind, id: pinned.item.id })}
                 onUnpin={() => apply({ type: 'unpin', target: pinned.target })}
               />
             ))}
@@ -96,11 +94,7 @@ interface RowProps {
 function PinnedRow({ pinned, current, onActivate, onUnpin }: RowProps) {
   const name = pinned.item.title;
   const dragItem: DragItem =
-    pinned.kind === 'ticket'
-      ? { kind: 'ticket', ticket: pinned.item.id }
-      : pinned.kind === 'note'
-        ? { kind: 'note', note: pinned.item.id }
-        : { kind: 'link', link: pinned.item.id };
+    pinned.kind === 'ticket' ? { kind: 'ticket', ticket: pinned.item.id } : { kind: 'note', note: pinned.item.id };
   const drag = useDrag(dragItem);
   const drop = useDrop({ kind: 'pinned', before: pinned.target });
   const lane = pinned.kind === 'ticket' ? pinned.status?.color : undefined;
@@ -110,18 +104,18 @@ function PinnedRow({ pinned, current, onActivate, onUnpin }: RowProps) {
     <li>
       <div className="tree-row pinned__row" data-current={current || undefined} data-lane={lane !== undefined || undefined} style={style} {...drag} {...drop}>
         <span className="tree-row__icon pinned__icon" aria-hidden="true">
-          <ItemIcon icon={pinned.item.icon} kind={pinned.kind} />
+          <ItemIcon icon={pinned.item.icon} kind={pinned.kind === 'ticket' ? (pinned.item.kind ?? 'ticket') : 'note'} />
         </span>
         <div
           {...pressable(onActivate)}
           className="tree-row__name"
-          title={pinned.kind === 'link' ? `Open ${name}\n${pinned.item.url}` : `Show ${name}`}
+          title={`Show ${name}`}
           aria-current={current ? 'page' : undefined}
           onClick={onActivate}
         >
           <span className="tree-row__title">
             <TicketChip ticketId={pinned.kind === 'ticket' ? pinned.item.key : undefined} />
-            {name}
+            <span className="tree-row__text">{name}</span>
           </span>
         </div>
         <span className="pinned__profile" title={pinned.profile.name}>

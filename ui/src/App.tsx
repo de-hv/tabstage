@@ -17,7 +17,7 @@ import { Sidebar } from './components/Sidebar';
 import { TicketView } from './components/TicketView';
 import { profileBrowser } from './lib/browsers';
 import { parseTicketLine } from './lib/markdown';
-import { findLink, findNote, findProfile, findTicket, pinnedIndex } from './lib/workspace';
+import { findNote, findProfile, findTicket, pinnedIndex } from './lib/workspace';
 import type { ItemActions, Selection } from './state/selection';
 import { usePreference } from './state/usePreference';
 import { useWorkspace } from './state/useWorkspace';
@@ -36,11 +36,8 @@ export function App() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [removingProfile, setRemovingProfile] = useState<string | null>(null);
   const [width, setWidth] = useState(readWidth);
-  const [showUrls, setShowUrls] = usePreference('tabstage.sidebarUrls', false);
   const [collapsed, setCollapsed] = usePreference('tabstage.sidebarCollapsed', false);
-  const [indentGuides, setIndentGuides] = usePreference('tabstage.indentGuides', true);
   const [noteRequest, setNoteRequest] = useState<Request>(null);
-  const [linkRequest, setLinkRequest] = useState<Request>(null);
   /** The file the import assistant reads: `null` the one set aside, `undefined` closed. */
   const [importPath, setImportPath] = useState<string | null | undefined>(undefined);
   const askedToImport = useRef(false);
@@ -84,28 +81,36 @@ export function App() {
     setSelection(next);
     setSettingsOpen(false);
     setNoteRequest(null);
-    setLinkRequest(null);
   };
   const browserOf = (profile: string) => profileBrowser(snapshot, profile)?.name ?? '';
   const ownerSelection = (owner: { ticket: string } | { note: string }): Selection =>
     'ticket' in owner ? { kind: 'ticket', id: owner.ticket } : { kind: 'note', id: owner.note };
 
   const actions: ItemActions = {
-    openLink: (link) => {
-      const found = findLink(snapshot.workspace, link);
-      void workspace.openLink(link, found ? browserOf(found.profile.id) : '');
-    },
     openTicket: (ticket) => {
       const found = findTicket(snapshot.workspace, ticket);
       void workspace.openTicket(ticket, found ? browserOf(found.profile.id) : '');
     },
     openTicketAll: (ticket) => void workspace.openTicketAll(ticket),
-    openNote: (note) => void workspace.openNote(note),
     openUrl: (profile, url) => void workspace.openUrl(profile, url),
-    newTicket: async (place, text, status) => {
+    copyLink: (url) => {
+      navigator.clipboard.writeText(url).then(
+        () => workspace.notify('Link copied'),
+        () => workspace.notify('Could not copy the link'),
+      );
+    },
+    newTicket: async (place, text, status, kind) => {
       const id = crypto.randomUUID();
       const { key, title } = parseTicketLine(text);
-      const failure = await apply({ type: 'addTicket', id, place, title, ...(key ? { key } : {}), status });
+      const failure = await apply({
+        type: 'addTicket',
+        id,
+        place,
+        title,
+        ...(key ? { key } : {}),
+        status,
+        ...(kind && kind !== 'ticket' ? { kind } : {}),
+      });
       if (failure) return false;
       select({ kind: 'ticket', id });
       return true;
@@ -118,34 +123,25 @@ export function App() {
       setNoteRequest({ id, at: Date.now() });
       return true;
     },
-    addLink: (owner) => {
-      const next = ownerSelection(owner);
-      select(next);
-      setLinkRequest({ id: next.id, at: Date.now() });
-    },
     requestDelete: (target) => {
       if ('profile' in target) {
         setRemovingProfile(target.profile);
-        return;
-      }
-      if ('link' in target) {
-        void apply({ type: 'removeLink', link: target.link });
         return;
       }
       if ('ticket' in target) {
         const found = findTicket(snapshot.workspace, target.ticket);
         if (!found) return;
         const run = () => void apply({ type: 'removeTicket', ticket: target.ticket });
-        const contents = describe(found.ticket.children?.length ?? 0, 'sub-ticket', found.ticket.links?.length ?? 0);
-        if (contents) setPendingDelete({ name: found.ticket.title, contents, run });
-        else run();
+        const children = found.ticket.children?.length ?? 0;
+        if (children > 0) {
+          setPendingDelete({ name: found.ticket.title, contents: `its ${children} sub-ticket${children === 1 ? '' : 's'}`, run });
+        } else run();
         return;
       }
       const found = findNote(snapshot.workspace, target.note);
       if (!found) return;
       const run = () => void apply({ type: 'removeNote', note: target.note });
-      const contents = describe(0, '', found.note.links?.length ?? 0);
-      if (contents || found.note.body) setPendingDelete({ name: found.note.title, contents: contents || 'its text', run });
+      if (found.note.body) setPendingDelete({ name: found.note.title, contents: 'its text', run });
       else run();
     },
     setIcon: (target, icon) => void apply({ type: 'setIcon', target, icon }),
@@ -210,11 +206,8 @@ export function App() {
           }}
           apply={apply}
           actions={actions}
-          showUrls={showUrls}
-          onShowUrls={setShowUrls}
           collapsed={collapsed}
           onCollapse={setCollapsed}
-          indentGuides={indentGuides}
         />
         {!collapsed && (
           <ResizeHandle
@@ -234,10 +227,6 @@ export function App() {
             onRevealDataFile={() => void workspace.revealDataFile()}
             focusProfile={focusProfile}
             focusStatuses={focusStatuses}
-            showUrls={showUrls}
-            onShowUrls={setShowUrls}
-            indentGuides={indentGuides}
-            onIndentGuides={setIndentGuides}
             onImport={setImportPath}
           />
         ) : shown?.kind === 'ticket' ? (
@@ -250,7 +239,6 @@ export function App() {
             onSelect={select}
             notify={workspace.notify}
             noteRequest={requestFor(noteRequest, shown.id)}
-            linkRequest={requestFor(linkRequest, shown.id)}
           />
         ) : shown?.kind === 'note' ? (
           <NoteView
@@ -262,7 +250,6 @@ export function App() {
             onSelect={select}
             notify={workspace.notify}
             noteRequest={requestFor(noteRequest, shown.id)}
-            linkRequest={requestFor(linkRequest, shown.id)}
           />
         ) : shown?.kind === 'profile' && findProfile(snapshot.workspace, shown.id) ? (
           <ProfileBoard
@@ -278,7 +265,7 @@ export function App() {
             <p className="group__empty">Create a profile to start.</p>
           </main>
         )}
-        <Palette snapshot={snapshot} onSelect={select} openLink={actions.openLink} />
+        <Palette snapshot={snapshot} onSelect={select} />
         <ConfirmDelete pending={pendingDelete} onClose={() => setPendingDelete(null)} />
         <RemoveProfileDialog
           profile={removing}
@@ -302,15 +289,6 @@ export function App() {
       </div>
     </DragProvider>
   );
-}
-
-/** "its 2 sub-tickets and 3 links", or `''` when it holds nothing. */
-function describe(children: number, childName: string, links: number): string {
-  const parts = [
-    children > 0 ? `${children} ${childName}${children === 1 ? '' : 's'}` : '',
-    links > 0 ? `${links} link${links === 1 ? '' : 's'}` : '',
-  ].filter(Boolean);
-  return parts.length ? `its ${parts.join(' and ')}` : '';
 }
 
 /** The selection if it still exists, else the first profile. */

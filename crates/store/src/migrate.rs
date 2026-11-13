@@ -1,6 +1,8 @@
-//! Upgrades data files from versions 1 to 3 to version 4, at the JSON level,
-//! so the importer of files from before tickets reads one shape (see
-//! `legacy.rs`).
+//! Upgrades data files at the JSON level.
+//!
+//! Files from versions 1 to 3 become version 4, so the importer of files
+//! from before tickets reads one shape (see `legacy.rs`). Version 5 files
+//! become version 6 when they are opened (see [`upgrade_v5`]).
 //!
 //! Version 1 stored a browser on each group (`{"kind":"default"}` or
 //! `{"kind":"specific","browser":id}`) and a synced `settings.defaultBrowser`.
@@ -173,6 +175,82 @@ fn drop_status(value: &mut Value) {
         fields.remove("status");
     }
 }
+
+/// Turns a version 5 file into a version 6 file in place. Version 6 has no
+/// links: each link becomes a Markdown line at the end of its ticket's note
+/// or its note's body, so nothing is lost, and pinned links are unpinned.
+pub(crate) fn upgrade_v5(file: &mut Value) {
+    if let Some(profiles) = file
+        .pointer_mut("/workspace/profiles")
+        .and_then(Value::as_array_mut)
+    {
+        for profile in profiles.iter_mut() {
+            if let Some(tickets) = profile.get_mut("tickets").and_then(Value::as_array_mut) {
+                for ticket in tickets.iter_mut() {
+                    fold_links(ticket, "note");
+                    if let Some(children) = ticket.get_mut("children").and_then(Value::as_array_mut)
+                    {
+                        children.iter_mut().for_each(|child| fold_links(child, "note"));
+                    }
+                }
+            }
+            if let Some(notes) = profile.get_mut("notes").and_then(Value::as_array_mut) {
+                notes.iter_mut().for_each(|note| fold_links(note, "body"));
+            }
+        }
+    }
+    if let Some(pinned) = file
+        .pointer_mut("/workspace/pinned")
+        .and_then(Value::as_array_mut)
+    {
+        pinned.retain(|target| target.get("link").is_none());
+    }
+}
+
+/// Moves an item's `links` into its Markdown `field` as list lines.
+fn fold_links(item: &mut Value, field: &str) {
+    let Some(object) = item.as_object_mut() else {
+        return;
+    };
+    let Some(Value::Array(links)) = object.remove("links") else {
+        return;
+    };
+    let mut text = object
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    for link in &links {
+        let Some(url) = link.get("url").and_then(Value::as_str) else {
+            continue;
+        };
+        let title = link.get("title").and_then(Value::as_str).unwrap_or(url);
+        text = Some(append_line(text.as_deref(), &link_line(title, url)));
+    }
+    if let Some(text) = text {
+        object.insert(field.to_owned(), Value::String(text));
+    }
+}
+
+/// A Markdown list item that links `title` to `url`.
+pub(crate) fn link_line(title: &str, url: &str) -> String {
+    let title = title.trim();
+    let title = if title.is_empty() { url } else { title };
+    let title = title.replace('[', "\\[").replace(']', "\\]");
+    format!("- [{title}](<{url}>)")
+}
+
+/// Adds a Markdown line at the end of `text`: right under a list item, so
+/// links form one list, or after a blank line otherwise.
+pub(crate) fn append_line(text: Option<&str>, line: &str) -> String {
+    match text.map(str::trim_end) {
+        None | Some("") => line.to_owned(),
+        Some(text) if text.lines().last().is_some_and(|last| last.starts_with("- ")) => {
+            format!("{text}\n{line}")
+        }
+        Some(text) => format!("{text}\n\n{line}"),
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -362,5 +440,45 @@ mod tests {
                 .len(),
             2
         );
+    }
+}
+
+#[cfg(test)]
+mod v5_tests {
+    use super::*;
+
+    #[test]
+    fn version_5_links_become_markdown_in_the_note() {
+        let mut file = json!({
+            "workspace": {
+                "profiles": [{
+                    "tickets": [{
+                        "note": "Steps",
+                        "links": [
+                            { "url": "https://a.dev/1", "title": "PR [draft]" },
+                            { "url": "https://a.dev/2", "title": " " }
+                        ],
+                        "children": [{ "links": [{ "url": "https://b.dev/", "title": "Doc" }] }]
+                    }],
+                    "notes": [{ "links": [{ "url": "https://c.dev/", "title": "Board" }] }]
+                }],
+                "pinned": [{ "ticket": "t" }, { "link": "l" }]
+            }
+        });
+
+        upgrade_v5(&mut file);
+
+        let profile = &file["workspace"]["profiles"][0];
+        assert_eq!(
+            profile["tickets"][0]["note"],
+            "Steps\n\n- [PR \\[draft\\]](<https://a.dev/1>)\n- [https://a.dev/2](<https://a.dev/2>)"
+        );
+        assert!(profile["tickets"][0].get("links").is_none());
+        assert_eq!(
+            profile["tickets"][0]["children"][0]["note"],
+            "- [Doc](<https://b.dev/>)"
+        );
+        assert_eq!(profile["notes"][0]["body"], "- [Board](<https://c.dev/>)");
+        assert_eq!(file["workspace"]["pinned"], json!([{ "ticket": "t" }]));
     }
 }

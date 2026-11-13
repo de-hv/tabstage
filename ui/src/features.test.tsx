@@ -6,12 +6,11 @@ import { appliedCommands, snapshotFixture } from './test/ipc';
 import {
   CARRIER,
   ONBOARDING,
-  PR_LINK,
   STANDUP,
   clickMenuItem,
   drag,
   renderApp,
-  rightClick,
+  openRowMenu,
   sidebar,
   treeRow,
 } from './test/render';
@@ -33,12 +32,12 @@ describe('collapsible sidebar', () => {
 });
 
 describe('pinned', () => {
-  const withPinned = (): Snapshot => ({ ...snapshotFixture(), workspace: { ...snapshotFixture().workspace, pinned: [{ link: PR_LINK }, { note: STANDUP }] } });
+  const withPinned = (): Snapshot => ({ ...snapshotFixture(), workspace: { ...snapshotFixture().workspace, pinned: [{ ticket: CARRIER }, { note: STANDUP }] } });
 
   it('pins from the menu and with ⌘P on the shown ticket', async () => {
     const { calls, user } = await renderApp();
 
-    await rightClick('Onboarding wiki');
+    await openRowMenu('Onboarding wiki');
     clickMenuItem('Pin to top');
     await user.click(within(sidebar()).getByText('Carrier Commissions'));
     await screen.findByRole('main', { name: 'Carrier Commissions' });
@@ -50,12 +49,12 @@ describe('pinned', () => {
     ]);
   });
 
-  it('lists pinned items: a link opens, a note is shown, each can be unpinned', async () => {
+  it('lists pinned items: each is shown, and can be unpinned', async () => {
     const { calls, user } = await renderApp({ snapshot: withPinned, apply: withPinned });
     const pinned = within(within(sidebar()).getByRole('region', { name: 'Pinned' }));
 
-    await user.click(pinned.getByRole('button', { name: 'PR #2214' }));
-    expect(calls).toContainEqual({ cmd: 'open_link', args: { link: PR_LINK } });
+    await user.click(pinned.getByRole('button', { name: 'CAR-5899 Carrier Commissions' }));
+    expect(await screen.findByRole('main', { name: 'Carrier Commissions' })).toBeTruthy();
     await user.click(pinned.getByRole('button', { name: 'Standup notes' }));
     expect(await screen.findByRole('main', { name: 'Standup notes' })).toBeTruthy();
     await user.click(pinned.getByRole('button', { name: 'Unpin Standup notes' }));
@@ -72,11 +71,11 @@ describe('pinned', () => {
   });
 
   it('shows pinned items in the collapsed rail', async () => {
-    const { calls, user } = await renderApp({ snapshot: withPinned });
+    const { user } = await renderApp({ snapshot: withPinned });
     await user.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
 
-    await user.click(within(sidebar()).getByRole('button', { name: 'Pinned: PR #2214' }));
-    expect(calls).toContainEqual({ cmd: 'open_link', args: { link: PR_LINK } });
+    await user.click(within(sidebar()).getByRole('button', { name: 'Pinned: Carrier Commissions' }));
+    expect(await screen.findByRole('main', { name: 'Carrier Commissions' })).toBeTruthy();
   });
 });
 

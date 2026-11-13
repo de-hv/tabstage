@@ -10,19 +10,15 @@ import {
   MONEY,
   ONBOARDING,
   PERSONAL,
-  PR_LINK,
   REMOVE_MAP,
   REVIEW,
-  STAGING_LINK,
   STANDUP,
   TRABAJO,
-  WIKI_LINK,
 } from '../test/render';
 import { dropCommand } from './dnd';
 
 const workspace = (): Workspace => snapshotFixture().workspace;
 const ticket = (id: string) => ({ kind: 'ticket', ticket: id }) as const;
-const link = (id: string) => ({ kind: 'link', link: id }) as const;
 
 describe('dropping tickets on lanes', () => {
   it('moves a ticket to the end of another lane and changes its status', () => {
@@ -80,23 +76,7 @@ describe('dropping tickets on lanes', () => {
   });
 });
 
-describe('dropping links and notes', () => {
-  it('moves a link into another ticket or note, or before another link', () => {
-    expect(dropCommand(link(PR_LINK), { kind: 'linksOf', owner: { note: STANDUP } }, workspace())).toEqual({
-      type: 'moveLink',
-      link: PR_LINK,
-      owner: { note: STANDUP },
-      index: 1,
-    });
-    expect(dropCommand(link(PR_LINK), { kind: 'linksOf', owner: { ticket: CARRIER } }, workspace())).toBeNull();
-    expect(dropCommand(link(WIKI_LINK), { kind: 'beforeLink', link: STAGING_LINK }, workspace())).toEqual({
-      type: 'moveLink',
-      link: WIKI_LINK,
-      owner: { ticket: MONEY },
-      index: 0,
-    });
-  });
-
+describe('dropping notes and pinning', () => {
   it('reorders notes and moves them across profiles', () => {
     expect(dropCommand({ kind: 'note', note: STANDUP }, { kind: 'profile', profile: PERSONAL }, workspace())).toEqual({
       type: 'moveNote',
@@ -108,11 +88,11 @@ describe('dropping links and notes', () => {
   });
 
   it('pins on the pinned section and reorders pinned items', () => {
-    const pinned = { ...workspace(), pinned: [{ ticket: CARRIER }, { link: PR_LINK }] };
+    const pinned = { ...workspace(), pinned: [{ ticket: CARRIER }, { note: STANDUP }] };
     expect(dropCommand(ticket(REMOVE_MAP), { kind: 'pinned' }, pinned)).toEqual({ type: 'pin', target: { ticket: REMOVE_MAP } });
-    expect(dropCommand(link(PR_LINK), { kind: 'pinned', before: { ticket: CARRIER } }, pinned)).toEqual({
+    expect(dropCommand({ kind: 'note', note: STANDUP }, { kind: 'pinned', before: { ticket: CARRIER } }, pinned)).toEqual({
       type: 'movePinned',
-      target: { link: PR_LINK },
+      target: { note: STANDUP },
       index: 0,
     });
     expect(dropCommand({ kind: 'profile', profile: TRABAJO }, { kind: 'pinned' }, pinned)).toBeNull();

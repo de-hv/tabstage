@@ -158,6 +158,7 @@ fn add_ticket_in(
             title: title.to_owned(),
             key: None,
             status: None,
+            kind: None,
         })
         .expect("add ticket");
     ticket_named(service, title)
@@ -168,29 +169,13 @@ fn add_ticket(service: &mut AppService<FakeSystem>, title: &str) -> TicketId {
     add_ticket_in(service, TicketPlace::Profile(profile), title)
 }
 
-fn add_link(service: &mut AppService<FakeSystem>, owner: LinkOwner, url: &str) -> TabId {
+fn set_url(service: &mut AppService<FakeSystem>, ticket: TicketId, url: &str) {
     service
-        .apply(Command::AddLink {
-            owner,
+        .apply(Command::SetTicketUrl {
+            ticket,
             url: url.to_owned(),
-            title: String::new(),
         })
-        .expect("add link");
-    let workspace = &service.document.workspace;
-    workspace
-        .profiles()
-        .iter()
-        .flat_map(|profile| {
-            profile
-                .tickets
-                .iter()
-                .flat_map(|ticket| std::iter::once(ticket).chain(&ticket.children))
-                .flat_map(|ticket| &ticket.links)
-                .chain(profile.notes.iter().flat_map(|note| &note.links))
-        })
-        .find(|link| link.url.as_str() == url)
-        .expect("link")
-        .id
+        .expect("url");
 }
 
 fn titles(snapshot: &Snapshot) -> Vec<String> {
@@ -608,17 +593,16 @@ fn invalid_urls_are_rejected_and_nothing_changes() {
     let ticket = add_ticket(&mut service, "Work");
     let before = fs::read_to_string(fixture.path()).expect("file");
 
-    let link = service.apply(Command::AddLink {
-        owner: LinkOwner::Ticket(ticket),
+    let text = service.apply(Command::SetTicketUrl {
+        ticket,
         url: "not a url".into(),
-        title: String::new(),
     });
     let own = service.apply(Command::SetTicketUrl {
         ticket,
         url: "file:///etc/passwd".into(),
     });
 
-    assert_eq!(link.map(drop).map_err(|e| e.code()), Err("invalidUrl"));
+    assert_eq!(text.map(drop).map_err(|e| e.code()), Err("invalidUrl"));
     assert_eq!(own.map(drop).map_err(|e| e.code()), Err("invalidUrl"));
     assert_eq!(fs::read_to_string(fixture.path()).expect("file"), before);
 }
@@ -701,39 +685,31 @@ fn removing_a_profile_moves_its_tickets_and_forgets_its_binding() {
 }
 
 #[test]
-fn links_and_tickets_open_in_their_profiles_browser() {
+fn tickets_open_in_their_profiles_browser() {
     let fixture = Fixture::new();
     let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
     let work = add_profile(&mut service, "Trabajo");
     bind(&mut service, work, Some("com.google.Chrome"));
     let ticket = add_ticket_in(&mut service, TicketPlace::Profile(work), "CAR-1");
     let child = add_ticket_in(&mut service, TicketPlace::Ticket(ticket), "CAR-2");
-    service
-        .apply(Command::SetTicketUrl {
-            ticket,
-            url: "https://jira.dev/CAR-1".into(),
-        })
-        .expect("url");
-    let link = add_link(&mut service, LinkOwner::Ticket(ticket), "https://pr.dev/1");
-    add_link(&mut service, LinkOwner::Ticket(child), "https://pr.dev/2");
+    let bare = add_ticket_in(&mut service, TicketPlace::Ticket(ticket), "CAR-3");
+    set_url(&mut service, ticket, "https://jira.dev/CAR-1");
+    set_url(&mut service, child, "https://jira.dev/CAR-2");
 
-    service.open_link(link).expect("link");
     service.open_ticket(ticket).expect("ticket");
     let all = service.open_ticket_all(ticket).expect("all");
 
-    assert_eq!(all.opened, 3);
+    assert_eq!(all.opened, 2);
     assert_eq!(
         *service.system().opened.borrow(),
         [
-            "com.google.Chrome https://pr.dev/1",
             "com.google.Chrome https://jira.dev/CAR-1",
             "com.google.Chrome https://jira.dev/CAR-1",
-            "com.google.Chrome https://pr.dev/1",
-            "com.google.Chrome https://pr.dev/2",
+            "com.google.Chrome https://jira.dev/CAR-2",
         ]
     );
     assert_eq!(
-        service.open_ticket(child).map(drop).map_err(|e| e.code()),
+        service.open_ticket(bare).map(drop).map_err(|e| e.code()),
         Err("invalid"),
         "a ticket without its own address has nothing to open"
     );
@@ -748,17 +724,8 @@ fn unbound_profile_opens_in_the_system_browser_and_says_so() {
     let fixture = Fixture::new();
     let mut service = fixture.start(FakeSystem::new(Some("org.mozilla.firefox")));
     let qa = add_profile(&mut service, "QA");
-    service
-        .apply(Command::AddNote {
-            id: None,
-            profile: qa,
-            title: "Links".into(),
-        })
-        .expect("note");
-    let note = service.document.workspace.profile(qa).expect("qa").notes[0].id;
-    add_link(&mut service, LinkOwner::Note(note), "https://a.dev/");
 
-    service.open_note(note).expect("open");
+    service.open_url(qa, "https://a.dev/").expect("open");
 
     assert_eq!(
         *service.system().opened.borrow(),
@@ -770,16 +737,16 @@ fn unbound_profile_opens_in_the_system_browser_and_says_so() {
 }
 
 #[test]
-fn open_link_focuses_an_existing_tab_on_macos() {
+fn open_ticket_focuses_an_existing_tab_on_macos() {
     let fixture = Fixture::new();
     let mut system = FakeSystem::new(Some("com.google.Chrome"));
     system.focus = Focus::Focused;
     let mut service = fixture.start_on(system, Platform::MacOs);
     let ticket = add_ticket(&mut service, "Work");
-    let link = add_link(&mut service, LinkOwner::Ticket(ticket), "https://a.dev/");
+    set_url(&mut service, ticket, "https://a.dev/");
 
     assert_eq!(
-        service.open_link(link).expect("open"),
+        service.open_ticket(ticket).expect("open"),
         Opened::FocusedExisting
     );
     assert!(service.system().opened.borrow().is_empty());
@@ -811,13 +778,26 @@ fn commands_deserialize_from_ui_json() {
             r#"{{"type":"setText","owner":{{"note":"{ticket}"}},"text":"hi"}}"#
         )),
         Command::SetText {
-            owner: LinkOwner::Note(_),
+            owner: TextOwner::Note(_),
             ..
         }
     ));
     assert!(matches!(
         parse(r#"{"type":"addStatus","name":"Done","color":7}"#),
         Command::AddStatus { .. }
+    ));
+    assert!(matches!(
+        parse(r##"{"type":"setStatusColor","status":"00000000-0000-0000-0000-000000000001","color":"#ff6a3d"}"##),
+        Command::SetStatusColor { .. }
+    ));
+    assert!(matches!(
+        parse(&format!(
+            r#"{{"type":"setTicketKind","ticket":"{ticket}","kind":"bug"}}"#
+        )),
+        Command::SetTicketKind {
+            kind: TicketKind::Bug,
+            ..
+        }
     ));
 }
 
@@ -965,12 +945,12 @@ fn bound_browser_missing_here_falls_back_and_is_flagged() {
     let work = add_profile(&mut service, "Trabajo");
     bind(&mut service, work, Some("com.google.Chrome"));
     let ticket = add_ticket_in(&mut service, TicketPlace::Profile(work), "Work");
-    let link = add_link(&mut service, LinkOwner::Ticket(ticket), "https://a.dev/");
+    set_url(&mut service, ticket, "https://a.dev/");
     drop(service);
 
     let service =
         fixture.start(FakeSystem::new(Some("org.mozilla.firefox")).without("com.google.Chrome"));
-    service.open_link(link).expect("open");
+    service.open_ticket(ticket).expect("open");
 
     assert_eq!(
         *service.system().opened.borrow(),
@@ -992,6 +972,7 @@ fn a_ticket_can_be_added_with_the_id_and_key_the_ui_chose() {
         title: "Decouple".into(),
         key: Some("CAR-6210".into()),
         status: None,
+        kind: None,
     };
 
     service.apply(add()).expect("add");

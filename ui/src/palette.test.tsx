@@ -2,7 +2,7 @@ import { emit } from '@tauri-apps/api/event';
 import { act, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { WIKI_LINK, renderApp } from './test/render';
+import { renderApp } from './test/render';
 
 async function openPalette() {
   const rendered = await renderApp();
@@ -32,12 +32,12 @@ describe('quick search', () => {
     expect(await screen.findByRole('main', { name: 'Remove map' })).toBeTruthy();
   });
 
-  it('finds notes and opens links', async () => {
-    const { calls, input, user } = await openPalette();
+  it('finds notes', async () => {
+    const { input, user } = await openPalette();
 
-    await user.type(input, 'client wiki');
-    await user.click(await screen.findByRole('option', { name: /Client wiki/ }));
+    await user.type(input, 'standup');
+    await user.click(await screen.findByRole('option', { name: /Standup notes/ }));
 
-    expect(calls).toContainEqual({ cmd: 'open_link', args: { link: WIKI_LINK } });
+    expect(await screen.findByRole('main', { name: 'Standup notes' })).toBeTruthy();
   });
 });

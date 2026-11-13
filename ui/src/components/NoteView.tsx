@@ -1,9 +1,10 @@
-import { ExternalLink } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import { useState } from 'react';
 
 import type { AppError, Command, Snapshot } from '../api/types';
 import { parseTicketLine } from '../lib/markdown';
 import { noteMenu } from '../lib/menus';
+import { pressable } from '../lib/pressable';
 import { findNote } from '../lib/workspace';
 import type { ItemActions, Selection } from '../state/selection';
 import { ActionMenu } from './ActionMenu';
@@ -11,7 +12,6 @@ import { useDetails } from './Details';
 import { IconPicker } from './IconPicker';
 import { InlineInput } from './InlineInput';
 import { ItemIcon } from './ItemIcon';
-import { LinkList } from './LinkList';
 import { ProfileDot } from './ProfileDot';
 
 interface Props {
@@ -23,15 +23,13 @@ interface Props {
   notify: (text: string) => void;
   /** Bumped to start editing the text. */
   noteRequest?: number;
-  /** Bumped to open the "add link" field. */
-  linkRequest?: number;
 }
 
 /**
- * A note: Markdown for what is not a ticket (standups, plans) and its links.
+ * A note: Markdown for what is not a ticket (standups, plans).
  * Ticket keys in it link to their tickets, and a line can become a ticket.
  */
-export function NoteView({ snapshot, note: id, apply, actions, onSelect, notify, noteRequest, linkRequest }: Props) {
+export function NoteView({ snapshot, note: id, apply, actions, onSelect, noteRequest }: Props) {
   const [renaming, setRenaming] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [iconOpen, setIconOpen] = useState(false);
@@ -64,13 +62,7 @@ export function NoteView({ snapshot, note: id, apply, actions, onSelect, notify,
         <span aria-hidden="true">/</span>
         <span>Notes</span>
       </nav>
-      <header
-        className="group__header"
-        onContextMenu={(event) => {
-          event.preventDefault();
-          setMenuOpen(true);
-        }}
-      >
+      <header className="group__header">
         <IconPicker name={note.title} icon={note.icon} open={iconOpen} onOpenChange={setIconOpen} onChange={(icon) => actions.setIcon({ note: id }, icon)}>
           <button type="button" className="group__icon" aria-label={`Icon of ${note.title}`}>
             <ItemIcon icon={note.icon} kind="note" />
@@ -88,17 +80,19 @@ export function NoteView({ snapshot, note: id, apply, actions, onSelect, notify,
             }}
           />
         ) : (
-          <h1 id="view-title" className="group__name" onDoubleClick={() => setRenaming(true)}>
-            {note.title}
+          <h1 id="view-title" className="group__name">
+            <span
+              {...pressable(() => setRenaming(true))}
+              className="group__name-edit"
+              title="Click to rename"
+              onClick={() => setRenaming(true)}
+            >
+              {note.title}
+              <Pencil className="icon group__name-pencil" aria-hidden="true" />
+            </span>
           </h1>
         )}
         <div className="group__actions">
-          {(note.links?.length ?? 0) > 0 && (
-            <button type="button" className="button" onClick={() => actions.openNote(id)}>
-              <ExternalLink className="icon" aria-hidden="true" />
-              Open all links
-            </button>
-          )}
           <ActionMenu
             label={`Options for ${note.title}`}
             open={menuOpen}
@@ -113,8 +107,6 @@ export function NoteView({ snapshot, note: id, apply, actions, onSelect, notify,
       </header>
 
       {details.textEditor}
-
-      <LinkList owner={{ note: id }} links={note.links ?? []} apply={apply} actions={actions} notify={notify} addRequest={linkRequest} />
     </main>
   );
 }

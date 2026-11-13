@@ -21,10 +21,8 @@ export const api = {
   forceSave: () => invoke<Snapshot>('force_save'),
   hasExternalChange: () => invoke<boolean>('has_external_change'),
   refreshBrowsers: () => invoke<Snapshot>('refresh_browsers'),
-  openLink: (link: Uuid) => invoke<Opened>('open_link', { link }),
   openTicket: (ticket: Uuid) => invoke<Opened>('open_ticket', { ticket }),
   openTicketAll: (ticket: Uuid) => invoke<OpenSummary>('open_ticket_all', { ticket }),
-  openNote: (note: Uuid) => invoke<OpenSummary>('open_note', { note }),
   openUrl: (profile: Uuid, url: string) => invoke<Opened>('open_url', { profile, url }),
   /** `path: null` reads the file set aside at startup. */
   previewImport: (path: string | null, roles: Record<string, Role>) =>

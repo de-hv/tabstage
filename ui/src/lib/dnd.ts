@@ -1,11 +1,11 @@
 import type { Command, Target, Uuid, Workspace } from '../api/types';
-import { findLink, findNote, findProfile, findTicket, laneIndex, lanes, pinnedIndex } from './workspace';
+import { findNote, findProfile, findTicket, laneIndex, lanes, pinnedIndex } from './workspace';
 
 /** What is being dragged. */
 export type DragItem =
   | { kind: 'ticket'; ticket: Uuid }
   | { kind: 'note'; note: Uuid }
-  | { kind: 'link'; link: Uuid }
+  | { kind: 'status'; status: Uuid }
   | { kind: 'profile'; profile: Uuid };
 
 /** Where it is dropped. */
@@ -14,10 +14,10 @@ export type DropTarget =
   | { kind: 'lane'; profile: Uuid; status: Uuid | null; before?: Uuid }
   /** Before a sub-ticket, as a sibling. */
   | { kind: 'beforeSubTicket'; ticket: Uuid }
-  /** A ticket or note row: a link goes into it, at the end. */
-  | { kind: 'linksOf'; owner: { ticket: Uuid } | { note: Uuid } }
-  /** Before a link, in the same ticket or note. */
-  | { kind: 'beforeLink'; link: Uuid }
+  /** Into a top-level ticket, as its last sub-ticket. */
+  | { kind: 'intoTicket'; ticket: Uuid }
+  /** Before or after a status in the workflow; `null` is "No status", which stays last. */
+  | { kind: 'status'; status: Uuid | null; after: boolean }
   /** Before a note, or at the end of a profile's notes. */
   | { kind: 'notes'; profile: Uuid; before?: Uuid }
   /** A profile row: a ticket or note moves to it, a profile moves to its place. */
@@ -25,15 +25,14 @@ export type DropTarget =
   /** The "Pinned" section: pin it, or reorder it, before `before` or at the end. */
   | { kind: 'pinned'; before?: Target };
 
-/** The target a dragged ticket, note or link stands for. */
+/** The target a dragged ticket or note stands for. */
 export function dragTarget(item: DragItem): Target | null {
   switch (item.kind) {
     case 'ticket':
       return { ticket: item.ticket };
     case 'note':
       return { note: item.note };
-    case 'link':
-      return { link: item.link };
+    case 'status':
     case 'profile':
       return null;
   }
@@ -47,8 +46,8 @@ export function dropCommand(item: DragItem, target: DropTarget, workspace: Works
       return dropTicket(item.ticket, target, workspace);
     case 'note':
       return dropNote(item.note, target, workspace);
-    case 'link':
-      return dropLink(item.link, target, workspace);
+    case 'status':
+      return dropStatus(item.status, target, workspace);
     case 'profile':
       return dropProfile(item.profile, target, workspace);
   }
@@ -75,6 +74,19 @@ function dropTicket(id: Uuid, target: DropTarget, workspace: Workspace): Command
       index,
       ...(sameStatus && !from.parent ? {} : { lane: { status: target.status } }),
     };
+  }
+  if (target.kind === 'intoTicket') {
+    if (target.ticket === id || (from.ticket.children?.length ?? 0) > 0) return null;
+    const to = findTicket(workspace, target.ticket);
+    if (!to || to.parent) return null;
+    const siblings = to.ticket.children ?? [];
+    if (from.parent?.id === to.ticket.id) {
+      // Already in it: move it to the end.
+      const fromIndex = siblings.findIndex((child) => child.id === id);
+      const index = siblings.length - 1;
+      return fromIndex === index ? null : { type: 'moveTicket', ticket: id, place: { ticket: to.ticket.id }, index };
+    }
+    return { type: 'moveTicket', ticket: id, place: { ticket: to.ticket.id }, index: siblings.length };
   }
   if (target.kind === 'beforeSubTicket') {
     if (target.ticket === id || (from.ticket.children?.length ?? 0) > 0) return null;
@@ -119,29 +131,23 @@ function dropNote(id: Uuid, target: DropTarget, workspace: Workspace): Command |
   return { type: 'moveNote', note: id, profile: profile.id, index };
 }
 
-function dropLink(id: Uuid, target: DropTarget, workspace: Workspace): Command | null {
-  const from = findLink(workspace, id);
-  if (!from) return null;
-  if (target.kind === 'linksOf') {
-    const owner = target.owner;
-    const sameOwner = JSON.stringify(owner) === JSON.stringify(from.owner);
-    if (sameOwner) return null;
-    const links =
-      'ticket' in owner ? findTicket(workspace, owner.ticket)?.ticket.links : findNote(workspace, owner.note)?.note.links;
-    return { type: 'moveLink', link: id, owner, index: links?.length ?? 0 };
+function dropStatus(id: Uuid, target: DropTarget, workspace: Workspace): Command | null {
+  if (target.kind !== 'status') return null;
+  const { statuses } = workspace;
+  const fromIndex = statuses.findIndex((status) => status.id === id);
+  if (fromIndex === -1) return null;
+  let index: number;
+  if (target.status === null) {
+    // "No status" is always last: dropping on it moves a status to the end.
+    index = statuses.length;
+  } else {
+    const at = statuses.findIndex((status) => status.id === target.status);
+    if (at === -1) return null;
+    index = target.after ? at + 1 : at;
   }
-  if (target.kind === 'beforeLink') {
-    if (target.link === id) return null;
-    const to = findLink(workspace, target.link);
-    if (!to) return null;
-    let index = to.index;
-    if (JSON.stringify(to.owner) === JSON.stringify(from.owner)) {
-      if (from.index < index) index -= 1;
-      if (from.index === index) return null;
-    }
-    return { type: 'moveLink', link: id, owner: to.owner, index };
-  }
-  return null;
+  // The Rust side removes the status first, so a move down lands one slot earlier.
+  if (fromIndex < index) index -= 1;
+  return index === fromIndex ? null : { type: 'moveStatus', status: id, index };
 }
 
 function dropProfile(profile: Uuid, target: DropTarget, workspace: Workspace): Command | null {

@@ -1,11 +1,13 @@
-import { Copy, ExternalLink, Link2, ListTree, NotebookText, Pencil, Plus, X } from 'lucide-react';
+import * as Menu from '@radix-ui/react-dropdown-menu';
+import { ChevronDown, ExternalLink, ListTree, NotebookText, Pencil, Plus } from 'lucide-react';
 import { useState } from 'react';
 
-import type { AppError, Command, Snapshot } from '../api/types';
+import type { AppError, Command, Snapshot, TicketKind } from '../api/types';
 import { profileBrowser } from '../lib/browsers';
 import { ticketMenu } from '../lib/menus';
 import { pressable } from '../lib/pressable';
 import { profileColor } from '../lib/profileColors';
+import { TICKET_KINDS, kindInfo } from '../lib/ticketKinds';
 import { findStatus, findTicket, mentionsOf } from '../lib/workspace';
 import type { ItemActions, Selection } from '../state/selection';
 import { ActionMenu } from './ActionMenu';
@@ -13,11 +15,9 @@ import { useDetails } from './Details';
 import { IconPicker } from './IconPicker';
 import { InlineInput } from './InlineInput';
 import { ItemIcon } from './ItemIcon';
-import { LinkList } from './LinkList';
 import { ProfileDot } from './ProfileDot';
 import { SetupNote } from './SetupNote';
 import { StatusPicker, StatusPill } from './StatusPill';
-import { UrlEditor } from './UrlEditor';
 
 interface Props {
   snapshot: Snapshot;
@@ -28,17 +28,15 @@ interface Props {
   notify: (text: string) => void;
   /** Bumped to start editing the note. */
   noteRequest?: number;
-  /** Bumped to open the "add link" field. */
-  linkRequest?: number;
 }
 
-/** A ticket: its key, status and link, its links, sub-tickets and note, and the notes that mention it. */
-export function TicketView({ snapshot, ticket: id, apply, actions, onSelect, notify, noteRequest, linkRequest }: Props) {
+/** A ticket: its key and link, status, sub-tickets and note, and the notes that mention it. */
+export function TicketView({ snapshot, ticket: id, apply, actions, onSelect, noteRequest }: Props) {
   const [renaming, setRenaming] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [iconOpen, setIconOpen] = useState(false);
-  const [editingUrl, setEditingUrl] = useState(false);
-  const [addingChild, setAddingChild] = useState(false);
+  /** The kind of the sub-ticket being added, while its title field is open. */
+  const [addingChild, setAddingChild] = useState<TicketKind | null>(null);
   const { workspace } = snapshot;
   const found = findTicket(workspace, id);
   const details = useDetails({
@@ -59,15 +57,6 @@ export function TicketView({ snapshot, ticket: id, apply, actions, onSelect, not
   const children = ticket.children ?? [];
   const mentions = mentionsOf(workspace, ticket.key);
 
-  const copy = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      notify('Address copied');
-    } catch {
-      notify('Could not copy the address');
-    }
-  };
-
   return (
     <main className="group ticket-view" aria-labelledby="view-title">
       <nav className="crumbs" aria-label="Path">
@@ -84,13 +73,7 @@ export function TicketView({ snapshot, ticket: id, apply, actions, onSelect, not
           </>
         )}
       </nav>
-      <header
-        className="group__header"
-        onContextMenu={(event) => {
-          event.preventDefault();
-          setMenuOpen(true);
-        }}
-      >
+      <header className="group__header">
         <IconPicker
           name={ticket.title}
           icon={ticket.icon}
@@ -104,7 +87,7 @@ export function TicketView({ snapshot, ticket: id, apply, actions, onSelect, not
             aria-label={`Icon of ${ticket.title}`}
             style={status ? { color: profileColor(status.color) } : undefined}
           >
-            <ItemIcon icon={ticket.icon} kind="ticket" />
+            <ItemIcon icon={ticket.icon} kind={ticket.kind ?? 'ticket'} />
           </button>
         </IconPicker>
         {renaming ? (
@@ -119,8 +102,16 @@ export function TicketView({ snapshot, ticket: id, apply, actions, onSelect, not
             }}
           />
         ) : (
-          <h1 id="view-title" className="group__name" onDoubleClick={() => setRenaming(true)}>
-            {ticket.title}
+          <h1 id="view-title" className="group__name">
+            <span
+              {...pressable(() => setRenaming(true))}
+              className="group__name-edit"
+              title="Click to rename"
+              onClick={() => setRenaming(true)}
+            >
+              {ticket.title}
+              <Pencil className="icon group__name-pencil" aria-hidden="true" />
+            </span>
           </h1>
         )}
         <div className="ticket-view__meta">
@@ -158,75 +149,53 @@ export function TicketView({ snapshot, ticket: id, apply, actions, onSelect, not
 
       <SetupNote snapshot={snapshot} profile={profile} onConfigure={() => actions.configureProfile(profile.id)} />
 
-      <section className="ticket-link" aria-label="Ticket link">
-        <Link2 className="icon" aria-hidden="true" />
-        {editingUrl ? (
-          <UrlEditor
-            initial={ticket.url ?? ''}
-            onSubmit={(url) => apply({ type: 'setTicketUrl', ticket: id, url })}
-            onDone={() => setEditingUrl(false)}
-          />
-        ) : ticket.url ? (
-          <>
-            <span className="ticket-link__url" title={ticket.url}>
-              {ticket.url}
-            </span>
-            <button type="button" className="icon-button" aria-label="Edit the ticket's link" title="Edit link" onClick={() => setEditingUrl(true)}>
-              <Pencil className="icon" aria-hidden="true" />
-            </button>
-            <button type="button" className="icon-button" aria-label="Copy the ticket's link" title="Copy link" onClick={() => void copy(ticket.url!)}>
-              <Copy className="icon" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="Remove the ticket's link"
-              title="Remove link"
-              onClick={() => void apply({ type: 'setTicketUrl', ticket: id, url: '' })}
-            >
-              <X className="icon" aria-hidden="true" />
-            </button>
-          </>
-        ) : (
-          <button type="button" className="link-button" onClick={() => setEditingUrl(true)}>
-            Add the ticket's link (its page in Jira, Linear…)
-          </button>
-        )}
-      </section>
-
-      <LinkList owner={{ ticket: id }} links={ticket.links ?? []} apply={apply} actions={actions} notify={notify} addRequest={linkRequest} />
-
       {!parent && (
         <section className="panel" aria-label="Sub-tickets">
           <header className="panel__bar">
             <ListTree className="icon" aria-hidden="true" />
             <span className="panel__label">Sub-tickets</span>
             <span className="panel__count">{children.length}</span>
-            <button type="button" className="button panel__action" onClick={() => setAddingChild(true)}>
-              <Plus className="icon" aria-hidden="true" />
-              Add sub-ticket
-            </button>
+            <Menu.Root modal={false}>
+              <Menu.Trigger asChild>
+                <button type="button" className="button panel__action">
+                  <Plus className="icon" aria-hidden="true" />
+                  Add sub-ticket
+                  <ChevronDown className="icon" aria-hidden="true" />
+                </button>
+              </Menu.Trigger>
+              <Menu.Portal>
+                <Menu.Content className="menu" align="end" sideOffset={4} collisionPadding={8}>
+                  {TICKET_KINDS.map(({ kind, label, icon: Icon }) => (
+                    <Menu.Item key={kind} className="menu__item" data-kind={kind} onSelect={() => setAddingChild(kind)}>
+                      <Icon className="icon" aria-hidden="true" />
+                      {label === 'Ticket' ? 'Sub-ticket' : label}
+                    </Menu.Item>
+                  ))}
+                </Menu.Content>
+              </Menu.Portal>
+            </Menu.Root>
           </header>
           {addingChild && (
             <div className="panel__form">
               <InlineInput
-                label="Sub-ticket title"
+                label={`${kindInfo(addingChild).label} title`}
                 placeholder="CAR-6021 Matches legacy money card"
-                onCancel={() => setAddingChild(false)}
+                onCancel={() => setAddingChild(null)}
                 onSubmit={async (title) => {
-                  const saved = await actions.newTicket({ ticket: id }, title, ticket.status ?? null);
-                  if (saved) setAddingChild(false);
+                  const saved = await actions.newTicket({ ticket: id }, title, ticket.status ?? null, addingChild);
+                  if (saved) setAddingChild(null);
                   return saved;
                 }}
               />
             </div>
           )}
           {children.length === 0 && !addingChild ? (
-            <p className="panel__empty">Split the work: sub-tickets keep their own status and links.</p>
+            <p className="panel__empty">Split the work: sub-tickets keep their own status and link.</p>
           ) : (
             <ul className="sub-list">
               {children.map((child) => {
                 const childStatus = findStatus(workspace, child.status);
+                const childKind = kindInfo(child.kind);
                 return (
                   <li key={child.id}>
                     <div
@@ -234,6 +203,9 @@ export function TicketView({ snapshot, ticket: id, apply, actions, onSelect, not
                       className="sub-row"
                       onClick={() => onSelect({ kind: 'ticket', id: child.id })}
                     >
+                      <span className="sub-row__icon" data-kind={childKind.kind} title={childKind.label}>
+                        <ItemIcon icon={child.icon} kind={childKind.kind} />
+                      </span>
                       <StatusPill name={childStatus?.name ?? 'No status'} color={childStatus?.color} />
                       {child.key && <span className="ticket">{child.key}</span>}
                       <span className="sub-row__title">{child.title}</span>

@@ -1,4 +1,4 @@
-import type { Link, LinkOwner, Note, Profile, Status, Target, Ticket, Uuid, Workspace } from '../api/types';
+import type { Note, Profile, Status, Target, Ticket, Uuid, Workspace } from '../api/types';
 
 export function findProfile(workspace: Workspace, id: Uuid): Profile | undefined {
   return workspace.profiles.find((profile) => profile.id === id);
@@ -26,30 +26,6 @@ export function findNote(workspace: Workspace, id: Uuid): { profile: Profile; no
   for (const profile of workspace.profiles) {
     const note = profile.notes.find((candidate) => candidate.id === id);
     if (note) return { profile, note };
-  }
-  return null;
-}
-
-/** A link with its profile and the ticket or note that holds it. */
-export interface LinkRef {
-  profile: Profile;
-  owner: LinkOwner;
-  link: Link;
-  index: number;
-}
-
-export function findLink(workspace: Workspace, id: Uuid): LinkRef | null {
-  for (const profile of workspace.profiles) {
-    for (const ticket of profile.tickets) {
-      for (const holder of [ticket, ...(ticket.children ?? [])]) {
-        const index = (holder.links ?? []).findIndex((link) => link.id === id);
-        if (index !== -1) return { profile, owner: { ticket: holder.id }, link: holder.links![index]!, index };
-      }
-    }
-    for (const note of profile.notes) {
-      const index = (note.links ?? []).findIndex((link) => link.id === id);
-      if (index !== -1) return { profile, owner: { note: note.id }, link: note.links![index]!, index };
-    }
   }
   return null;
 }
@@ -101,13 +77,12 @@ export function laneIndex(profile: Profile, lane: Lane, before?: Uuid): number {
 
 /** The id a target points at. */
 export function targetId(target: Target): Uuid {
-  return 'ticket' in target ? target.ticket : 'note' in target ? target.note : target.link;
+  return 'ticket' in target ? target.ticket : target.note;
 }
 
 export function sameTarget(a: Target, b: Target): boolean {
   if ('ticket' in a) return 'ticket' in b && a.ticket === b.ticket;
-  if ('note' in a) return 'note' in b && a.note === b.note;
-  return 'link' in b && a.link === b.link;
+  return 'note' in b && a.note === b.note;
 }
 
 /** Position of an item in the "Pinned" section, or -1. */
@@ -119,7 +94,6 @@ export function pinnedIndex(workspace: Workspace, target: Target): number {
 export type PinnedItem = { target: Target; profile: Profile } & (
   | { kind: 'ticket'; item: Ticket; status?: Status }
   | { kind: 'note'; item: Note }
-  | { kind: 'link'; item: Link }
 );
 
 /** The pinned items that still exist, in order. */
@@ -131,12 +105,8 @@ export function pinnedItems(workspace: Workspace): PinnedItem[] {
         ? [{ target, profile: found.profile, kind: 'ticket', item: found.ticket, status: findStatus(workspace, found.ticket.status) }]
         : [];
     }
-    if ('note' in target) {
-      const found = findNote(workspace, target.note);
-      return found ? [{ target, profile: found.profile, kind: 'note', item: found.note }] : [];
-    }
-    const found = findLink(workspace, target.link);
-    return found ? [{ target, profile: found.profile, kind: 'link', item: found.link }] : [];
+    const found = findNote(workspace, target.note);
+    return found ? [{ target, profile: found.profile, kind: 'note', item: found.note }] : [];
   });
 }
 
@@ -160,9 +130,4 @@ export function ticketsByKey(workspace: Workspace): Map<string, Ticket> {
 
 export function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** How many links a ticket holds, its sub-tickets' included. */
-export function countLinks(ticket: Ticket): number {
-  return (ticket.links?.length ?? 0) + (ticket.children ?? []).reduce((total, child) => total + (child.links?.length ?? 0), 0);
 }

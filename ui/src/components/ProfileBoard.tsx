@@ -1,11 +1,11 @@
-import { Link as LinkIcon, ListTree, NotebookText, Plus, Ticket as TicketIcon } from 'lucide-react';
+import { ListTree, NotebookText, Plus, Ticket as TicketIcon } from 'lucide-react';
 import { type CSSProperties, useState } from 'react';
 
 import type { AppError, Command, Profile, Snapshot, Ticket } from '../api/types';
 import { profileOpensIn } from '../lib/browsers';
 import { pressable } from '../lib/pressable';
 import { profileColor } from '../lib/profileColors';
-import { type Lane, countLinks, findStatus, lanes } from '../lib/workspace';
+import { type Lane, findStatus, lanes } from '../lib/workspace';
 import type { ItemActions, Selection } from '../state/selection';
 import { useClickOrDoubleClick } from '../state/useClickOrDoubleClick';
 import { useDrag, useDrop } from './DragDrop';
@@ -99,7 +99,7 @@ export function ProfileBoard({ snapshot, profile, actions, onSelect }: Props) {
           />
         )}
         {profile.notes.length === 0 && !addingNote ? (
-          <p className="column__empty">Notes hold what is not a ticket: standups, plans, loose links.</p>
+          <p className="column__empty">Notes hold what is not a ticket: standups, plans, loose links in Markdown.</p>
         ) : (
           <div className="note-cards">
             {profile.notes.map((note) => (
@@ -111,7 +111,6 @@ export function ProfileBoard({ snapshot, profile, actions, onSelect }: Props) {
               >
                 <ItemIcon icon={note.icon} kind="note" />
                 <span className="card__title">{note.title}</span>
-                {(note.links?.length ?? 0) > 0 && <span className="row__count">{note.links?.length}</span>}
               </div>
             ))}
           </div>
@@ -188,7 +187,6 @@ function Card({ snapshot, profile, lane, ticket, actions, onSelect }: CardProps)
   );
   const children = ticket.children ?? [];
   const done = children.filter((child) => findStatus(snapshot.workspace, child.status)?.id === lane.status?.id).length;
-  const links = countLinks(ticket);
   return (
     <div
       {...pressable(() => onSelect({ kind: 'ticket', id: ticket.id }))}
@@ -199,22 +197,16 @@ function Card({ snapshot, profile, lane, ticket, actions, onSelect }: CardProps)
       {...drop}
     >
       <span className="ticket-card__top">
-        <ItemIcon icon={ticket.icon} kind="ticket" />
+        <ItemIcon icon={ticket.icon} kind={ticket.kind ?? 'ticket'} />
         {ticket.key && <span className="ticket">{ticket.key}</span>}
       </span>
       <span className="card__title">{ticket.title}</span>
-      {(children.length > 0 || links > 0) && (
+      {children.length > 0 && (
         <span className="ticket-card__meta">
           {children.length > 0 && (
             <span title={`${children.length} sub-tickets, ${done} in this status`}>
               <ListTree className="icon" aria-hidden="true" />
               {done}/{children.length}
-            </span>
-          )}
-          {links > 0 && (
-            <span title={`${links} links`}>
-              <LinkIcon className="icon" aria-hidden="true" />
-              {links}
             </span>
           )}
         </span>

@@ -16,6 +16,6 @@ pub use ids::{NoteId, ProfileId, StatusId, TabId, TicketId};
 pub use profile::{DEFAULT_PROFILE_NAME, PROFILE_COLORS, Profile, ProfileColor, ProfileColorError};
 pub use url::{TabUrl, TabUrlError};
 pub use workspace::{
-    Link, LinkOwner, LinkRef, MAX_KEY_LEN, MAX_NOTE_LEN, Note, Status, Target, Ticket, TicketPlace,
+    MAX_KEY_LEN, MAX_NOTE_LEN, Note, Status, Target, TextOwner, Ticket, TicketKind, TicketPlace,
     TicketRef, Workspace, WorkspaceError, clean_detail,
 };

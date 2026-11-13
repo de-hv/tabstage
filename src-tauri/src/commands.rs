@@ -12,7 +12,7 @@ use tabstage_app::{
 };
 use tabstage_browsers::Opened;
 use tabstage_browsers::system::System;
-use tabstage_core::{NoteId, ProfileId, TabId, TicketId};
+use tabstage_core::{ProfileId, TicketId};
 use tabstage_store::Role;
 use tauri::{AppHandle, State};
 use tauri_plugin_opener::OpenerExt;
@@ -80,31 +80,18 @@ pub fn refresh_browsers(service: State<'_, Service>) -> Reply<Snapshot> {
     lock(&service)?.refresh_browsers().map_err(|e| payload(&e))
 }
 
-/// Opens or focuses one link. Runs off the main thread: AppleScript calls
-/// can take a moment.
-#[tauri::command(async)]
-pub fn open_link(service: State<'_, Service>, link: TabId) -> Reply<Opened> {
-    lock(&service)?.open_link(link).map_err(|e| payload(&e))
-}
-
 /// Opens a ticket's own address.
 #[tauri::command(async)]
 pub fn open_ticket(service: State<'_, Service>, ticket: TicketId) -> Reply<Opened> {
     lock(&service)?.open_ticket(ticket).map_err(|e| payload(&e))
 }
 
-/// Opens a ticket's address, links and sub-tickets.
+/// Opens a ticket's address and its sub-tickets' addresses.
 #[tauri::command(async)]
 pub fn open_ticket_all(service: State<'_, Service>, ticket: TicketId) -> Reply<OpenSummary> {
     lock(&service)?
         .open_ticket_all(ticket)
         .map_err(|e| payload(&e))
-}
-
-/// Opens every link of a note.
-#[tauri::command(async)]
-pub fn open_note(service: State<'_, Service>, note: NoteId) -> Reply<OpenSummary> {
-    lock(&service)?.open_note(note).map_err(|e| payload(&e))
 }
 
 /// Opens an address, such as a link in a note, in a profile's browser.

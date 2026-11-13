@@ -46,7 +46,7 @@ fn imports_a_real_data_file() {
             }
         }
         for note in &profile.notes {
-            println!("  note: {} ({} links)", note.title, note.links.len());
+            println!("  note: {}", note.title);
         }
     }
     println!(

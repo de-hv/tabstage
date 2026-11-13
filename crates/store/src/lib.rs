@@ -27,7 +27,11 @@ use thiserror::Error;
 pub const APP: &str = "tabstage-desktop";
 
 /// Version of the file format this build writes.
-pub const FORMAT_VERSION: u32 = 5;
+pub const FORMAT_VERSION: u32 = 6;
+
+/// First version with tickets. Older files are imported, not opened; newer
+/// ones up to [`FORMAT_VERSION`] are upgraded when they are opened.
+pub const TICKETS_VERSION: u32 = 5;
 
 /// App-wide settings shared by every machine. Empty for now: browser
 /// choices are machine-local since format 2.
@@ -111,10 +115,16 @@ pub fn from_json(text: &str) -> Result<Document> {
     if header.version > FORMAT_VERSION {
         return Err(StoreError::UnsupportedVersion(header.version));
     }
-    if header.version < FORMAT_VERSION {
+    if header.version < TICKETS_VERSION {
         return Err(StoreError::Legacy(header.version));
     }
-    let file: FileOwned = serde_json::from_str(text).map_err(StoreError::Parse)?;
+    let file: FileOwned = if header.version < FORMAT_VERSION {
+        let mut value: serde_json::Value = serde_json::from_str(text).map_err(StoreError::Parse)?;
+        migrate::upgrade_v5(&mut value);
+        serde_json::from_value(value).map_err(StoreError::Parse)?
+    } else {
+        serde_json::from_str(text).map_err(StoreError::Parse)?
+    };
     file.workspace.validate()?;
     Ok(Document {
         settings: file.settings,
@@ -283,7 +293,7 @@ fn fingerprint(bytes: &[u8]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tabstage_core::{Icon, LinkOwner, ProfileColor, TabUrl, Target, TicketPlace};
+    use tabstage_core::{Icon, ProfileColor, Target, TextOwner, TicketKind, TicketPlace};
 
     fn sample() -> Document {
         let mut workspace = Workspace::new();
@@ -299,22 +309,21 @@ mod tests {
             )
             .expect("ticket");
         workspace.set_ticket_key(ticket, "CAR-5899").expect("key");
-        workspace
+        let child = workspace
             .add_ticket(TicketPlace::Ticket(ticket), "Money card", None)
             .expect("child");
-        let link = workspace
-            .add_link(
-                LinkOwner::Ticket(ticket),
-                TabUrl::parse("https://a.dev/issue/1").expect("url"),
-                "PR",
-            )
-            .expect("link");
         workspace
-            .set_icon(Target::Link(link), Some(Icon::text("142").expect("icon")))
+            .set_ticket_kind(child, TicketKind::Task)
+            .expect("kind");
+        workspace
+            .set_icon(Target::Ticket(ticket), Some(Icon::text("142").expect("icon")))
             .expect("icon");
+        workspace
+            .set_profile_color(work, ProfileColor::from_hex("#ff6a3d").expect("hex"))
+            .expect("color");
         let note = workspace.add_note(work, "Standup").expect("note");
         workspace
-            .set_text(LinkOwner::Note(note), "Talk about CAR-5899")
+            .set_text(TextOwner::Note(note), "Talk about CAR-5899")
             .expect("body");
         Document {
             settings: Settings::default(),
@@ -387,13 +396,27 @@ mod tests {
     }
 
     #[test]
+    fn version_5_files_open_with_their_links_moved_into_notes() {
+        let text = r#"{"app":"tabstage-desktop","version":5,"workspace":{"profiles":[
+            {"id":"0b8f4a52-0d43-4f4e-9d70-1f4f3f0e9a11","name":"Work","color":2,
+             "tickets":[{"id":"6a2e9f3c-6c4c-4b8e-9a51-2b7d3c1e8f22","title":"T",
+               "links":[{"id":"9c1d2e3f-4a5b-4c6d-8e7f-0a1b2c3d4e55","url":"https://a.dev/","title":"PR"}]}]}
+        ]}}"#;
+
+        let document = from_json(text).expect("open");
+
+        let ticket = &document.workspace.profiles()[0].tickets[0];
+        assert_eq!(ticket.note.as_deref(), Some("- [PR](<https://a.dev/>)"));
+    }
+
+    #[test]
     fn from_json_rejects_malformed_json() {
         assert!(matches!(from_json("{nope"), Err(StoreError::Parse(_))));
     }
 
     #[test]
     fn from_json_rejects_invalid_workspace() {
-        let text = r#"{"app":"tabstage-desktop","version":5,"workspace":{"profiles":[]}}"#;
+        let text = r#"{"app":"tabstage-desktop","version":6,"workspace":{"profiles":[]}}"#;
         assert!(matches!(
             from_json(text),
             Err(StoreError::Invalid(WorkspaceError::NoProfiles))

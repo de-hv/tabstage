@@ -270,7 +270,7 @@ function TextPanel({ current, onPick }: PanelProps) {
           }}
         />
         <span className="icon-picker__preview">
-          {typeof preview === 'string' ? null : <ItemIcon icon={preview} kind="link" />}
+          {typeof preview === 'string' ? null : <ItemIcon icon={preview} kind="web" />}
         </span>
         <button type="submit" className="button">
           Use

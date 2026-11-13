@@ -1,6 +1,7 @@
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useState } from 'react';
 
+import type { Color, TicketKind } from '../api/types';
 import type { DragItem } from '../lib/dnd';
 import type { RowControls } from '../lib/menus';
 import { pressable } from '../lib/pressable';
@@ -12,10 +13,12 @@ import { NoteIcon, TicketChip, withTicket } from './Meta';
 
 export interface TreeRowProps {
   depth: number;
-  kind: 'profile' | 'ticket' | 'note' | 'link';
+  kind: 'profile' | 'ticket' | 'note';
+  /** For a ticket: its kind, which colors its default icon. */
+  ticketKind?: TicketKind;
   name: string;
   /** Color of the row's status: a left edge and a light tint. */
-  lane?: number;
+  lane?: Color;
   /** A ticket key shown as a chip before the name. */
   ticketKey?: string;
   /** Shown as an icon with the text as its tooltip. */
@@ -38,7 +41,7 @@ export interface TreeRowProps {
   menu: (row: RowControls) => MenuEntry[];
 }
 
-/** A sidebar row: chevron, icon, name (a drag starts from it), extras and a menu. */
+/** A sidebar row: chevron, icon, name (a drag starts from it), extras and a menu that only the ⋯ button opens. */
 export function TreeRow(props: TreeRowProps) {
   const { depth, kind, name, expanded, onToggle, current = false, onActivate, onRename, menu } = props;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -55,16 +58,18 @@ export function TreeRow(props: TreeRowProps) {
     <div
       className={props.subtitle ? 'tree-row tree-row--two-line' : 'tree-row'}
       data-kind={kind}
+      data-ticket-kind={props.ticketKind}
       data-current={current || undefined}
       data-lane={props.lane !== undefined || undefined}
       style={style as CSSProperties}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        setMenuOpen(true);
-      }}
       {...(renaming ? {} : drag)}
       {...drop}
     >
+      {kind !== 'profile' && !renaming && (
+        <span className="tree-row__grip" aria-hidden="true" title="Drag to move">
+          <GripVertical className="icon" />
+        </span>
+      )}
       {expanded === undefined ? (
         <span className="tree-row__chevron" aria-hidden="true" />
       ) : (
@@ -106,12 +111,12 @@ export function TreeRow(props: TreeRowProps) {
             <>
               <span className="tree-row__title">
                 <TicketChip ticketId={props.ticketKey} />
-                {name}
+                <span className="tree-row__text">{name}</span>
               </span>
               {props.subtitle}
             </>
           ) : (
-            name
+            <span className="tree-row__text">{name}</span>
           )}
         </div>
       )}

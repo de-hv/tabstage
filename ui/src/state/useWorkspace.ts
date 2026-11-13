@@ -17,13 +17,10 @@ export interface WorkspaceState {
   reload: () => Promise<void>;
   keepMine: () => Promise<void>;
   dismissError: () => void;
-  /** Opens a link; `browserName` is for the "already open" notice. */
-  openLink: (link: string, browserName: string) => Promise<void>;
-  /** Opens a ticket's own address. */
+  /** Opens a ticket's own address; `browserName` is for the "already open" notice. */
   openTicket: (ticket: string, browserName: string) => Promise<void>;
-  /** Opens a ticket's address, links and sub-tickets. */
+  /** Opens a ticket's address and its sub-tickets' addresses. */
   openTicketAll: (ticket: string) => Promise<void>;
-  openNote: (note: string) => Promise<void>;
   /** Opens an address, such as a link in a note, in a profile's browser. */
   openUrl: (profile: string, url: string) => Promise<void>;
   /** What importing an old file would give; `null` path: the one set aside. */
@@ -100,18 +97,12 @@ export function useWorkspace(): WorkspaceState {
     reload: async () => void (await run(api.reload)),
     keepMine: async () => void (await run(api.forceSave)),
     dismissError: () => setError(null),
-    openLink: (link, browserName) =>
-      attempt(async () => {
-        const opened: Opened = await api.openLink(link);
-        if (opened === 'focusedExisting') show(`Already open in ${browserName}`);
-      }),
     openTicket: (ticket, browserName) =>
       attempt(async () => {
         const opened: Opened = await api.openTicket(ticket);
         if (opened === 'focusedExisting') show(`Already open in ${browserName}`);
       }),
     openTicketAll: (ticket) => attempt(async () => void (await api.openTicketAll(ticket))),
-    openNote: (note) => attempt(async () => void (await api.openNote(note))),
     openUrl: (profile, url) => attempt(async () => void (await api.openUrl(profile, url))),
     previewImport: async (path, roles) => {
       try {

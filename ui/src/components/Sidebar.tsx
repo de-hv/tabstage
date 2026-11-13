@@ -1,13 +1,15 @@
-import { AlertTriangle, PanelLeftClose, Plus, Search, Settings } from 'lucide-react';
+import { AlertTriangle, GripVertical, PanelLeftClose, Plus, Search, Settings } from 'lucide-react';
 import { type CSSProperties, useState } from 'react';
 
-import type { AppError, Command, Link, Note, Profile, Snapshot, Target, Ticket } from '../api/types';
+import type { AppError, Command, Note, Profile, Snapshot, Target, Ticket } from '../api/types';
 import { needsSetup } from '../lib/browsers';
-import { linkMenu, noteMenu, profileMenu, ticketMenu } from '../lib/menus';
-import { type Lane, findStatus, lanes } from '../lib/workspace';
+import type { DragItem, DropTarget } from '../lib/dnd';
+import { noteMenu, profileMenu, ticketMenu } from '../lib/menus';
+import { pressable } from '../lib/pressable';
+import { type Lane, findStatus, findTicket, lanes } from '../lib/workspace';
 import type { ItemActions, Selection } from '../state/selection';
 import { useTreeState } from '../state/useTreeState';
-import { useDrop } from './DragDrop';
+import { type DropHit, type DropPoint, useDrag, useDrop } from './DragDrop';
 import { IconPicker } from './IconPicker';
 import { InlineInput } from './InlineInput';
 import { type ItemKind, ItemIcon } from './ItemIcon';
@@ -16,7 +18,6 @@ import { PinnedSection } from './PinnedSection';
 import { ProfileColorButton } from './ProfileDot';
 import { SidebarRail } from './SidebarRail';
 import { StatusPill } from './StatusPill';
-import { TabUrl } from './TabUrl';
 import { TreeRow } from './TreeRow';
 
 interface Props {
@@ -27,14 +28,9 @@ interface Props {
   onOpenSettings: () => void;
   apply: (command: Command) => Promise<AppError | null>;
   actions: ItemActions;
-  /** Show each link's address under its title. */
-  showUrls: boolean;
-  onShowUrls: (show: boolean) => void;
   /** Collapsed to a rail of icons. */
   collapsed: boolean;
   onCollapse: (collapsed: boolean) => void;
-  /** Lines that show which items belong to each parent. */
-  indentGuides: boolean;
 }
 
 /** Pending inline "new ticket" or "new note" field. */
@@ -54,8 +50,6 @@ interface TreeContext {
   onSelect: (selection: Selection) => void;
   apply: (command: Command) => Promise<AppError | null>;
   actions: ItemActions;
-  showUrls: boolean;
-  onShowUrls: (show: boolean) => void;
 }
 
 /** The library: pinned items, then each profile's tickets by status and its notes. */
@@ -75,7 +69,6 @@ export function Sidebar(props: Props) {
         onSelect={onSelect}
         onOpenSettings={onOpenSettings}
         onExpand={() => props.onCollapse(false)}
-        onOpenLink={actions.openLink}
       />
     );
   }
@@ -86,18 +79,19 @@ export function Sidebar(props: Props) {
     tree,
     adding,
     setAdding: (next) => {
-      if (next) tree.set(next.profile, true);
+      if (next) {
+        tree.set(next.profile, true);
+        if (next.kind === 'ticket') tree.set(laneKey(next.profile, next.status), true);
+      }
       setAdding(next);
     },
     onSelect,
     apply,
     actions,
-    showUrls: props.showUrls,
-    onShowUrls: props.onShowUrls,
   };
 
   return (
-    <nav className="sidebar" aria-label="Library" data-guides={props.indentGuides || undefined}>
+    <nav className="sidebar" aria-label="Library">
       <div className="sidebar__header">
         <button
           type="button"
@@ -216,8 +210,6 @@ function ProfileNode({ ctx, profile }: { ctx: TreeContext; profile: Profile }) {
             onNewTicket: () => ctx.setAdding({ profile: profile.id, kind: 'ticket', status: null }),
             onNewNote: () => ctx.setAdding({ profile: profile.id, kind: 'note', status: null }),
             canDelete,
-            showsUrls: ctx.showUrls,
-            onToggleUrls: () => ctx.onShowUrls(!ctx.showUrls),
           })
         }
       />
@@ -238,17 +230,54 @@ function ProfileNode({ ctx, profile }: { ctx: TreeContext; profile: Profile }) {
   );
 }
 
-/** A status lane: its pill, then its tickets. Dropping a ticket here gives it the status. */
+/** Key of a lane's expanded state in the tree state. */
+function laneKey(profile: string, status: string | null): string {
+  return `lane:${profile}:${status ?? 'none'}`;
+}
+
+/**
+ * Share of a row's height, at its top and at its bottom, where a dropped
+ * ticket goes before or after it; the middle nests it.
+ */
+const EDGE = 0.3;
+
+/**
+ * A status lane: its pill, then its tickets. A click on the pill collapses
+ * or expands the lane. Dropping a ticket on the head gives it the status;
+ * dragging the head reorders the statuses.
+ */
 function LaneNode({ ctx, profile, lane }: { ctx: TreeContext; profile: Profile; lane: Lane }) {
   const status = lane.status?.id ?? null;
-  const drop = useDrop({ kind: 'lane', profile: profile.id, status });
+  const key = laneKey(profile.id, status);
+  const expanded = ctx.tree.isExpanded(key, true);
+  const drag = useDrag({ kind: 'status', status: status ?? '' });
+  const drop = useDrop((item: DragItem, at: DropPoint): DropTarget | DropHit | null => {
+    if (item.kind !== 'status') return { kind: 'lane', profile: profile.id, status };
+    if (status === null) return { target: { kind: 'status', status: null, after: false }, edge: 'top' };
+    const after = at.offset > at.height / 2;
+    return { target: { kind: 'status', status, after }, edge: after ? 'bottom' : 'top' };
+  });
   const adding = ctx.adding?.profile === profile.id && ctx.adding.kind === 'ticket' && ctx.adding.status === status;
   const name = lane.status?.name ?? 'No status';
+  const toggle = () => ctx.tree.set(key, !expanded);
   return (
     <li className="lane" aria-label={`${profile.name}: ${name}`}>
-      <div className="lane__head" {...drop}>
-        <StatusPill name={name} color={lane.status?.color} />
-        <span className="lane__count">{lane.tickets.length}</span>
+      <div className="lane__head" data-draggable={lane.status ? true : undefined} {...drop} {...(lane.status ? drag : {})}>
+        {lane.status && (
+          <span className="lane__grip" aria-hidden="true">
+            <GripVertical className="icon" />
+          </span>
+        )}
+        <div
+          {...pressable(toggle)}
+          className="lane__toggle"
+          aria-expanded={expanded}
+          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`}
+          title={expanded ? `Collapse ${name}` : `Expand ${name}`}
+          onClick={toggle}
+        >
+          <StatusPill name={name} color={lane.status?.color} count={lane.tickets.length} collapsed={!expanded} />
+        </div>
         <button
           type="button"
           className="icon-button lane__add"
@@ -259,25 +288,27 @@ function LaneNode({ ctx, profile, lane }: { ctx: TreeContext; profile: Profile; 
           <Plus className="icon" aria-hidden="true" />
         </button>
       </div>
-      <ul className="tree-list">
-        {adding && (
-          <li className="tree-form" style={{ '--depth': 1 } as CSSProperties}>
-            <InlineInput
-              label="Ticket title"
-              placeholder="CAR-6210 Decouple compliance status"
-              onCancel={() => ctx.setAdding(null)}
-              onSubmit={async (title) => {
-                const saved = await ctx.actions.newTicket({ profile: profile.id }, title, status);
-                if (saved) ctx.setAdding(null);
-                return saved;
-              }}
-            />
-          </li>
-        )}
-        {lane.tickets.map((ticket) => (
-          <TicketNode key={ticket.id} ctx={ctx} profile={profile} ticket={ticket} depth={1} lane={lane} />
-        ))}
-      </ul>
+      {expanded && (
+        <ul className="tree-list">
+          {adding && (
+            <li className="tree-form" style={{ '--depth': 1 } as CSSProperties}>
+              <InlineInput
+                label="Ticket title"
+                placeholder="CAR-6210 Decouple compliance status"
+                onCancel={() => ctx.setAdding(null)}
+                onSubmit={async (title) => {
+                  const saved = await ctx.actions.newTicket({ profile: profile.id }, title, status);
+                  if (saved) ctx.setAdding(null);
+                  return saved;
+                }}
+              />
+            </li>
+          )}
+          {lane.tickets.map((ticket) => (
+            <TicketNode key={ticket.id} ctx={ctx} profile={profile} ticket={ticket} depth={1} lane={lane} />
+          ))}
+        </ul>
+      )}
     </li>
   );
 }
@@ -295,8 +326,7 @@ interface TicketNodeProps {
 
 function TicketNode({ ctx, profile, ticket, depth, lane, parent }: TicketNodeProps) {
   const children = ticket.children ?? [];
-  const links = ticket.links ?? [];
-  const hasInside = children.length > 0 || links.length > 0;
+  const hasInside = children.length > 0;
   const expanded = ctx.tree.isExpanded(ticket.id, false);
   const status = findStatus(ctx.snapshot.workspace, ticket.status);
   const target: Target = { ticket: ticket.id };
@@ -305,6 +335,7 @@ function TicketNode({ ctx, profile, ticket, depth, lane, parent }: TicketNodePro
       <TreeRow
         depth={depth}
         kind="ticket"
+        ticketKind={ticket.kind}
         name={ticket.title}
         ticketKey={ticket.key}
         note={ticket.note}
@@ -316,27 +347,24 @@ function TicketNode({ ctx, profile, ticket, depth, lane, parent }: TicketNodePro
         onActivate={() => ctx.onSelect({ kind: 'ticket', id: ticket.id })}
         onOpen={ticket.url ? () => ctx.actions.openTicket(ticket.id) : undefined}
         drag={{ kind: 'ticket', ticket: ticket.id }}
-        drop={(item) =>
-          item.kind === 'link'
-            ? { kind: 'linksOf', owner: { ticket: ticket.id } }
-            : parent
-              ? { kind: 'beforeSubTicket', ticket: ticket.id }
-              : lane
-                ? { kind: 'lane', profile: profile.id, status: lane.status?.id ?? null, before: ticket.id }
-                : null
-        }
+        drop={(item, at) => ticketDrop(ctx, profile, ticket, item, at, lane, parent)}
         onRename={async (name) => !(await ctx.apply({ type: 'rename', target, name }))}
         leading={(open, setOpen) => (
-          <IconButton ctx={ctx} name={ticket.title} kind="ticket" target={target} icon={ticket.icon} open={open} onOpenChange={setOpen} />
+          <IconButton
+            ctx={ctx}
+            name={ticket.title}
+            kind={ticket.kind ?? 'ticket'}
+            target={target}
+            icon={ticket.icon}
+            open={open}
+            onOpenChange={setOpen}
+          />
         )}
         trailing={children.length > 0 ? <span className="row__count">{children.length}</span> : undefined}
         menu={(row) => ticketMenu(ticket.id, row, menuContext(ctx))}
       />
       {hasInside && expanded && (
         <ul className="tree-list">
-          {links.map((link) => (
-            <LinkNode key={link.id} ctx={ctx} link={link} depth={depth + 1} />
-          ))}
           {children.map((child) => (
             <TicketNode key={child.id} ctx={ctx} profile={profile} ticket={child} depth={depth + 1} parent={ticket} />
           ))}
@@ -344,6 +372,46 @@ function TicketNode({ ctx, profile, ticket, depth, lane, parent }: TicketNodePro
       )}
     </li>
   );
+}
+
+/**
+ * Where a ticket dragged over a ticket row lands: into it, as a sub-ticket,
+ * when over the middle of a top-level ticket; before or after it otherwise.
+ */
+function ticketDrop(
+  ctx: TreeContext,
+  profile: Profile,
+  ticket: Ticket,
+  item: DragItem,
+  at: DropPoint,
+  lane?: Lane,
+  parent?: Ticket,
+): DropHit | null {
+  if (item.kind !== 'ticket' || item.ticket === ticket.id) return null;
+  const dragged = findTicket(ctx.snapshot.workspace, item.ticket);
+  const canNest = !parent && dragged !== null && (dragged.ticket.children?.length ?? 0) === 0;
+  const edge = at.height * EDGE;
+  if (canNest && at.offset >= edge && at.offset <= at.height - edge) {
+    return { target: { kind: 'intoTicket', ticket: ticket.id } };
+  }
+  const after = at.offset > at.height / 2;
+  if (parent) {
+    const siblings = parent.children ?? [];
+    const next = siblings[siblings.findIndex((child) => child.id === ticket.id) + 1];
+    const target: DropTarget = !after
+      ? { kind: 'beforeSubTicket', ticket: ticket.id }
+      : next
+        ? { kind: 'beforeSubTicket', ticket: next.id }
+        : { kind: 'intoTicket', ticket: parent.id };
+    return { target, edge: after ? 'bottom' : 'top' };
+  }
+  if (!lane) return null;
+  const next = lane.tickets[lane.tickets.findIndex((candidate) => candidate.id === ticket.id) + 1];
+  const before = after ? next?.id : ticket.id;
+  return {
+    target: { kind: 'lane', profile: profile.id, status: lane.status?.id ?? null, ...(before ? { before } : {}) },
+    edge: after ? 'bottom' : 'top',
+  };
 }
 
 function NotesNode({ ctx, profile, adding }: { ctx: TreeContext; profile: Profile; adding: boolean }) {
@@ -387,8 +455,6 @@ function NotesNode({ ctx, profile, adding }: { ctx: TreeContext; profile: Profil
 }
 
 function NoteNode({ ctx, profile, note }: { ctx: TreeContext; profile: Profile; note: Note }) {
-  const links = note.links ?? [];
-  const expanded = ctx.tree.isExpanded(note.id, false);
   const target: Target = { note: note.id };
   return (
     <li>
@@ -396,54 +462,15 @@ function NoteNode({ ctx, profile, note }: { ctx: TreeContext; profile: Profile; 
         depth={1}
         kind="note"
         name={note.title}
-        expanded={links.length > 0 ? expanded : undefined}
-        onToggle={() => ctx.tree.set(note.id, !expanded)}
         current={isCurrent(ctx, 'note', note.id)}
         onActivate={() => ctx.onSelect({ kind: 'note', id: note.id })}
         drag={{ kind: 'note', note: note.id }}
-        drop={(item) =>
-          item.kind === 'link'
-            ? { kind: 'linksOf', owner: { note: note.id } }
-            : item.kind === 'note'
-              ? { kind: 'notes', profile: profile.id, before: note.id }
-              : null
-        }
+        drop={(item) => (item.kind === 'note' ? { kind: 'notes', profile: profile.id, before: note.id } : null)}
         onRename={async (name) => !(await ctx.apply({ type: 'rename', target, name }))}
         leading={(open, setOpen) => (
           <IconButton ctx={ctx} name={note.title} kind="note" target={target} icon={note.icon} open={open} onOpenChange={setOpen} />
         )}
-        trailing={links.length > 0 ? <span className="row__count">{links.length}</span> : undefined}
         menu={(row) => noteMenu(note.id, row, menuContext(ctx))}
-      />
-      {links.length > 0 && expanded && (
-        <ul className="tree-list">
-          {links.map((link) => (
-            <LinkNode key={link.id} ctx={ctx} link={link} depth={2} />
-          ))}
-        </ul>
-      )}
-    </li>
-  );
-}
-
-function LinkNode({ ctx, link, depth }: { ctx: TreeContext; link: Link; depth: number }) {
-  const target: Target = { link: link.id };
-  return (
-    <li>
-      <TreeRow
-        depth={depth}
-        kind="link"
-        name={link.title}
-        title={`Open ${link.title}\n${link.url}`}
-        subtitle={ctx.showUrls ? <TabUrl url={link.url} compact /> : undefined}
-        onActivate={() => ctx.actions.openLink(link.id)}
-        drag={{ kind: 'link', link: link.id }}
-        drop={{ kind: 'beforeLink', link: link.id }}
-        onRename={async (name) => !(await ctx.apply({ type: 'rename', target, name }))}
-        leading={(open, setOpen) => (
-          <IconButton ctx={ctx} name={link.title} kind="link" target={target} icon={link.icon} open={open} onOpenChange={setOpen} />
-        )}
-        menu={(row) => linkMenu(link.id, row, menuContext(ctx))}
       />
     </li>
   );

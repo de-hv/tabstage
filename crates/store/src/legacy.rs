@@ -11,12 +11,12 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tabstage_core::{
-    Icon, Link, LinkOwner, Note, NoteId, Profile, ProfileColor, ProfileId, StatusId, TabId, TabUrl,
-    Ticket, TicketId, TicketPlace, Workspace, WorkspaceError,
+    Icon, Note, NoteId, Profile, ProfileColor, ProfileId, StatusId, TabUrl, TextOwner, Ticket,
+    TicketId, TicketKind, TicketPlace, Workspace, WorkspaceError,
 };
 
 use crate::migrate::{self, MigratedBinding};
-use crate::{APP, FORMAT_VERSION, Result, StoreError};
+use crate::{APP, Result, StoreError, TICKETS_VERSION};
 
 /// What an old group, folder or tab becomes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -24,15 +24,16 @@ use crate::{APP, FORMAT_VERSION, Result, StoreError};
 pub enum Role {
     /// A status; what it held goes into it (groups and folders).
     Status,
-    /// A ticket; what it held becomes its links and sub-tickets.
+    /// A ticket; what it held becomes its sub-tickets and the links in its
+    /// note.
     Ticket,
     /// A sub-ticket of the ticket it is in.
     SubTicket,
     /// The address and key of the ticket it is in (tabs).
     OwnLink,
-    /// A link of the ticket or note it is in (tabs).
+    /// A Markdown link in the note of the ticket or note it is in (tabs).
     Link,
-    /// A note; what it held becomes its links (groups and folders).
+    /// A note; what it held becomes links in its body (groups and folders).
     Note,
     /// Nothing: what it held goes where it is (groups and folders).
     Unwrap,
@@ -122,7 +123,7 @@ pub fn read_legacy(text: &str) -> Result<LegacyTree> {
         .and_then(Value::as_u64)
         .and_then(|version| u32::try_from(version).ok())
         .unwrap_or(0);
-    if version >= FORMAT_VERSION {
+    if version >= TICKETS_VERSION {
         return Err(StoreError::UnsupportedVersion(version));
     }
     let bindings = if version < 2 {
@@ -164,7 +165,7 @@ pub struct ImportSummary {
     pub tickets: usize,
     /// Notes created.
     pub notes: usize,
-    /// Links created.
+    /// Links written into notes.
     pub links: usize,
 }
 
@@ -333,8 +334,8 @@ impl Importer<'_> {
             (LegacyKind::Tab, Role::Link) => {
                 let owner = context
                     .ticket
-                    .map(|(ticket, _)| LinkOwner::Ticket(ticket))
-                    .or(context.note.map(LinkOwner::Note));
+                    .map(|(ticket, _)| TextOwner::Ticket(ticket))
+                    .or(context.note.map(TextOwner::Note));
                 match owner {
                     Some(owner) => self.link(item, owner)?,
                     None => self.tab_ticket(item, context)?,
@@ -431,9 +432,9 @@ impl Importer<'_> {
                 key: item.key.clone(),
                 url: item.url.as_deref().and_then(|url| TabUrl::parse(url).ok()),
                 status,
+                kind: TicketKind::default(),
                 icon: item.icon.clone(),
                 note: item.note.clone(),
-                links: Vec::new(),
                 children: Vec::new(),
             },
         )?;
@@ -460,7 +461,7 @@ impl Importer<'_> {
             self.workspace.set_ticket_address(ticket, Some(url))?;
         } else if current.url.is_some() {
             // The ticket already has an address: keep this one as a link.
-            return self.link(item, LinkOwner::Ticket(ticket));
+            return self.link(item, TextOwner::Ticket(ticket));
         }
         if current.key.is_none()
             && let Some(key) = &item.key
@@ -472,15 +473,17 @@ impl Importer<'_> {
                 Some(existing) => format!("{existing}\n\n{extra}"),
                 None => extra.clone(),
             };
-            self.workspace.set_text(LinkOwner::Ticket(ticket), &note)?;
+            self.workspace.set_text(TextOwner::Ticket(ticket), &note)?;
         }
         Ok(())
     }
 
+    /// Adds a tab as a Markdown link at the end of a ticket's note or a
+    /// note's body.
     fn link(
         &mut self,
         item: &LegacyItem,
-        owner: LinkOwner,
+        owner: TextOwner,
     ) -> std::result::Result<(), WorkspaceError> {
         let Some(url) = item.url.as_deref().and_then(|url| TabUrl::parse(url).ok()) else {
             return Ok(());
@@ -489,19 +492,27 @@ impl Importer<'_> {
             Some(key) if !item.name.contains(key.as_str()) => format!("{key} {}", item.name),
             _ => item.name.clone(),
         };
-        self.workspace.insert_link(
-            owner,
-            Link {
-                id: TabId::new(),
-                url,
-                title: if title.trim().is_empty() {
-                    item.url.clone().unwrap_or_default()
-                } else {
-                    title.trim().to_owned()
-                },
-                icon: item.icon.clone(),
-            },
-        )?;
+        let current = match owner {
+            TextOwner::Ticket(id) => self
+                .workspace
+                .ticket(id)
+                .ok_or(WorkspaceError::TicketNotFound(id))?
+                .ticket
+                .note
+                .clone(),
+            TextOwner::Note(id) => self
+                .workspace
+                .note(id)
+                .ok_or(WorkspaceError::NoteNotFound(id))?
+                .1
+                .body
+                .clone(),
+        };
+        let text = migrate::append_line(
+            current.as_deref(),
+            &migrate::link_line(&title, url.as_str()),
+        );
+        self.workspace.set_text(owner, &text)?;
         self.summary.links += 1;
         Ok(())
     }
@@ -525,7 +536,6 @@ impl Importer<'_> {
                 title,
                 icon: item.icon.clone(),
                 body: body.cloned(),
-                links: Vec::new(),
             },
         )?;
         self.summary.notes += 1;
@@ -541,8 +551,8 @@ impl Importer<'_> {
 ///   whose title says "epic"), else it is unwrapped so its tabs become
 ///   tickets.
 /// - In a ticket, the epic tab gives the ticket its address and key, tabs
-///   with a ticket id become sub-tickets and the others links.
-/// - In a note, tabs become links; anywhere else, tickets.
+///   with a ticket id become sub-tickets and the others links in its note.
+/// - In a note, tabs become links in its body; anywhere else, tickets.
 fn suggest(item: &LegacyItem, parent: Option<Role>, context: Context) -> Role {
     match item.kind {
         LegacyKind::Group | LegacyKind::Folder => match parent {

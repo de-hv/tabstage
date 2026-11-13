@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { appliedCommands, snapshotFixture } from './test/ipc';
-import { PERSONAL, QA, TRABAJO, clickMenuItem, renderApp, rightClick } from './test/render';
+import { PERSONAL, QA, TRABAJO, clickMenuItem, renderApp, openRowMenu } from './test/render';
 
 async function openSettings() {
   const rendered = await renderApp();
@@ -35,23 +35,12 @@ describe('settings', () => {
   it('"Choose browser…" from the sidebar focuses that profile', async () => {
     await renderApp();
 
-    await rightClick('Personal');
+    await openRowMenu('Personal');
     clickMenuItem('Choose browser…');
 
     const card = await screen.findByRole('article', { name: 'Profile Personal' });
     expect(card.getAttribute('data-focused')).toBe('true');
     expect(PERSONAL).toBeTruthy();
-  });
-
-  it('turns sidebar URLs on and off', async () => {
-    const { user } = await openSettings();
-
-    const toggle = screen.getByRole('checkbox', { name: 'Show addresses under links in the sidebar' });
-    expect((toggle as HTMLInputElement).checked).toBe(false);
-    await user.click(toggle);
-
-    expect(localStorage.getItem('tabstage.sidebarUrls')).toBe('true');
-    expect((toggle as HTMLInputElement).checked).toBe(true);
   });
 
   it('describes the local data file and offers to move it', async () => {

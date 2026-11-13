@@ -74,13 +74,6 @@
           {
             "body": "Yesterday: CAR-6163\n- [ ] Ask QA",
             "id": "00000000-0000-0000-0000-000000009001",
-            "links": [
-              {
-                "id": "00000000-0000-0000-0000-00000000b004",
-                "title": "Standup board",
-                "url": "https://board.example.com/"
-              }
-            ],
             "title": "Standup notes"
           }
         ],
@@ -90,13 +83,6 @@
               {
                 "id": "00000000-0000-0000-0000-000000007002",
                 "key": "CAR-6020",
-                "links": [
-                  {
-                    "id": "00000000-0000-0000-0000-00000000b002",
-                    "title": "Staging dashboard",
-                    "url": "https://staging.example.com/"
-                  }
-                ],
                 "status": "00000000-0000-0000-0000-000000000502",
                 "title": "Money card"
               }
@@ -107,13 +93,6 @@
             },
             "id": "00000000-0000-0000-0000-000000007001",
             "key": "CAR-5899",
-            "links": [
-              {
-                "id": "00000000-0000-0000-0000-00000000b001",
-                "title": "PR #2214",
-                "url": "https://github.com/acme/app/pull/2214"
-              }
-            ],
             "note": "Run after the deploy window\nPing #ops when done",
             "status": "00000000-0000-0000-0000-000000000502",
             "title": "Carrier Commissions",
@@ -128,13 +107,6 @@
           },
           {
             "id": "00000000-0000-0000-0000-000000007004",
-            "links": [
-              {
-                "id": "00000000-0000-0000-0000-00000000b003",
-                "title": "Client wiki",
-                "url": "https://wiki.example.com/client"
-              }
-            ],
             "title": "Onboarding wiki"
           }
         ]

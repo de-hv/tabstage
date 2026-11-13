@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import type { AppError, Command, LinkOwner, Profile, Workspace } from '../api/types';
+import type { AppError, Command, Profile, TextOwner, Workspace } from '../api/types';
 import { ticketsByKey } from '../lib/workspace';
 import type { ItemActions } from '../state/selection';
 import { useItemShortcuts } from '../state/useItemShortcuts';
@@ -9,7 +9,7 @@ import { NoteEditor } from './NoteEditor';
 
 interface Options {
   workspace: Workspace;
-  owner: LinkOwner;
+  owner: TextOwner;
   /** A ticket's key and address; a note has neither. */
   ticketKey?: string;
   ticketUrl?: string;
@@ -23,8 +23,12 @@ interface Options {
   onCreateTicket?: (text: string) => void;
 }
 
+const URL_MESSAGES: Partial<Record<AppError['code'], string>> = {
+  invalidUrl: 'Enter a web address that starts with http:// or https://',
+};
+
 /**
- * The key field for a ticket's header and the Markdown editor for the body
+ * The key and link field for a ticket's header and the Markdown editor for the body
  * of a ticket or note, edited in place, with the T and E shortcuts. Keys of
  * known tickets in the text show as links to them.
  */
@@ -48,7 +52,18 @@ export function useDetails(options: Options) {
         ticketId={ticketKey}
         link={ticketUrl}
         onOpen={ticketUrl ? () => actions.openTicket(owner.ticket) : undefined}
-        onSave={async (key) => !(await apply({ type: 'setTicketKey', ticket: owner.ticket, key }))}
+        onCopy={ticketUrl ? () => actions.copyLink(ticketUrl) : undefined}
+        onSave={async (next) => {
+          if (next.ticketId !== (ticketKey ?? '')) {
+            const failure = await apply({ type: 'setTicketKey', ticket: owner.ticket, key: next.ticketId });
+            if (failure) return failure.message;
+          }
+          if (next.link !== (ticketUrl ?? '')) {
+            const failure = await apply({ type: 'setTicketUrl', ticket: owner.ticket, url: next.link });
+            if (failure) return URL_MESSAGES[failure.code] ?? failure.message;
+          }
+          return null;
+        }}
         editRequest={keyRequest}
       />
     ) : null;

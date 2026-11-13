@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { appliedCommands } from './test/ipc';
 import {
@@ -10,7 +10,6 @@ import {
   REMOVE_MAP,
   STANDUP,
   TRABAJO,
-  WIKI_LINK,
   renderApp,
   sidebar,
 } from './test/render';
@@ -23,13 +22,15 @@ async function showTicket(name: string) {
 }
 
 describe('ticket view', () => {
-  it('shows the key, status, link, links, sub-tickets and note', async () => {
+  it('shows the key with its link, status, sub-tickets and note', async () => {
     const { calls, user, view } = await showTicket('Carrier Commissions');
 
     expect(within(view).getByRole('button', { name: 'Open ticket CAR-5899' })).toBeTruthy();
     expect(within(view).getByRole('button', { name: 'Status: In TEST' })).toBeTruthy();
-    expect(within(view).getByText('https://jira.example.com/browse/CAR-5899')).toBeTruthy();
-    expect(within(within(view).getByRole('region', { name: 'Links' })).getByText('PR #2214')).toBeTruthy();
+    expect(within(view).getByRole('button', { name: 'Open ticket CAR-5899' }).getAttribute('title')).toContain(
+      'https://jira.example.com/browse/CAR-5899',
+    );
+    expect(within(view).queryByRole('region', { name: 'Links' })).toBeNull();
     expect(within(within(view).getByRole('region', { name: 'Sub-tickets' })).getByText('Money card')).toBeTruthy();
     expect(within(view).getByText(/Run after the deploy window/)).toBeTruthy();
 
@@ -51,10 +52,9 @@ describe('ticket view', () => {
   it('edits the key and the ticket’s own link in place', async () => {
     const { calls, user, view } = await showTicket('Onboarding wiki');
 
-    await user.click(within(view).getByRole('button', { name: /Ticket/ }));
-    await user.type(within(view).getByRole('textbox', { name: 'Ticket ID' }), 'CAR-9{Enter}');
-    await user.click(within(view).getByRole('button', { name: /Add the ticket's link/ }));
-    await user.type(within(view).getByRole('textbox', { name: 'Address' }), 'https://jira.example.com/CAR-9{Enter}');
+    await user.click(within(view).getByRole('button', { name: /^Ticket$/ }));
+    await user.type(within(view).getByRole('textbox', { name: 'Ticket ID' }), 'CAR-9');
+    await user.type(within(view).getByRole('textbox', { name: 'Ticket link' }), 'https://jira.example.com/CAR-9{Enter}');
 
     await waitFor(() =>
       expect(appliedCommands(calls)).toEqual([
@@ -64,28 +64,47 @@ describe('ticket view', () => {
     );
   });
 
-  it('adds, edits and removes links', async () => {
+  it('renames the ticket with a click on its title', async () => {
     const { calls, user, view } = await showTicket('Onboarding wiki');
-    const links = within(view).getByRole('region', { name: 'Links' });
 
-    await user.click(within(links).getByRole('button', { name: 'Add link' }));
-    await user.type(within(links).getByRole('textbox', { name: 'URL' }), 'https://pr.dev/1{Enter}');
-    await user.click(within(links).getByRole('button', { name: 'Delete Client wiki' }));
+    await user.click(within(view).getByRole('button', { name: 'Onboarding wiki' }));
+    const input = within(view).getByRole('textbox', { name: 'New name' });
+    await user.clear(input);
+    await user.type(input, 'Client onboarding{Enter}');
 
-    await waitFor(() =>
-      expect(appliedCommands(calls)).toEqual([
-        { type: 'addLink', owner: { ticket: ONBOARDING }, url: 'https://pr.dev/1', title: '' },
-        { type: 'removeLink', link: WIKI_LINK },
-      ]),
-    );
+    expect(appliedCommands(calls)).toEqual([{ type: 'rename', target: { ticket: ONBOARDING }, name: 'Client onboarding' }]);
+  });
+
+  it('copies the ticket link from the key, and only the ⋯ button opens the menu', async () => {
+    const { calls, user, view } = await showTicket('Carrier Commissions');
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+    await user.click(within(view).getByRole('button', { name: 'Copy ticket link' }));
+    expect(writeText).toHaveBeenCalledWith('https://jira.example.com/browse/CAR-5899');
+
+    fireEvent.contextMenu(within(view).getByRole('button', { name: 'Open ticket CAR-5899' }));
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(calls).not.toContainEqual(expect.objectContaining({ cmd: 'open_ticket' }));
   });
 
   it('adds a sub-ticket in the parent’s status', async () => {
     const { calls, user, view } = await showTicket('Carrier Commissions');
 
     await user.click(within(view).getByRole('button', { name: 'Add sub-ticket' }));
-    await user.type(within(view).getByRole('textbox', { name: 'Sub-ticket title' }), 'Story{Enter}');
+    await user.click(await screen.findByRole('menuitem', { name: 'Sub-ticket' }));
+    await user.type(within(view).getByRole('textbox', { name: 'Ticket title' }), 'Story{Enter}');
     expect(appliedCommands(calls)[0]).toMatchObject({ type: 'addTicket', place: { ticket: CARRIER }, title: 'Story' });
+    expect(appliedCommands(calls)[0]).not.toHaveProperty('kind');
+  });
+
+  it('adds a sub-ticket of a kind, such as a bug', async () => {
+    const { calls, user, view } = await showTicket('Carrier Commissions');
+
+    await user.click(within(view).getByRole('button', { name: 'Add sub-ticket' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Bug' }));
+    await user.type(within(view).getByRole('textbox', { name: 'Bug title' }), 'Crash on save{Enter}');
+    expect(appliedCommands(calls)[0]).toMatchObject({ type: 'addTicket', place: { ticket: CARRIER }, title: 'Crash on save', kind: 'bug' });
   });
 
   it('opens a sub-ticket from its parent and goes back from its path', async () => {
@@ -143,12 +162,5 @@ describe('note view', () => {
       }),
     );
     expect(STANDUP).toBeTruthy();
-  });
-
-  it('opens all of its links', async () => {
-    const { calls, user } = await renderApp();
-    await user.click(within(sidebar()).getByText('Standup notes'));
-    await user.click(within(await screen.findByRole('main', { name: 'Standup notes' })).getByRole('button', { name: 'Open all links' }));
-    expect(calls).toContainEqual({ cmd: 'open_note', args: { note: STANDUP } });
   });
 });
