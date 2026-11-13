@@ -70,9 +70,31 @@ describe('dropping tickets on lanes', () => {
       ticket: REMOVE_MAP,
       place: { ticket: CARRIER },
       index: 0,
+      lane: { status: IN_TEST },
     });
     expect(dropCommand(ticket(CARRIER), { kind: 'beforeSubTicket', ticket: MONEY }, workspace())).toBeNull();
     expect(dropCommand(ticket(CACHING), { kind: 'beforeSubTicket', ticket: REMOVE_MAP }, workspace())).toBeNull();
+  });
+});
+
+describe('changing a sub-ticket’s parent', () => {
+  it('takes the new parent’s status, so its color follows the parent', () => {
+    const moved = workspace();
+    moved.profiles[0]!.tickets.push({ id: 'y', title: 'Other parent', status: DONE });
+    expect(dropCommand(ticket(MONEY), { kind: 'intoTicket', ticket: 'y' }, moved)).toEqual({
+      type: 'moveTicket',
+      ticket: MONEY,
+      place: { ticket: 'y' },
+      index: 0,
+      lane: { status: DONE },
+    });
+  });
+
+  it('keeps the status when reordering within the same parent or when it already matches', () => {
+    const same = workspace();
+    const carrier = same.profiles[0]!.tickets.find((candidate) => candidate.id === CARRIER)!;
+    carrier.children = [...(carrier.children ?? []), { id: 'z', title: 'Second child', status: REVIEW }];
+    expect(dropCommand(ticket('z'), { kind: 'beforeSubTicket', ticket: MONEY }, same)).not.toHaveProperty('lane');
   });
 });
 

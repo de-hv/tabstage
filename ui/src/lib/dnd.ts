@@ -1,4 +1,4 @@
-import type { Command, Target, Uuid, Workspace } from '../api/types';
+import type { Command, Target, Ticket, Uuid, Workspace } from '../api/types';
 import { findNote, findProfile, findTicket, laneIndex, lanes, pinnedIndex } from './workspace';
 
 /** What is being dragged. */
@@ -86,7 +86,7 @@ function dropTicket(id: Uuid, target: DropTarget, workspace: Workspace): Command
       const index = siblings.length - 1;
       return fromIndex === index ? null : { type: 'moveTicket', ticket: id, place: { ticket: to.ticket.id }, index };
     }
-    return { type: 'moveTicket', ticket: id, place: { ticket: to.ticket.id }, index: siblings.length };
+    return { type: 'moveTicket', ticket: id, place: { ticket: to.ticket.id }, index: siblings.length, ...parentLane(from.ticket, to.ticket) };
   }
   if (target.kind === 'beforeSubTicket') {
     if (target.ticket === id || (from.ticket.children?.length ?? 0) > 0) return null;
@@ -99,7 +99,13 @@ function dropTicket(id: Uuid, target: DropTarget, workspace: Workspace): Command
       if (fromIndex < index) index -= 1;
       if (fromIndex === index) return null;
     }
-    return { type: 'moveTicket', ticket: id, place: { ticket: to.parent.id }, index };
+    return {
+      type: 'moveTicket',
+      ticket: id,
+      place: { ticket: to.parent.id },
+      index,
+      ...(from.parent?.id === to.parent.id ? {} : parentLane(from.ticket, to.parent)),
+    };
   }
   if (target.kind === 'profile') {
     if (from.profile.id === target.profile && !from.parent) return null;
@@ -107,6 +113,12 @@ function dropTicket(id: Uuid, target: DropTarget, workspace: Workspace): Command
     return profile ? { type: 'moveTicket', ticket: id, place: { profile: profile.id }, index: profile.tickets.length } : null;
   }
   return null;
+}
+
+/** A sub-ticket that changes parent takes the new parent's status, and so its color, as new sub-tickets do. */
+function parentLane(ticket: Ticket, parent: Ticket): { lane?: { status: Uuid | null } } {
+  const status = parent.status ?? null;
+  return (ticket.status ?? null) === status ? {} : { lane: { status } };
 }
 
 function dropNote(id: Uuid, target: DropTarget, workspace: Workspace): Command | null {

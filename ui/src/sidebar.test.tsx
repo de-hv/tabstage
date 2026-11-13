@@ -110,7 +110,7 @@ describe('sidebar lanes', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: 'CAR-5899 Carrier Commissions' }));
 
     expect(appliedCommands(calls)).toEqual([
-      { type: 'moveTicket', ticket: REMOVE_MAP, place: { ticket: CARRIER }, index: 1 },
+      { type: 'moveTicket', ticket: REMOVE_MAP, place: { ticket: CARRIER }, index: 1, lane: { status: IN_TEST } },
     ]);
   });
 
@@ -171,7 +171,7 @@ describe('tickets: menu, nesting by drag, type and link', () => {
     dragAt(treeRow('Remove map'), treeRow('Carrier Commissions'), 14);
 
     expect(appliedCommands(calls)).toEqual([
-      { type: 'moveTicket', ticket: REMOVE_MAP, place: { ticket: CARRIER }, index: 1 },
+      { type: 'moveTicket', ticket: REMOVE_MAP, place: { ticket: CARRIER }, index: 1, lane: { status: IN_TEST } },
     ]);
   });
 

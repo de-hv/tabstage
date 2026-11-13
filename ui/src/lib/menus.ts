@@ -123,7 +123,14 @@ export function ticketMenu(id: string, row: RowControls, context: Context): Menu
         .map((candidate) => ({
           label: candidate.key ? `${candidate.key} ${candidate.title}` : candidate.title,
           onSelect: () =>
-            apply({ type: 'moveTicket', ticket: id, place: { ticket: candidate.id }, index: candidate.children?.length ?? 0 }),
+            apply({
+              type: 'moveTicket',
+              ticket: id,
+              place: { ticket: candidate.id },
+              index: candidate.children?.length ?? 0,
+              // Like a dropped one, it takes its new parent's status (and color).
+              ...((ticket.status ?? null) === (candidate.status ?? null) ? {} : { lane: { status: candidate.status ?? null } }),
+            }),
         })),
     });
   }
