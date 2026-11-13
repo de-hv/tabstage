@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/de-hv/tabstage-desktop/compare/v0.6.0...v0.7.0) (2026-11-13)
+
+
+### Features
+
+* Fill in the macOS About panel and add Help links ([8ab7121](https://github.com/de-hv/tabstage-desktop/commit/8ab71215e8bf96ddbed500a140176ae733c4c68a))
+* Theme selects, tooltips and notices, and pick a ticket's type from its view ([b50b1c5](https://github.com/de-hv/tabstage-desktop/commit/b50b1c55db95e729485d150a7d16327768bdb096))
+
+
+### Bug Fixes
+
+* Give a sub-ticket its new parent's status when it changes parent ([56c86ba](https://github.com/de-hv/tabstage-desktop/commit/56c86ba8ccdf1b724f7511e1f71d77b127ba8071))
+
 ## [0.6.0](https://github.com/de-hv/tabstage-desktop/compare/v0.5.0...v0.6.0) (2026-11-13)
 
 
