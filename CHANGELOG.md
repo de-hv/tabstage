@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.1](https://github.com/de-hv/tabstage-desktop/compare/v0.7.0...v0.7.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* Align icons with their labels in selects ([b5ecd2e](https://github.com/de-hv/tabstage-desktop/commit/b5ecd2e55ebc9d9b5cfc30c9b81dd86f1d688bd6))
+* Draw profile colors as rounded squares ([9b6069e](https://github.com/de-hv/tabstage-desktop/commit/9b6069eca805986a75be2162d3579a6b68c4d445))
+* Drop status colors from sidebar rows and flag sub-tickets in another status ([1e8e3fa](https://github.com/de-hv/tabstage-desktop/commit/1e8e3fa135e7f13f89c1b868a357a53417372add))
+
 ## [0.7.0](https://github.com/de-hv/tabstage-desktop/compare/v0.6.0...v0.7.0) (2026-11-13)
 
 
