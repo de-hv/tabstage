@@ -26,7 +26,7 @@ check() {
 }
 
 urls=$(asset_urls < "$FIXTURE")
-base=https://github.com/de-hv/tabstage-desktop/releases/download/v0.1.0
+base=https://github.com/de-hv/tabstage/releases/download/v0.1.0
 
 check "macOS gets the universal dmg" "$base/Tabstage_0.1.0_universal.dmg" "$(pick_asset macos aarch64 app "$urls")"
 check "Intel Mac gets the same dmg" "$base/Tabstage_0.1.0_universal.dmg" "$(pick_asset macos x86_64 app "$urls")"

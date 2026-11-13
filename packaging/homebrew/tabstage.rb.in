@@ -2,10 +2,10 @@ cask "tabstage" do
   version "@VERSION@"
   sha256 "@SHA256@"
 
-  url "https://github.com/de-hv/tabstage-desktop/releases/download/v#{version}/Tabstage_#{version}_universal.dmg"
+  url "https://github.com/de-hv/tabstage/releases/download/v#{version}/Tabstage_#{version}_universal.dmg"
   name "Tabstage"
   desc "Groups of tabs that open in the browser you choose"
-  homepage "https://de-hv.github.io/tabstage-desktop/"
+  homepage "https://de-hv.github.io/tabstage/"
 
   depends_on :macos
 

@@ -96,7 +96,7 @@ footer { padding-block: 24px 40px; border-top: 1px solid var(--s0); color: var(-
   <header class="top">
     <img src="icon.svg" alt="">
     <b>Tabstage</b>
-    <a href="https://github.com/de-hv/tabstage-desktop">Source on GitHub</a>
+    <a href="https://github.com/de-hv/tabstage">Source on GitHub</a>
   </header>
 
   <section class="hero">
@@ -105,13 +105,13 @@ footer { padding-block: 24px 40px; border-top: 1px solid var(--s0); color: var(-
       <p class="lede">Keep links in profiles such as Work, Personal or a client, and inside them in groups and folders, as deep as you need. Each profile opens in the browser you pick. If the tab is already open, Tabstage takes you to it. For macOS and Linux, no extension needed.</p>
       <div class="install">
         <div class="cmd">
-          <code id="cmd">curl -fsSL https://de-hv.github.io/tabstage-desktop/install.sh | sh</code>
+          <code id="cmd">curl -fsSL https://de-hv.github.io/tabstage/install.sh | sh</code>
           <button type="button" id="copy">Copy</button>
         </div>
         <div class="downloads" id="downloads">
-          <a href="https://github.com/de-hv/tabstage-desktop/releases/latest">Download for macOS</a>
-          <a href="https://github.com/de-hv/tabstage-desktop/releases/latest">AppImage for Linux</a>
-          <a href="https://github.com/de-hv/tabstage-desktop/releases/latest">.deb and .rpm</a>
+          <a href="https://github.com/de-hv/tabstage/releases/latest">Download for macOS</a>
+          <a href="https://github.com/de-hv/tabstage/releases/latest">AppImage for Linux</a>
+          <a href="https://github.com/de-hv/tabstage/releases/latest">.deb and .rpm</a>
         </div>
         <p class="note">With Homebrew: <code>brew install --cask de-hv/tap/tabstage</code></p>
       </div>
@@ -160,9 +160,9 @@ footer { padding-block: 24px 40px; border-top: 1px solid var(--s0); color: var(-
   <section class="other">
     <h2>Other ways to install</h2>
     <dl>
-      <div><dt>Linux, as a system package</dt><dd><code>curl -fsSL https://de-hv.github.io/tabstage-desktop/install.sh | sh -s -- --system</code></dd></div>
-      <div><dt>A specific version</dt><dd><code>curl -fsSL https://de-hv.github.io/tabstage-desktop/install.sh | sh -s -- --version v0.1.0</code></dd></div>
-      <div><dt>Uninstall</dt><dd><code>curl -fsSL https://de-hv.github.io/tabstage-desktop/install.sh | sh -s -- --uninstall</code></dd></div>
+      <div><dt>Linux, as a system package</dt><dd><code>curl -fsSL https://de-hv.github.io/tabstage/install.sh | sh -s -- --system</code></dd></div>
+      <div><dt>A specific version</dt><dd><code>curl -fsSL https://de-hv.github.io/tabstage/install.sh | sh -s -- --version v0.1.0</code></dd></div>
+      <div><dt>Uninstall</dt><dd><code>curl -fsSL https://de-hv.github.io/tabstage/install.sh | sh -s -- --uninstall</code></dd></div>
     </dl>
   </section>
 
@@ -183,7 +183,7 @@ document.getElementById('copy').addEventListener('click', async (event) => {
 
 // Point the buttons straight at the latest files; they already link to the
 // release page if this request fails.
-fetch('https://api.github.com/repos/de-hv/tabstage-desktop/releases/latest')
+fetch('https://api.github.com/repos/de-hv/tabstage/releases/latest')
   .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
   .then((release) => {
     const find = (pattern) => release.assets.find((asset) => pattern.test(asset.name))?.browser_download_url;

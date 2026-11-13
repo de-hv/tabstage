@@ -5,8 +5,8 @@ use tauri::menu::{AboutMetadata, HELP_SUBMENU_ID, Menu, MenuEvent, MenuItem, Pre
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_opener::OpenerExt;
 
-const WEBSITE: &str = "https://de-hv.github.io/tabstage-desktop/";
-const REPOSITORY: &str = "https://github.com/de-hv/tabstage-desktop";
+const WEBSITE: &str = "https://de-hv.github.io/tabstage/";
+const REPOSITORY: &str = "https://github.com/de-hv/tabstage";
 
 const WEBSITE_ID: &str = "help-website";
 const RELEASE_NOTES_ID: &str = "help-release-notes";

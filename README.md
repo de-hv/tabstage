@@ -46,7 +46,7 @@ format.
 ## Install
 
 ```sh
-curl -fsSL https://de-hv.github.io/tabstage-desktop/install.sh | sh
+curl -fsSL https://de-hv.github.io/tabstage/install.sh | sh
 ```
 
 On Linux this installs the AppImage for your user; add `-s -- --system` to install the `.deb`
@@ -56,7 +56,7 @@ or `.rpm` with apt or dnf instead. On macOS you can also use Homebrew:
 brew install --cask de-hv/tap/tabstage
 ```
 
-Or download a file from the [latest release](https://github.com/de-hv/tabstage-desktop/releases/latest).
+Or download a file from the [latest release](https://github.com/de-hv/tabstage/releases/latest).
 Every release has a `SHA256SUMS` file, and the install script checks it.
 
 > The macOS app is not notarized yet. The install script and the Homebrew cask install it

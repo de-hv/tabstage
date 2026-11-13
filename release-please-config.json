@@ -6,7 +6,7 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "package-name": "tabstage-desktop",
+      "package-name": "tabstage",
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
         {

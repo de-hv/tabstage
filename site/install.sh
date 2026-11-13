@@ -1,8 +1,8 @@
 #!/bin/sh
 # Installs Tabstage Desktop from its GitHub releases.
 #
-#   curl -fsSL https://de-hv.github.io/tabstage-desktop/install.sh | sh
-#   curl -fsSL https://de-hv.github.io/tabstage-desktop/install.sh | sh -s -- --system
+#   curl -fsSL https://de-hv.github.io/tabstage/install.sh | sh
+#   curl -fsSL https://de-hv.github.io/tabstage/install.sh | sh -s -- --system
 #
 # macOS: copies Tabstage.app to /Applications (or ~/Applications).
 # Linux: installs the AppImage for your user, or with --system the .deb or
@@ -12,7 +12,7 @@
 
 set -eu
 
-REPO="${TABSTAGE_REPO:-de-hv/tabstage-desktop}"
+REPO="${TABSTAGE_REPO:-de-hv/tabstage}"
 APP_NAME="Tabstage"
 
 say() { printf '%s\n' "$*"; }
