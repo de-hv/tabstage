@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tabstage Desktop</title>
-<meta name="description" content="Keep your tabs in profiles, groups and folders, each profile in the browser you choose. For macOS and Linux.">
+<title>Tabstage</title>
+<meta name="description" content="Tickets, statuses and notes that open in the browser you choose. For macOS and Linux, no extension needed.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500&display=swap">
@@ -38,6 +38,7 @@ header.top img { width: 28px; height: 28px; }
 header.top b { font: 600 18px var(--cond); }
 header.top a { margin-left: auto; font-size: 15px; }
 .hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; padding-block: 48px 72px; }
+.hero h1 { max-width: 16ch; }
 h1 { margin: 0; font: 600 clamp(2.6rem, 7vw, 4.4rem)/1 var(--cond); letter-spacing: -.02em; text-wrap: balance; max-width: 14ch; }
 .lede { margin: 18px 0 0; max-width: 54ch; color: var(--sub); font-size: 1.15rem; text-wrap: pretty; }
 .install { display: flex; flex-direction: column; gap: 12px; margin-top: 28px; max-width: 640px; }
@@ -50,28 +51,14 @@ h1 { margin: 0; font: 600 clamp(2.6rem, 7vw, 4.4rem)/1 var(--cond); letter-spaci
 .downloads a:hover { border-color: var(--blue); }
 .note { margin: 0; color: var(--sub); font-size: 14px; }
 
-/* The app, drawn with the same tokens it uses */
-.shot { overflow: hidden; border: 1px solid var(--s1); border-radius: 12px; background: var(--base); box-shadow: var(--shadow); font: 400 13px/1.4 var(--sans); }
-.bar { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-bottom: 1px solid var(--s0); background: var(--mantle); }
-.dot { width: 11px; height: 11px; border-radius: 50%; background: var(--s1); }
-.cols { display: grid; grid-template-columns: 170px minmax(0, 1fr); min-height: 300px; }
-.side { padding: 10px 6px; border-right: 1px solid var(--s0); background: var(--mantle); }
-.r { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; border-radius: 6px; white-space: nowrap; }
-.r.on { background: var(--s0); }
-.sq { flex: none; width: 9px; height: 9px; border-radius: 2px; background: var(--c); }
-.grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.bw { flex: none; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--c); color: var(--base); font: 600 9px var(--sans); }
-.bw.dim { opacity: .5; }
-.main { padding: 12px 14px; min-width: 0; }
-.head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.head b { font: 600 17px var(--cond); }
-.pill { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border: 1px solid var(--blue); border-radius: 6px; font-size: 12px; }
-.chip { flex: none; padding: 0 7px; border: 1px solid color-mix(in srgb, var(--c) 60%, transparent); border-radius: 4px; background: color-mix(in srgb, var(--c) 14%, transparent); font-size: 11px; line-height: 18px; }
-.ind { padding-left: 24px; }
-.chev { width: 10px; color: var(--sub); font-size: 11px; }
-.meta { color: var(--sub); font-size: 11px; }
-.nest { margin-left: 18px; padding-left: 6px; border-left: 1px solid var(--s0); }
-.open { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+/* Screenshots of the app, taken with sample data */
+.shot { display: block; width: 100%; height: auto; border: 1px solid var(--s1); border-radius: 12px; background: var(--mantle); box-shadow: var(--shadow); }
+.hero picture { display: block; margin-top: 8px; }
+.tour { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 40px 32px; padding-block: 0 72px; }
+.tour figure { margin: 0; }
+.tour figcaption { margin-top: 14px; color: var(--sub); font-size: 16px; }
+.tour figcaption b { color: var(--text); font-weight: 500; }
+kbd { padding: 1px 6px; border: 1px solid var(--s1); border-bottom-width: 2px; border-radius: 5px; font: 500 .85em var(--mono); }
 
 .points { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 32px; padding-block: 24px 72px; border-top: 1px solid var(--s0); }
 .points h2 { margin: 24px 0 8px; font: 600 1.3rem/1.2 var(--cond); }
@@ -82,13 +69,6 @@ h1 { margin: 0; font: 600 clamp(2.6rem, 7vw, 4.4rem)/1 var(--cond); letter-spaci
 .other dt { font-weight: 500; }
 .other dd { margin: 4px 0 0; }
 footer { padding-block: 24px 40px; border-top: 1px solid var(--s0); color: var(--sub); font-size: 14px; }
-@media (min-width: 900px) {
-  .hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: center; }
-}
-@media (max-width: 560px) {
-  .cols { grid-template-columns: minmax(0, 1fr); }
-  .side { display: none; }
-}
 </style>
 </head>
 <body>
@@ -101,8 +81,8 @@ footer { padding-block: 24px 40px; border-top: 1px solid var(--s0); color: var(-
 
   <section class="hero">
     <div>
-      <h1>Your tabs, organized your way</h1>
-      <p class="lede">Keep links in profiles such as Work, Personal or a client, and inside them in groups and folders, as deep as you need. Each profile opens in the browser you pick. If the tab is already open, Tabstage takes you to it. For macOS and Linux, no extension needed.</p>
+      <h1>Your tickets, one click from their tabs</h1>
+      <p class="lede">Keep what you are working on in profiles such as Work, a client or Personal. Move tickets through statuses you name, keep notes next to them, and open each one in the browser its profile uses. If the tab is already open, Tabstage takes you to it. For macOS and Linux, no extension needed.</p>
       <div class="install">
         <div class="cmd">
           <code id="cmd">curl -fsSL https://de-hv.github.io/tabstage/install.sh | sh</code>
@@ -117,44 +97,54 @@ footer { padding-block: 24px 40px; border-top: 1px solid var(--s0); color: var(-
       </div>
     </div>
 
-    <div class="shot" role="img" aria-label="Tabstage window: a tree of profiles, groups, folders and tabs next to the In TEST group">
-      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
-      <div class="cols">
-        <div class="side">
-          <div class="r"><span class="chev">▾</span><span class="sq" style="--c:var(--blue);border-radius:50%"></span><span class="grow"><b style="font-weight:500">Work</b></span></div>
-          <div class="r ind"><span class="chev">▸</span><span class="grow">In progress</span><span class="meta">4</span></div>
-          <div class="r ind on"><span class="chev">▾</span><span class="grow">🧪 In TEST</span><span class="meta">3</span></div>
-          <div class="r ind" style="padding-left:34px"><span class="grow">PROJ-142 checkout</span><span class="meta">2</span></div>
-          <div class="r ind"><span class="chev">▸</span><span class="grow">Done</span><span class="meta">9</span></div>
-          <div class="r ind"><span class="chev">▸</span><span class="grow">Onboarding</span><span class="meta">2</span></div>
-          <div class="r"><span class="chev">▸</span><span class="sq" style="--c:var(--peach);border-radius:50%"></span><span class="grow"><b style="font-weight:500">Personal</b></span></div>
-        </div>
-        <div class="main">
-          <div class="head"><b>🧪 In TEST</b><span class="pill">Work · opens in Chrome</span></div>
-          <div class="r"><span class="grow"><b style="font-weight:500">PROJ-142 checkout</b></span><span class="meta">2</span></div>
-          <div class="nest">
-            <div class="r"><span class="grow">Jira PROJ-142</span><span class="open" title="Open"></span></div>
-            <div class="r on"><span class="grow">PR #881 checkout fix</span><span style="font-size:11px">Go to tab</span></div>
-          </div>
-          <div class="r"><span class="grow">Staging dashboard</span></div>
-        </div>
-      </div>
-    </div>
+    <picture>
+      <source srcset="screenshots/board-dark.png" media="(prefers-color-scheme: dark)">
+      <img class="shot" src="screenshots/board-light.png" width="3080" height="1560" alt="Tabstage showing the Northwind profile as a board with Backlog, In progress, In review, In QA and Done columns, and the sidebar listing tickets by status">
+    </picture>
   </section>
 
   <section class="points">
     <div>
-      <h2>Groups as statuses</h2>
-      <p>Each profile is also a board with one column per group. Name them In progress, In TEST and Done, and drag a tab or folder along. Give anything an emoji, an icon or a ticket number.</p>
+      <h2>Statuses you name</h2>
+      <p>Backlog, In progress, In QA, Done, or whatever your team uses. Each profile is a board with one column per status, and the sidebar groups tickets the same way. Drag a ticket to move it along.</p>
+    </div>
+    <div>
+      <h2>Tickets inside tickets</h2>
+      <p>Break a ticket into sub-tickets, mark each as a task, bug or spike, and give it a key such as NW-401, an emoji or an icon. A sub-ticket in another status is flagged, so nothing gets lost.</p>
+    </div>
+    <div>
+      <h2>Notes next to the work</h2>
+      <p>Every ticket has a Markdown note, and every profile has its own notes for standups, checklists or ideas.</p>
     </div>
     <div>
       <h2>No duplicate tabs</h2>
       <p>On macOS, with Safari and Chromium browsers, a click takes you to the tab you already have open. Other browsers get a new tab.</p>
     </div>
     <div>
+      <h2>Find anything fast</h2>
+      <p>Press <kbd>⌥⇧K</kbd> from any app, or <kbd>⌘K</kbd> in the window, to search every ticket and note and open it.</p>
+    </div>
+    <div>
       <h2>Your data, in one file</h2>
       <p>Everything lives in one JSON file in a local folder you choose on first run. Nothing leaves your computer.</p>
     </div>
+  </section>
+
+  <section class="tour">
+    <figure>
+      <picture>
+        <source srcset="screenshots/ticket-dark.png" media="(prefers-color-scheme: dark)">
+        <img class="shot" src="screenshots/ticket-light.png" width="3080" height="1560" loading="lazy" alt="A ticket open in Tabstage: its key, kind, status, four sub-tickets in their own statuses and a Markdown note">
+      </picture>
+      <figcaption><b>A ticket and its work.</b> Status, sub-tickets, link and note in one view.</figcaption>
+    </figure>
+    <figure>
+      <picture>
+        <source srcset="screenshots/search-dark.png" media="(prefers-color-scheme: dark)">
+        <img class="shot" src="screenshots/search-light.png" width="3080" height="1560" loading="lazy" alt="Tabstage quick search listing the tickets that match “checkout”, with their status, profile and browser">
+      </picture>
+      <figcaption><b>Quick search.</b> Jump to any ticket or note, and open its tab, from the keyboard.</figcaption>
+    </figure>
   </section>
 
   <section class="other">
