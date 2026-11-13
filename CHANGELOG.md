@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/de-hv/tabstage-desktop/compare/v0.5.0...v0.6.0) (2026-11-13)
+
+
+### Features
+
+* Add ticket kinds, custom colors and sidebar drag to reorder; remove links ([f9a23bb](https://github.com/de-hv/tabstage-desktop/commit/f9a23bb88ab93007f13e5e6d046eb3289144e1be))
+
+
+### Bug Fixes
+
+* Turn off the webview's own right-click menu ([9cf5ddb](https://github.com/de-hv/tabstage-desktop/commit/9cf5ddb732df990bb3d3c6d38ee02991dafb2e1f))
+
 ## [0.5.0](https://github.com/de-hv/tabstage-desktop/compare/v0.4.1...v0.5.0) (2026-11-12)
 
 
