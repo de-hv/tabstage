@@ -787,7 +787,9 @@ fn commands_deserialize_from_ui_json() {
         Command::AddStatus { .. }
     ));
     assert!(matches!(
-        parse(r##"{"type":"setStatusColor","status":"00000000-0000-0000-0000-000000000001","color":"#ff6a3d"}"##),
+        parse(
+            r##"{"type":"setStatusColor","status":"00000000-0000-0000-0000-000000000001","color":"#ff6a3d"}"##
+        ),
         Command::SetStatusColor { .. }
     ));
     assert!(matches!(

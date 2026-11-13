@@ -206,7 +206,10 @@ fn chosen_roles_win_and_change_what_their_children_suggest() {
         .find(|n| n.title == "In STG")
         .expect("note");
     let body = stg.body.as_deref().expect("body");
-    assert_eq!(body.lines().filter(|line| line.starts_with("- [")).count(), 2);
+    assert_eq!(
+        body.lines().filter(|line| line.starts_with("- [")).count(),
+        2
+    );
     assert!(body.starts_with("- [CAR-6100 CSUI GQL to REST]("), "{body}");
     assert_eq!(summary.roles["t-6080"], Role::Ticket);
 }

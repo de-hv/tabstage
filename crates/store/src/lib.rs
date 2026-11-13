@@ -316,7 +316,10 @@ mod tests {
             .set_ticket_kind(child, TicketKind::Task)
             .expect("kind");
         workspace
-            .set_icon(Target::Ticket(ticket), Some(Icon::text("142").expect("icon")))
+            .set_icon(
+                Target::Ticket(ticket),
+                Some(Icon::text("142").expect("icon")),
+            )
             .expect("icon");
         workspace
             .set_profile_color(work, ProfileColor::from_hex("#ff6a3d").expect("hex"))

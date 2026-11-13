@@ -190,7 +190,9 @@ pub(crate) fn upgrade_v5(file: &mut Value) {
                     fold_links(ticket, "note");
                     if let Some(children) = ticket.get_mut("children").and_then(Value::as_array_mut)
                     {
-                        children.iter_mut().for_each(|child| fold_links(child, "note"));
+                        children
+                            .iter_mut()
+                            .for_each(|child| fold_links(child, "note"));
                     }
                 }
             }
@@ -215,10 +217,7 @@ fn fold_links(item: &mut Value, field: &str) {
     let Some(Value::Array(links)) = object.remove("links") else {
         return;
     };
-    let mut text = object
-        .get(field)
-        .and_then(Value::as_str)
-        .map(str::to_owned);
+    let mut text = object.get(field).and_then(Value::as_str).map(str::to_owned);
     for link in &links {
         let Some(url) = link.get("url").and_then(Value::as_str) else {
             continue;
@@ -244,13 +243,17 @@ pub(crate) fn link_line(title: &str, url: &str) -> String {
 pub(crate) fn append_line(text: Option<&str>, line: &str) -> String {
     match text.map(str::trim_end) {
         None | Some("") => line.to_owned(),
-        Some(text) if text.lines().last().is_some_and(|last| last.starts_with("- ")) => {
+        Some(text)
+            if text
+                .lines()
+                .last()
+                .is_some_and(|last| last.starts_with("- ")) =>
+        {
             format!("{text}\n{line}")
         }
         Some(text) => format!("{text}\n\n{line}"),
     }
 }
-
 
 #[cfg(test)]
 mod tests {
