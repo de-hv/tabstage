@@ -36,16 +36,34 @@ describe('sidebar lanes', () => {
     expect(within(lane('Notes')).getByRole('button', { name: 'Standup notes' })).toBeTruthy();
   });
 
-  it('paints a ticket with its status color and the status in its tooltip', async () => {
+  it('leaves rows uncolored, with the status in the tooltip', async () => {
     await renderApp();
 
     const row = treeRow('Carrier Commissions');
-    expect(row.getAttribute('data-lane')).toBe('true');
-    expect(row.style.getPropertyValue('--lane')).toBe('var(--profile-0)');
+    expect(row.hasAttribute('data-lane')).toBe(false);
     expect(within(row).getByRole('button', { name: 'CAR-5899 Carrier Commissions' }).getAttribute('title')).toContain(
       'Status: In TEST',
     );
-    expect(treeRow('Onboarding wiki').hasAttribute('data-lane')).toBe(false);
+  });
+
+  it('shows a sub-ticket’s status only when it differs from its parent’s', async () => {
+    const withChildren = () => {
+      const snapshot = snapshotFixture();
+      const carrier = snapshot.workspace.profiles[0]!.tickets.find((ticket) => ticket.id === CARRIER)!;
+      carrier.children = [
+        ...(carrier.children ?? []),
+        { id: '00000000-0000-0000-0000-00000000a003', title: 'Reviewed child', status: REVIEW },
+        { id: '00000000-0000-0000-0000-00000000a004', title: 'Unsorted child' },
+      ];
+      return snapshot;
+    };
+    const { user } = await renderApp({ snapshot: withChildren });
+    await user.click(within(sidebar()).getByRole('button', { name: 'Expand Carrier Commissions' }));
+
+    expect(treeRow('Carrier Commissions').querySelector('.tree-row__status')).toBeNull();
+    expect(treeRow('Money card').querySelector('.tree-row__status')).toBeNull();
+    expect(treeRow('Reviewed child').querySelector('.tree-row__status')?.textContent).toBe('In review');
+    expect(treeRow('Unsorted child').querySelector('.tree-row__status')?.textContent).toBe('No status');
   });
 
   it('expands a ticket to its sub-tickets', async () => {

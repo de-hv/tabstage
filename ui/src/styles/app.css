@@ -426,6 +426,20 @@
   white-space: nowrap;
 }
 
+/* A sub-ticket whose status differs from its parent's lane: a small pill. */
+.tree-row__status {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+}
+
+.tree-row__status .status-pill {
+  padding: 0 7px 0 5px;
+  font-size: 11px;
+  line-height: 17px;
+}
+
 .row__count {
   color: var(--subtext0);
   font-size: 12px;

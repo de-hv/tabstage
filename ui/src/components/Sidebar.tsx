@@ -335,6 +335,10 @@ function TicketNode({ ctx, profile, ticket, depth, lane, parent }: TicketNodePro
   const expanded = ctx.tree.isExpanded(ticket.id, false);
   const status = findStatus(ctx.snapshot.workspace, ticket.status);
   const target: Target = { ticket: ticket.id };
+  // The lane already says a row's status; only a sub-ticket whose status
+  // differs from its parent's (the lane it shows in) says its own.
+  const parentStatus = parent && findStatus(ctx.snapshot.workspace, parent.status);
+  const ownStatus = parent !== undefined && status?.id !== parentStatus?.id;
   return (
     <li>
       <TreeRow
@@ -344,7 +348,6 @@ function TicketNode({ ctx, profile, ticket, depth, lane, parent }: TicketNodePro
         name={ticket.title}
         ticketKey={ticket.key}
         note={ticket.note}
-        lane={status?.color}
         title={[ticket.key, ticket.title, status && `Status: ${status.name}`].filter(Boolean).join('\n')}
         expanded={hasInside ? expanded : undefined}
         onToggle={() => ctx.tree.set(ticket.id, !expanded)}
@@ -365,7 +368,16 @@ function TicketNode({ ctx, profile, ticket, depth, lane, parent }: TicketNodePro
             onOpenChange={setOpen}
           />
         )}
-        trailing={children.length > 0 ? <span className="row__count">{children.length}</span> : undefined}
+        trailing={
+          <>
+            {ownStatus && (
+              <span className="tree-row__status">
+                <StatusPill name={status?.name ?? 'No status'} color={status?.color} />
+              </span>
+            )}
+            {children.length > 0 && <span className="row__count">{children.length}</span>}
+          </>
+        }
         menu={(row) => ticketMenu(ticket.id, row, menuContext(ctx))}
       />
       {hasInside && expanded && (

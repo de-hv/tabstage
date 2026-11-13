@@ -1,11 +1,10 @@
 import { ChevronDown, ChevronRight, GripVertical } from 'lucide-react';
 import { type CSSProperties, type ReactNode, useState } from 'react';
 
-import type { Color, TicketKind } from '../api/types';
+import type { TicketKind } from '../api/types';
 import type { DragItem } from '../lib/dnd';
 import type { RowControls } from '../lib/menus';
 import { pressable } from '../lib/pressable';
-import { profileColor } from '../lib/profileColors';
 import { ActionMenu, type MenuEntry } from './ActionMenu';
 import { type DropSpec, useDrag, useDrop } from './DragDrop';
 import { InlineInput } from './InlineInput';
@@ -17,8 +16,6 @@ export interface TreeRowProps {
   /** For a ticket: its kind, which colors its default icon. */
   ticketKind?: TicketKind;
   name: string;
-  /** Color of the row's status: a left edge and a light tint. */
-  lane?: Color;
   /** A ticket key shown as a chip before the name. */
   ticketKey?: string;
   /** Shown as an icon with the text as its tooltip. */
@@ -51,7 +48,6 @@ export function TreeRow(props: TreeRowProps) {
   const drop = useDrop(props.drop);
   const controls: RowControls = { rename: () => setRenaming(true), openLeading: () => setLeadingOpen(true) };
   const style: Record<string, string | number> = { '--depth': depth };
-  if (props.lane !== undefined) style['--lane'] = profileColor(props.lane);
   const labelled = props.subtitle || props.ticketKey;
 
   return (
@@ -60,7 +56,6 @@ export function TreeRow(props: TreeRowProps) {
       data-kind={kind}
       data-ticket-kind={props.ticketKind}
       data-current={current || undefined}
-      data-lane={props.lane !== undefined || undefined}
       style={style as CSSProperties}
       {...(renaming ? {} : drag)}
       {...drop}
