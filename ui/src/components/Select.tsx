@@ -45,9 +45,12 @@ export function Select({ label, value, options, onChange, placeholder, className
           <RadixSelect.Viewport>
             {options.map((option) => (
               <RadixSelect.Item key={option.value} value={option.value} className="menu__item" data-kind={option.kind}>
-                <RadixSelect.ItemText className="select__item-text">
-                  {option.leading}
-                  <span className="menu__item-label">{option.label}</span>
+                {/* The button copies ItemText's children, so the layout span lives inside it. */}
+                <RadixSelect.ItemText>
+                  <span className="select__item-text">
+                    {option.leading}
+                    <span className="menu__item-label">{option.label}</span>
+                  </span>
                 </RadixSelect.ItemText>
                 <RadixSelect.ItemIndicator className="menu__chevron">
                   <Check className="icon" aria-hidden="true" />
