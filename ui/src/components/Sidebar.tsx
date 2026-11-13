@@ -6,6 +6,7 @@ import { needsSetup } from '../lib/browsers';
 import type { DragItem, DropTarget } from '../lib/dnd';
 import { noteMenu, profileMenu, ticketMenu } from '../lib/menus';
 import { pressable } from '../lib/pressable';
+import { profileColor } from '../lib/profileColors';
 import { type Lane, findStatus, findTicket, lanes } from '../lib/workspace';
 import type { ItemActions, Selection } from '../state/selection';
 import { useTreeState } from '../state/useTreeState';
@@ -294,7 +295,10 @@ function LaneNode({ ctx, profile, lane }: { ctx: TreeContext; profile: Profile; 
         </Tip>
       </div>
       {expanded && (
-        <ul className="tree-list">
+        <ul
+          className="tree-list lane__tickets"
+          style={lane.status ? ({ '--lane': profileColor(lane.status.color) } as CSSProperties) : undefined}
+        >
           {adding && (
             <li className="tree-form" style={{ '--depth': 1 } as CSSProperties}>
               <InlineInput
@@ -381,7 +385,7 @@ function TicketNode({ ctx, profile, ticket, depth, lane, parent }: TicketNodePro
         menu={(row) => ticketMenu(ticket.id, row, menuContext(ctx))}
       />
       {hasInside && expanded && (
-        <ul className="tree-list">
+        <ul className="tree-list tree-list--children" style={{ '--depth': depth } as CSSProperties}>
           {children.map((child) => (
             <TicketNode key={child.id} ctx={ctx} profile={profile} ticket={child} depth={depth + 1} parent={ticket} />
           ))}

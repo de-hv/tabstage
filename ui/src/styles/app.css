@@ -1282,6 +1282,40 @@
   list-style: none;
 }
 
+/* A lane's tickets: a thin rail in the status color down their left edge. */
+.lane__tickets {
+  position: relative;
+}
+
+.lane__tickets::before {
+  position: absolute;
+  top: 0;
+  bottom: 2px;
+  left: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: color-mix(in oklch, var(--lane, var(--overlay0)) 70%, transparent);
+  content: '';
+  pointer-events: none;
+}
+
+/* A ticket's sub-tickets: a grey line down from the parent's icon. */
+.tree-list--children {
+  position: relative;
+}
+
+.tree-list--children::before {
+  position: absolute;
+  top: 0;
+  bottom: 8px;
+  /* In the sub-tickets' empty chevron slot, clear of their drag handle and icon. */
+  left: calc(var(--depth, 0) * 14px + 23px);
+  width: 1px;
+  background: var(--surface1);
+  content: '';
+  pointer-events: none;
+}
+
 .tree-row {
   --indent: calc(var(--depth, 0) * 14px);
   display: flex;
