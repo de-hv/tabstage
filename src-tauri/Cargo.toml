@@ -1,6 +1,6 @@
 [package]
 name = "tabstage-desktop"
-description = "Tabstage Desktop: groups of tabs that open in the browser you choose."
+description = "Tabstage Desktop: tickets, statuses and notes that open in the browser you choose."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

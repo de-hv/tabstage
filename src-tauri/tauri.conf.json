@@ -27,7 +27,8 @@
   "bundle": {
     "active": true,
     "category": "Productivity",
-    "shortDescription": "Groups of tabs that open in the browser you choose",
+    "shortDescription": "Tickets, statuses and notes that open in the browser you choose",
+    "copyright": "© 2026 David Higuita · MIT License",
     "targets": [
       "app",
       "dmg",

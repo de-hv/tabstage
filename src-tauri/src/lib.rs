@@ -7,6 +7,8 @@
 //! Behavior lives in `tabstage-app`.
 
 mod commands;
+#[cfg(target_os = "macos")]
+mod menu;
 mod window;
 
 use std::sync::Mutex;
@@ -66,6 +68,9 @@ pub fn run() {
             )?;
             app.manage::<Service>(Mutex::new(service));
 
+            #[cfg(target_os = "macos")]
+            app.set_menu(menu::build(app.handle())?)?;
+
             use tauri_plugin_global_shortcut::GlobalShortcutExt;
             if let Err(error) = app.global_shortcut().register(PALETTE_SHORTCUT) {
                 // Another app may own the keys; ⌘K still works in the window.
@@ -75,6 +80,12 @@ pub fn run() {
                 );
             }
             Ok(())
+        })
+        .on_menu_event(|app, event| {
+            #[cfg(target_os = "macos")]
+            menu::handle(app, &event);
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
         })
         .on_window_event(|window, event| {
             // macOS apps stay open without windows; the Dock icon, the global
