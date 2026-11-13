@@ -16,7 +16,7 @@ use tabstage_core::{
 };
 
 use crate::migrate::{self, MigratedBinding};
-use crate::{APP, Result, StoreError, TICKETS_VERSION};
+use crate::{Result, StoreError, TICKETS_VERSION, is_tabstage_file};
 
 /// What an old group, folder or tab becomes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -115,7 +115,10 @@ pub struct LegacyTree {
 /// [`StoreError::UnsupportedVersion`] for a current or newer file.
 pub fn read_legacy(text: &str) -> Result<LegacyTree> {
     let mut value: Value = serde_json::from_str(text).map_err(StoreError::Parse)?;
-    if value.get("app").and_then(Value::as_str) != Some(APP) {
+    if !is_tabstage_file(
+        value.get("app").and_then(Value::as_str),
+        value.get("workspace").is_some(),
+    ) {
         return Err(StoreError::NotTabstage);
     }
     let version = value

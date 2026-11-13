@@ -1,13 +1,13 @@
 [package]
-name = "tabstage-desktop"
-description = "Tabstage Desktop: tickets, statuses and notes that open in the browser you choose."
+name = "tabstage"
+description = "Tabstage: tickets, statuses and notes that open in the browser you choose."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [lib]
-name = "tabstage_desktop_lib"
+name = "tabstage_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

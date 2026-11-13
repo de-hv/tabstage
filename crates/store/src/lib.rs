@@ -1,4 +1,4 @@
-//! Saves and loads the Tabstage Desktop workspace as one JSON file.
+//! Saves and loads the Tabstage workspace as one JSON file.
 //!
 //! The file lives in a local folder. Writes are atomic (temp file + rename),
 //! and [`FileStore`] refuses to overwrite a file that something else changed
@@ -23,8 +23,24 @@ use serde::{Deserialize, Serialize};
 use tabstage_core::{Workspace, WorkspaceError};
 use thiserror::Error;
 
-/// Value of the `app` field that marks a Tabstage Desktop file.
-pub const APP: &str = "tabstage-desktop";
+/// Value of the `app` field this build writes.
+pub const APP: &str = "tabstage";
+
+/// Value of the `app` field in files written before the app was renamed.
+/// They still open, and the next save writes [`APP`].
+pub const LEGACY_APP: &str = "tabstage-desktop";
+
+/// Whether a file's header marks it as a Tabstage data file.
+///
+/// The browser extension's board exports also use `"app": "tabstage"`, but
+/// they have no `workspace`, so a file with the current name must have one.
+fn is_tabstage_file(app: Option<&str>, has_workspace: bool) -> bool {
+    match app {
+        Some(LEGACY_APP) => true,
+        Some(APP) => has_workspace,
+        _ => false,
+    }
+}
 
 /// Version of the file format this build writes.
 pub const FORMAT_VERSION: u32 = 6;
@@ -63,8 +79,8 @@ pub enum StoreError {
     /// The file is not valid JSON or does not match the format.
     #[error("data file is not valid")]
     Parse(#[source] serde_json::Error),
-    /// The JSON file was not written by Tabstage Desktop.
-    #[error("file is not a Tabstage Desktop data file")]
+    /// The JSON file was not written by Tabstage.
+    #[error("file is not a Tabstage data file")]
     NotTabstage,
     /// The file was written by a newer version of the app.
     #[error("data file version {0} is newer than this app supports")]
@@ -109,7 +125,7 @@ pub fn to_json(document: &Document) -> String {
 /// [`StoreError::Invalid`].
 pub fn from_json(text: &str) -> Result<Document> {
     let header: Header = serde_json::from_str(text).map_err(StoreError::Parse)?;
-    if header.app.as_deref() != Some(APP) {
+    if !is_tabstage_file(header.app.as_deref(), header.workspace.is_some()) {
         return Err(StoreError::NotTabstage);
     }
     if header.version > FORMAT_VERSION {
@@ -139,6 +155,8 @@ struct Header {
     app: Option<String>,
     #[serde(default)]
     version: u32,
+    #[serde(default)]
+    workspace: Option<serde::de::IgnoredAny>,
 }
 
 #[derive(Serialize)]
@@ -384,8 +402,20 @@ mod tests {
     }
 
     #[test]
+    fn files_saved_before_the_rename_still_open() {
+        let document = sample();
+        let text = to_json(&document).replace(
+            &format!(r#""app": "{APP}""#),
+            &format!(r#""app": "{LEGACY_APP}""#),
+        );
+        assert!(text.contains(LEGACY_APP));
+
+        assert_eq!(from_json(&text).expect("open"), document);
+    }
+
+    #[test]
     fn from_json_rejects_newer_versions() {
-        let result = from_json(r#"{"app":"tabstage-desktop","version":99}"#);
+        let result = from_json(r#"{"app":"tabstage","version":99,"workspace":{}}"#);
         assert!(matches!(result, Err(StoreError::UnsupportedVersion(99))));
     }
 
@@ -419,7 +449,7 @@ mod tests {
 
     #[test]
     fn from_json_rejects_invalid_workspace() {
-        let text = r#"{"app":"tabstage-desktop","version":6,"workspace":{"profiles":[]}}"#;
+        let text = r#"{"app":"tabstage","version":6,"workspace":{"profiles":[]}}"#;
         assert!(matches!(
             from_json(text),
             Err(StoreError::Invalid(WorkspaceError::NoProfiles))

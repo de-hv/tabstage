@@ -1,4 +1,4 @@
-//! Application service for Tabstage Desktop.
+//! Application service for Tabstage.
 //!
 //! [`AppService`] owns the document and this machine's config, saves every
 //! change and opens tabs with the right profile. It does not know about

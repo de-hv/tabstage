@@ -1,9 +1,8 @@
-# Tabstage Desktop
+# Tabstage
 
 Tabs organized in profiles, groups and folders, each profile opening in the browser you choose,
 for macOS and Linux.
-It is the desktop version of the [Tabstage extension](https://github.com/de-hv/tabstage), for
-machines where browser extensions are not allowed.
+It needs no browser extension, so it also works on machines where extensions are not allowed.
 
 - **Profiles, groups, folders and tabs:** a profile such as *Work*, *Personal* or a client keeps
   its tabs apart. Inside a profile you are free to organize: groups, folders and tabs can sit

@@ -3,7 +3,7 @@ source: crates/store/src/lib.rs
 expression: to_json_redacted(&sample())
 ---
 {
-  "app": "tabstage-desktop",
+  "app": "tabstage",
   "settings": {},
   "version": 6,
   "workspace": {

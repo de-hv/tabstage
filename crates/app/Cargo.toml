@@ -1,6 +1,6 @@
 [package]
 name = "tabstage-app"
-description = "Application service for Tabstage Desktop: commands, persistence and opening tabs, independent of the UI shell."
+description = "Application service for Tabstage: commands, persistence and opening tabs, independent of the UI shell."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,4 +1,4 @@
-//! Tauri shell for Tabstage Desktop.
+//! Tauri shell for Tabstage.
 //!
 //! Thin on purpose: it builds the [`AppService`] with the real system
 //! adapters and exposes it to the UI as IPC commands, plus the global

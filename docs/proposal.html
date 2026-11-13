@@ -1,4 +1,4 @@
-<title>Tabstage Desktop</title>
+<title>Tabstage</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -145,9 +145,9 @@ ol.steps li::before{content:counter(s);font:500 13px/26px var(--font-mono);text-
 <div class="page">
 
 <header class="prose" style="gap:18px">
-  <h1>Tabstage Desktop</h1>
+  <h1>Tabstage</h1>
   <p class="lede">Una app de escritorio para macOS y Linux donde organizas tus tabs en grupos y carpetas, y cada grupo decide en qué navegador se abren. Sin extensiones y sin permisos especiales en el navegador.</p>
-  <p class="muted" style="font-size:14px">Propuesta técnica y de diseño · repo <code>tabstage-desktop</code> · noviembre 2026</p>
+  <p class="muted" style="font-size:14px">Propuesta técnica y de diseño · repo <code>tabstage</code> · noviembre 2026</p>
 </header>
 
 <section>
@@ -378,7 +378,7 @@ ol.steps li::before{content:counter(s);font:500 13px/26px var(--font-mono);text-
     <p>Es un workspace de Cargo con la lógica separada de la interfaz. El dominio no hace IO, así que se prueba con tests rápidos y deterministas. Todo lo que habla con el sistema (archivos, navegadores) se define con traits, y los tests usan dobles de esos traits.</p>
   </div>
   <div class="two">
-<pre><span class="c"># tabstage-desktop/</span>
+<pre><span class="c"># tabstage/</span>
 Cargo.toml            <span class="c"># workspace, lints y deps compartidas</span>
 crates/
   core/               <span class="c"># dominio puro, sin IO</span>
@@ -508,7 +508,7 @@ site/                 <span class="c"># GitHub Pages + install.sh</span></pre>
   <div class="two">
     <div class="prose">
       <h3>Instalación en una línea</h3>
-<pre>curl -fsSL https://&lt;usuario&gt;.github.io/tabstage-desktop/install.sh | sh</pre>
+<pre>curl -fsSL https://&lt;usuario&gt;.github.io/tabstage/install.sh | sh</pre>
       <p class="muted" style="font-size:15px">En macOS copia la app a <code>/Applications</code>. Como el archivo llega por <code>curl</code>, no lleva el atributo de cuarentena y Gatekeeper no la bloquea aunque la app no esté notarizada. En Linux instala el AppImage en <code>~/.local/bin</code> con su <code>.desktop</code> e icono, o usa <code>.deb</code>/<code>.rpm</code> si se pasa <code>--system</code>. El script verifica el SHA-256 publicado en el release.</p>
     </div>
     <div class="prose">

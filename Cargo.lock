@@ -3544,48 +3544,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "tabstage-app"
-version = "0.7.1"
-dependencies = [
- "serde",
- "serde_json",
- "tabstage-browsers",
- "tabstage-core",
- "tabstage-store",
- "tempfile",
- "thiserror 2.0.21",
- "tracing",
-]
-
-[[package]]
-name = "tabstage-browsers"
-version = "0.7.1"
-dependencies = [
- "insta",
- "plist",
- "serde",
- "serde_json",
- "tabstage-core",
- "thiserror 2.0.21",
- "tracing",
-]
-
-[[package]]
-name = "tabstage-core"
-version = "0.7.1"
-dependencies = [
- "proptest",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "unicode-segmentation",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "tabstage-desktop"
-version = "0.7.1"
+name = "tabstage"
+version = "0.7.2"
 dependencies = [
  "anyhow",
  "serde",
@@ -3604,8 +3564,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "tabstage-app"
+version = "0.7.2"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tabstage-browsers",
+ "tabstage-core",
+ "tabstage-store",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "tabstage-browsers"
+version = "0.7.2"
+dependencies = [
+ "insta",
+ "plist",
+ "serde",
+ "serde_json",
+ "tabstage-core",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "tabstage-core"
+version = "0.7.2"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "unicode-segmentation",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "tabstage-store"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "insta",
  "serde",

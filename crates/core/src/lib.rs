@@ -1,4 +1,4 @@
-//! Pure domain model for Tabstage Desktop.
+//! Pure domain model for Tabstage.
 //!
 //! This crate does no IO. It holds the workspace model: statuses, and
 //! profiles that hold tickets and notes.

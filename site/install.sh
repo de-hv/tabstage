@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs Tabstage Desktop from its GitHub releases.
+# Installs Tabstage from its GitHub releases.
 #
 #   curl -fsSL https://de-hv.github.io/tabstage/install.sh | sh
 #   curl -fsSL https://de-hv.github.io/tabstage/install.sh | sh -s -- --system

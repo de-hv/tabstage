@@ -1,6 +1,6 @@
 [package]
 name = "tabstage-store"
-description = "Saves and loads the Tabstage Desktop workspace as a JSON file, safe for synced folders."
+description = "Saves and loads the Tabstage workspace as a JSON file, safe for synced folders."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
