@@ -16,6 +16,7 @@ import { IconPicker } from './IconPicker';
 import { InlineInput } from './InlineInput';
 import { ItemIcon } from './ItemIcon';
 import { ProfileDot } from './ProfileDot';
+import { Select } from './Select';
 import { SetupNote } from './SetupNote';
 import { StatusPicker, StatusPill } from './StatusPill';
 
@@ -116,6 +117,18 @@ export function TicketView({ snapshot, ticket: id, apply, actions, onSelect, not
         )}
         <div className="ticket-view__meta">
           {details.keyField}
+          <Select
+            className="kind-select"
+            label="Ticket type"
+            value={ticket.kind ?? 'ticket'}
+            onChange={(kind) => void apply({ type: 'setTicketKind', ticket: id, kind: kind as TicketKind })}
+            options={TICKET_KINDS.map(({ kind, label, icon: Icon }) => ({
+              value: kind,
+              label,
+              kind,
+              leading: <Icon className="icon" aria-hidden="true" />,
+            }))}
+          />
           <StatusPicker
             statuses={workspace.statuses}
             value={status}

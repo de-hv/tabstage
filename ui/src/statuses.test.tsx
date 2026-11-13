@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ImportPreview, Snapshot } from './api/types';
 import { appliedCommands, snapshotFixture } from './test/ipc';
-import { DONE, IN_TEST, REVIEW, renderApp, renderRaw } from './test/render';
+import { DONE, IN_TEST, REVIEW, chooseOption, renderApp, renderRaw } from './test/render';
 
 async function openSettings() {
   const rendered = await renderApp();
@@ -63,8 +63,7 @@ describe('statuses in settings', () => {
   it('opens from "Edit statuses…" in a ticket’s status picker', async () => {
     const { user } = await renderApp();
     await user.click(within(screen.getByRole('navigation', { name: 'Library' })).getByText('Remove map'));
-    await user.click(screen.getByRole('button', { name: 'Status: In review' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Edit statuses…' }));
+    await chooseOption(screen.getByRole('combobox', { name: 'Status: In review' }), 'Edit statuses…');
 
     expect(await screen.findByRole('list', { name: 'Statuses' })).toBeTruthy();
   });
@@ -109,9 +108,9 @@ describe('import assistant', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Bring in your previous data' });
     expect(await within(dialog).findByText('CSUI Federated')).toBeTruthy();
-    expect((within(dialog).getByRole('combobox', { name: 'What In STG becomes' }) as HTMLSelectElement).value).toBe('status');
+    expect(within(dialog).getByRole('combobox', { name: 'What In STG becomes' }).textContent).toBe('Status');
 
-    await user.selectOptions(within(dialog).getByRole('combobox', { name: 'What In STG becomes' }), 'note');
+    await chooseOption(within(dialog).getByRole('combobox', { name: 'What In STG becomes' }), 'Note');
     await waitFor(() =>
       expect(calls.filter((call) => call.cmd === 'preview_import').at(-1)?.args).toEqual({
         path: null,

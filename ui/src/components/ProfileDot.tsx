@@ -1,4 +1,5 @@
 import * as Popover from '@radix-ui/react-popover';
+import * as ToggleGroup from '@radix-ui/react-toggle-group';
 import { Check } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -17,15 +18,20 @@ export function ProfileDot({ color }: { color: Color }) {
 export function Swatches({ value, onPick }: { value: Color | undefined; onPick: (color: Color) => void }) {
   return (
     <>
-      <div className="swatches__grid">
+      {/* Arrow keys move between colors; Enter or Space picks one. */}
+      <ToggleGroup.Root
+        type="single"
+        className="swatches__grid"
+        aria-label="Palette colors"
+        value={typeof value === 'number' ? String(value) : ''}
+        loop={false}
+      >
         {PROFILE_COLOR_NAMES.map((name, index) => {
           const checked = index === value;
           return (
-            <button
+            <ToggleGroup.Item
               key={name}
-              type="button"
-              role="menuitemradio"
-              aria-checked={checked}
+              value={String(index)}
               aria-label={name}
               title={name}
               className="swatch"
@@ -33,10 +39,10 @@ export function Swatches({ value, onPick }: { value: Color | undefined; onPick: 
               onClick={() => onPick(index)}
             >
               {checked && <Check className="swatch__check" aria-hidden="true" />}
-            </button>
+            </ToggleGroup.Item>
           );
         })}
-      </div>
+      </ToggleGroup.Root>
       <CustomColor value={isCustomColor(value) ? value : undefined} onPick={onPick} />
     </>
   );
@@ -72,8 +78,7 @@ function CustomColor({ value, onPick }: { value: string | undefined; onPick: (co
     <div className="swatches__custom">
       <label
         className="swatch swatch--custom"
-        role="menuitemradio"
-        aria-checked={value !== undefined}
+        data-checked={value !== undefined || undefined}
         title="Pick a custom color"
         style={shown ? { background: shown } : undefined}
         data-empty={shown ? undefined : true}
@@ -137,7 +142,7 @@ export function ProfileColorButton({ profile, onChange, open, onOpenChange }: Co
         </button>
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content className="swatches" align="start" sideOffset={6} role="menu" aria-label="Profile color">
+        <Popover.Content className="swatches" align="start" sideOffset={6} aria-label="Profile color">
           <Swatches
             value={profile.color}
             onPick={(color) => {

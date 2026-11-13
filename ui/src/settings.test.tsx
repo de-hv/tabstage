@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { appliedCommands, snapshotFixture } from './test/ipc';
-import { PERSONAL, QA, TRABAJO, clickMenuItem, renderApp, openRowMenu } from './test/render';
+import { PERSONAL, QA, TRABAJO, chooseOption, clickMenuItem, renderApp, openRowMenu } from './test/render';
 
 async function openSettings() {
   const rendered = await renderApp();
@@ -12,12 +12,12 @@ async function openSettings() {
 
 describe('settings', () => {
   it('chooses the browser of a profile, or the system browser', async () => {
-    const { calls, user } = await openSettings();
+    const { calls } = await openSettings();
 
     const select = screen.getByRole('combobox', { name: 'Browser for QA' });
-    expect((select as HTMLSelectElement).value).toBe('');
-    await user.selectOptions(select, 'com.apple.Safari');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Browser for Trabajo' }), '');
+    expect(select.textContent).toMatch(/^System browser/);
+    await chooseOption(select, 'Safari');
+    await chooseOption(screen.getByRole('combobox', { name: 'Browser for Trabajo' }), /^System browser/);
 
     expect(appliedCommands(calls)).toEqual([
       { type: 'bindProfile', profile: QA, browser: 'com.apple.Safari' },

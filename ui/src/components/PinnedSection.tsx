@@ -11,6 +11,7 @@ import { useDrag, useDrop, useIsDragging } from './DragDrop';
 import { ItemIcon } from './ItemIcon';
 import { TicketChip } from './Meta';
 import { ProfileDot } from './ProfileDot';
+import { Tip } from './Tooltip';
 
 interface Props {
   workspace: Workspace;
@@ -121,9 +122,11 @@ function PinnedRow({ pinned, current, onActivate, onUnpin }: RowProps) {
         <span className="pinned__profile" title={pinned.profile.name}>
           <ProfileDot color={pinned.profile.color} />
         </span>
-        <button type="button" className="icon-button pinned__unpin" aria-label={`Unpin ${name}`} title="Unpin" onClick={onUnpin}>
-          <PinOff className="icon" aria-hidden="true" />
-        </button>
+        <Tip label="Unpin">
+          <button type="button" className="icon-button pinned__unpin" aria-label={`Unpin ${name}`} onClick={onUnpin}>
+            <PinOff className="icon" aria-hidden="true" />
+          </button>
+        </Tip>
       </div>
     </li>
   );

@@ -15,6 +15,8 @@ import { ResizeHandle, SIDEBAR_DEFAULT, clampWidth } from './components/ResizeHa
 import { Settings } from './components/Settings';
 import { Sidebar } from './components/Sidebar';
 import { TicketView } from './components/TicketView';
+import { Toasts } from './components/Toasts';
+import { TooltipProvider } from './components/Tooltip';
 import { profileBrowser } from './lib/browsers';
 import { parseTicketLine } from './lib/markdown';
 import { findNote, findProfile, findTicket, pinnedIndex } from './lib/workspace';
@@ -175,119 +177,119 @@ export function App() {
   const requestFor = (request: Request, id: string) => (request?.id === id ? request.at : 0);
 
   return (
-    <DragProvider workspace={snapshot.workspace} apply={(command) => void apply(command)}>
-      <div className="app" data-collapsed={collapsed || undefined} style={{ '--sidebar-width': `${width}px` } as CSSProperties}>
-        <div className="app__banner">
-          {error && (
-            <Banner error={error} onReload={workspace.reload} onKeepMine={workspace.keepMine} onDismiss={workspace.dismissError} />
+    <TooltipProvider>
+      <DragProvider workspace={snapshot.workspace} apply={(command) => void apply(command)}>
+        <div className="app" data-collapsed={collapsed || undefined} style={{ '--sidebar-width': `${width}px` } as CSSProperties}>
+          <div className="app__banner">
+            {error && (
+              <Banner error={error} onReload={workspace.reload} onKeepMine={workspace.keepMine} onDismiss={workspace.dismissError} />
+            )}
+            {snapshot.legacyBackup && (
+              <div className="banner banner--info" role="status">
+                <ArchiveRestore className="icon" aria-hidden="true" />
+                <span className="banner__text">Your groups and folders from the previous version are saved aside and ready to import.</span>
+                <button type="button" className="button button--accent" onClick={() => setImportPath(null)}>
+                  Import them
+                </button>
+                <button type="button" className="button" onClick={() => void workspace.dismissImport()}>
+                  Not now
+                </button>
+              </div>
+            )}
+          </div>
+          <Sidebar
+            snapshot={snapshot}
+            selection={shown}
+            settingsOpen={settingsOpen}
+            onSelect={select}
+            onOpenSettings={() => {
+              setFocusProfile(null);
+              setFocusStatuses(false);
+              setSettingsOpen(true);
+            }}
+            apply={apply}
+            actions={actions}
+            collapsed={collapsed}
+            onCollapse={setCollapsed}
+          />
+          {!collapsed && (
+            <ResizeHandle
+              width={width}
+              onResize={(next, done) => {
+                setWidth(next);
+                if (done) saveWidth(next);
+              }}
+            />
           )}
-          {snapshot.legacyBackup && (
-            <div className="banner banner--info" role="status">
-              <ArchiveRestore className="icon" aria-hidden="true" />
-              <span className="banner__text">Your groups and folders from the previous version are saved aside and ready to import.</span>
-              <button type="button" className="button button--accent" onClick={() => setImportPath(null)}>
-                Import them
-              </button>
-              <button type="button" className="button" onClick={() => void workspace.dismissImport()}>
-                Not now
-              </button>
-            </div>
+          {settingsOpen ? (
+            <Settings
+              snapshot={snapshot}
+              apply={apply}
+              inspectDataFolder={workspace.inspectDataFolder}
+              relocate={workspace.relocate}
+              onRevealDataFile={() => void workspace.revealDataFile()}
+              focusProfile={focusProfile}
+              focusStatuses={focusStatuses}
+              onImport={setImportPath}
+            />
+          ) : shown?.kind === 'ticket' ? (
+            <TicketView
+              key={shown.id}
+              snapshot={snapshot}
+              ticket={shown.id}
+              apply={apply}
+              actions={actions}
+              onSelect={select}
+              notify={workspace.notify}
+              noteRequest={requestFor(noteRequest, shown.id)}
+            />
+          ) : shown?.kind === 'note' ? (
+            <NoteView
+              key={shown.id}
+              snapshot={snapshot}
+              note={shown.id}
+              apply={apply}
+              actions={actions}
+              onSelect={select}
+              notify={workspace.notify}
+              noteRequest={requestFor(noteRequest, shown.id)}
+            />
+          ) : shown?.kind === 'profile' && findProfile(snapshot.workspace, shown.id) ? (
+            <ProfileBoard
+              key={shown.id}
+              snapshot={snapshot}
+              profile={findProfile(snapshot.workspace, shown.id)!}
+              apply={apply}
+              actions={actions}
+              onSelect={select}
+            />
+          ) : (
+            <main className="group">
+              <p className="group__empty">Create a profile to start.</p>
+            </main>
           )}
-        </div>
-        <Sidebar
-          snapshot={snapshot}
-          selection={shown}
-          settingsOpen={settingsOpen}
-          onSelect={select}
-          onOpenSettings={() => {
-            setFocusProfile(null);
-            setFocusStatuses(false);
-            setSettingsOpen(true);
-          }}
-          apply={apply}
-          actions={actions}
-          collapsed={collapsed}
-          onCollapse={setCollapsed}
-        />
-        {!collapsed && (
-          <ResizeHandle
-            width={width}
-            onResize={(next, done) => {
-              setWidth(next);
-              if (done) saveWidth(next);
+          <Palette snapshot={snapshot} onSelect={select} />
+          <ConfirmDelete pending={pendingDelete} onClose={() => setPendingDelete(null)} />
+          <RemoveProfileDialog
+            profile={removing}
+            others={snapshot.workspace.profiles.filter((profile) => profile.id !== removingProfile)}
+            onClose={() => setRemovingProfile(null)}
+            onRemove={(moveItemsTo) => {
+              if (removingProfile) void apply({ type: 'removeProfile', profile: removingProfile, moveItemsTo });
+              setRemovingProfile(null);
             }}
           />
-        )}
-        {settingsOpen ? (
-          <Settings
-            snapshot={snapshot}
-            apply={apply}
-            inspectDataFolder={workspace.inspectDataFolder}
-            relocate={workspace.relocate}
-            onRevealDataFile={() => void workspace.revealDataFile()}
-            focusProfile={focusProfile}
-            focusStatuses={focusStatuses}
-            onImport={setImportPath}
+          <ImportWizard
+            path={importPath}
+            onClose={() => setImportPath(undefined)}
+            previewImport={workspace.previewImport}
+            importLegacy={workspace.importLegacy}
           />
-        ) : shown?.kind === 'ticket' ? (
-          <TicketView
-            key={shown.id}
-            snapshot={snapshot}
-            ticket={shown.id}
-            apply={apply}
-            actions={actions}
-            onSelect={select}
-            notify={workspace.notify}
-            noteRequest={requestFor(noteRequest, shown.id)}
-          />
-        ) : shown?.kind === 'note' ? (
-          <NoteView
-            key={shown.id}
-            snapshot={snapshot}
-            note={shown.id}
-            apply={apply}
-            actions={actions}
-            onSelect={select}
-            notify={workspace.notify}
-            noteRequest={requestFor(noteRequest, shown.id)}
-          />
-        ) : shown?.kind === 'profile' && findProfile(snapshot.workspace, shown.id) ? (
-          <ProfileBoard
-            key={shown.id}
-            snapshot={snapshot}
-            profile={findProfile(snapshot.workspace, shown.id)!}
-            apply={apply}
-            actions={actions}
-            onSelect={select}
-          />
-        ) : (
-          <main className="group">
-            <p className="group__empty">Create a profile to start.</p>
-          </main>
-        )}
-        <Palette snapshot={snapshot} onSelect={select} />
-        <ConfirmDelete pending={pendingDelete} onClose={() => setPendingDelete(null)} />
-        <RemoveProfileDialog
-          profile={removing}
-          others={snapshot.workspace.profiles.filter((profile) => profile.id !== removingProfile)}
-          onClose={() => setRemovingProfile(null)}
-          onRemove={(moveItemsTo) => {
-            if (removingProfile) void apply({ type: 'removeProfile', profile: removingProfile, moveItemsTo });
-            setRemovingProfile(null);
-          }}
-        />
-        <ImportWizard
-          path={importPath}
-          onClose={() => setImportPath(undefined)}
-          previewImport={workspace.previewImport}
-          importLegacy={workspace.importLegacy}
-        />
-        {snapshot.needsDataFile && <DataFileDialog defaultPath={snapshot.dataPath} choose={workspace.chooseDataFile} />}
-        <p className="toast" role="status">
-          {workspace.notice}
-        </p>
-      </div>
-    </DragProvider>
+          {snapshot.needsDataFile && <DataFileDialog defaultPath={snapshot.dataPath} choose={workspace.chooseDataFile} />}
+          <Toasts notices={workspace.notices} onDismiss={workspace.dismissNotice} />
+        </div>
+      </DragProvider>
+    </TooltipProvider>
   );
 }
 

@@ -2,6 +2,7 @@ import { Copy, ExternalLink, NotebookText, Pencil, Plus } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 
 import { plainText } from '../lib/markdown';
+import { Tip } from './Tooltip';
 
 /** The ticket id shown before a name, such as `PROJ-123`. */
 export function TicketChip({ ticketId }: { ticketId?: string }) {
@@ -153,10 +154,12 @@ export function TicketField({ ticketId, link, onOpen, onCopy, onSave, editReques
 
   if (!ticketId && !link) {
     return (
-      <button type="button" className="ticket-field ticket-field--empty" onClick={start} title="Add a ticket ID and link (T)">
-        <Plus className="icon" aria-hidden="true" />
-        Ticket
-      </button>
+      <Tip label="Add a ticket ID and link" keys="T">
+        <button type="button" className="ticket-field ticket-field--empty" onClick={start}>
+          <Plus className="icon" aria-hidden="true" />
+          Ticket
+        </button>
+      </Tip>
     );
   }
 
@@ -180,19 +183,22 @@ export function TicketField({ ticketId, link, onOpen, onCopy, onSave, editReques
           {label}
         </button>
       )}
-      <button
-        type="button"
-        className="icon-button ticket-field__edit"
-        aria-label="Edit ticket ID and link"
-        title="Edit ticket ID and link (T)"
-        onClick={start}
-      >
-        <Pencil className="icon" aria-hidden="true" />
-      </button>
-      {link && onCopy && (
-        <button type="button" className="icon-button ticket-field__copy" aria-label="Copy ticket link" title="Copy link" onClick={onCopy}>
-          <Copy className="icon" aria-hidden="true" />
+      <Tip label="Edit ticket ID and link" keys="T">
+        <button
+          type="button"
+          className="icon-button ticket-field__edit"
+          aria-label="Edit ticket ID and link"
+          onClick={start}
+        >
+          <Pencil className="icon" aria-hidden="true" />
         </button>
+      </Tip>
+      {link && onCopy && (
+        <Tip label="Copy link">
+          <button type="button" className="icon-button ticket-field__copy" aria-label="Copy ticket link" onClick={onCopy}>
+            <Copy className="icon" aria-hidden="true" />
+          </button>
+        </Tip>
       )}
     </span>
   );

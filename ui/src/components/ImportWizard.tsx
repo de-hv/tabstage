@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { AppError, ImportPreview, LegacyItem, Role } from '../api/types';
 import { lanes } from '../lib/workspace';
 import { ProfileDot } from './ProfileDot';
+import { Select } from './Select';
 import { StatusPill } from './StatusPill';
 
 interface Props {
@@ -214,18 +215,13 @@ function ImportItem({ item, depth, role, onChange }: ItemProps) {
           {item.key && <span className="ticket">{item.key}</span>}
           {item.name || item.url}
         </span>
-        <select
-          className="input import__role"
-          aria-label={`What ${item.name || item.url} becomes`}
+        <Select
+          className="import__role"
+          label={`What ${item.name || item.url} becomes`}
           value={value}
-          onChange={(event) => onChange(item.id, event.target.value as Role)}
-        >
-          {options.map((option) => (
-            <option key={option.role} value={option.role}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          onChange={(next) => onChange(item.id, next as Role)}
+          options={options.map((option) => ({ value: option.role, label: option.label }))}
+        />
       </div>
       {item.children.length > 0 && (
         <ul className="import__items">

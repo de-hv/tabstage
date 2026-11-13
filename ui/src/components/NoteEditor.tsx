@@ -28,6 +28,7 @@ import {
   NOTE_TEXT_STEP,
   useNoteTextSize,
 } from '../state/useNoteTextSize';
+import { Tip } from './Tooltip';
 
 const SAVE_DELAY_MS = 600;
 export const MAX_NOTE_LENGTH = 20_000;
@@ -190,37 +191,38 @@ export function NoteEditor({
         {editing && (
           <div className="note__tools" role="toolbar" aria-label="Formatting">
             {TOOLS.map(({ format: kind, label, icon: Icon, keys }) => (
-              <button
-                key={kind}
-                type="button"
-                className="icon-button"
-                aria-label={label}
-                title={keys ? `${label} (${keys})` : label}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => format(kind)}
-              >
-                <Icon className="icon" aria-hidden="true" />
-              </button>
+              <Tip key={kind} label={label} keys={keys}>
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={label}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => format(kind)}
+                >
+                  <Icon className="icon" aria-hidden="true" />
+                </button>
+              </Tip>
             ))}
             {onCreateTicket && (
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Ticket from selection"
-                title="Create a ticket from the selected line"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  const field = area.current;
-                  if (!field) return;
-                  const selected = draft.slice(field.selectionStart, field.selectionEnd);
-                  const lineStart = draft.lastIndexOf('\n', field.selectionStart - 1) + 1;
-                  const lineEnd = draft.indexOf('\n', field.selectionStart);
-                  const text = selected.trim() || draft.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
-                  if (text.trim()) onCreateTicket(text);
-                }}
-              >
-                <Ticket className="icon" aria-hidden="true" />
-              </button>
+              <Tip label="Create a ticket from the selected line">
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label="Ticket from selection"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    const field = area.current;
+                    if (!field) return;
+                    const selected = draft.slice(field.selectionStart, field.selectionEnd);
+                    const lineStart = draft.lastIndexOf('\n', field.selectionStart - 1) + 1;
+                    const lineEnd = draft.indexOf('\n', field.selectionStart);
+                    const text = selected.trim() || draft.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
+                    if (text.trim()) onCreateTicket(text);
+                  }}
+                >
+                  <Ticket className="icon" aria-hidden="true" />
+                </button>
+              </Tip>
             )}
           </div>
         )}
@@ -279,35 +281,38 @@ export function NoteEditor({
 function TextSize({ size, onChange }: { size: number; onChange: (size: number) => void }) {
   return (
     <div className="note__size" role="group" aria-label="Text size">
-      <button
-        type="button"
-        className="icon-button"
-        aria-label="Smaller text"
-        title="Smaller text (⌘−)"
-        disabled={size <= NOTE_TEXT_MIN}
-        onClick={() => onChange(size - NOTE_TEXT_STEP)}
-      >
-        <AArrowDown className="icon" aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        className="note__size-value"
-        aria-label={`Text size ${size}%, reset`}
-        title="Normal size (⌘0)"
-        onClick={() => onChange(NOTE_TEXT_DEFAULT)}
-      >
-        {size}%
-      </button>
-      <button
-        type="button"
-        className="icon-button"
-        aria-label="Larger text"
-        title="Larger text (⌘=)"
-        disabled={size >= NOTE_TEXT_MAX}
-        onClick={() => onChange(size + NOTE_TEXT_STEP)}
-      >
-        <AArrowUp className="icon" aria-hidden="true" />
-      </button>
+      <Tip label="Smaller text" keys="⌘−">
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Smaller text"
+          disabled={size <= NOTE_TEXT_MIN}
+          onClick={() => onChange(size - NOTE_TEXT_STEP)}
+        >
+          <AArrowDown className="icon" aria-hidden="true" />
+        </button>
+      </Tip>
+      <Tip label="Normal size" keys="⌘0">
+        <button
+          type="button"
+          className="note__size-value"
+          aria-label={`Text size ${size}%, reset`}
+          onClick={() => onChange(NOTE_TEXT_DEFAULT)}
+        >
+          {size}%
+        </button>
+      </Tip>
+      <Tip label="Larger text" keys="⌘=">
+        <button
+          type="button"
+          className="icon-button"
+          aria-label="Larger text"
+          disabled={size >= NOTE_TEXT_MAX}
+          onClick={() => onChange(size + NOTE_TEXT_STEP)}
+        >
+          <AArrowUp className="icon" aria-hidden="true" />
+        </button>
+      </Tip>
     </div>
   );
 }

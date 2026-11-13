@@ -19,6 +19,7 @@ import { ProfileColorButton } from './ProfileDot';
 import { SidebarRail } from './SidebarRail';
 import { StatusPill } from './StatusPill';
 import { TreeRow } from './TreeRow';
+import { Tip } from './Tooltip';
 
 interface Props {
   snapshot: Snapshot;
@@ -93,19 +94,22 @@ export function Sidebar(props: Props) {
   return (
     <nav className="sidebar" aria-label="Library">
       <div className="sidebar__header">
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Collapse sidebar"
-          title="Collapse sidebar (⌘\)"
-          onClick={() => props.onCollapse(true)}
-        >
-          <PanelLeftClose className="icon" aria-hidden="true" />
-        </button>
+        <Tip label="Collapse sidebar" keys="⌘\">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Collapse sidebar"
+            onClick={() => props.onCollapse(true)}
+          >
+            <PanelLeftClose className="icon" aria-hidden="true" />
+          </button>
+        </Tip>
         <span className="sidebar__title">Library</span>
-        <button type="button" className="icon-button" aria-label="Search" title="Search (⌘K)" onClick={openPalette}>
-          <Search className="icon" aria-hidden="true" />
-        </button>
+        <Tip label="Search" keys="⌘K">
+          <button type="button" className="icon-button" aria-label="Search" onClick={openPalette}>
+            <Search className="icon" aria-hidden="true" />
+          </button>
+        </Tip>
       </div>
       <div className="sidebar__scroll">
         <PinnedSection
@@ -278,15 +282,16 @@ function LaneNode({ ctx, profile, lane }: { ctx: TreeContext; profile: Profile; 
         >
           <StatusPill name={name} color={lane.status?.color} count={lane.tickets.length} collapsed={!expanded} />
         </div>
-        <button
-          type="button"
-          className="icon-button lane__add"
-          aria-label={`New ticket in ${name}`}
-          title={`New ticket in ${name}`}
-          onClick={() => ctx.setAdding({ profile: profile.id, kind: 'ticket', status })}
-        >
-          <Plus className="icon" aria-hidden="true" />
-        </button>
+        <Tip label={`New ticket in ${name}`}>
+          <button
+            type="button"
+            className="icon-button lane__add"
+            aria-label={`New ticket in ${name}`}
+            onClick={() => ctx.setAdding({ profile: profile.id, kind: 'ticket', status })}
+          >
+            <Plus className="icon" aria-hidden="true" />
+          </button>
+        </Tip>
       </div>
       {expanded && (
         <ul className="tree-list">
@@ -421,15 +426,16 @@ function NotesNode({ ctx, profile, adding }: { ctx: TreeContext; profile: Profil
       <div className="lane__head" {...drop}>
         <span className="lane__label">Notes</span>
         <span className="lane__count">{profile.notes.length}</span>
-        <button
-          type="button"
-          className="icon-button lane__add"
-          aria-label={`New note in ${profile.name}`}
-          title="New note"
-          onClick={() => ctx.setAdding({ profile: profile.id, kind: 'note', status: null })}
-        >
-          <Plus className="icon" aria-hidden="true" />
-        </button>
+        <Tip label="New note">
+          <button
+            type="button"
+            className="icon-button lane__add"
+            aria-label={`New note in ${profile.name}`}
+            onClick={() => ctx.setAdding({ profile: profile.id, kind: 'note', status: null })}
+          >
+            <Plus className="icon" aria-hidden="true" />
+          </button>
+        </Tip>
       </div>
       <ul className="tree-list">
         {adding && (

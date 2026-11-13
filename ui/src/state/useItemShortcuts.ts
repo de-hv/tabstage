@@ -8,7 +8,7 @@ export function useItemShortcuts(handlers: { onTicket: () => void; onNote: () =>
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
-      if (isTyping(event.target) || document.querySelector('[role="dialog"], [role="menu"]')) return;
+      if (isTyping(event.target) || document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) return;
       const key = event.key.toLowerCase();
       if (key === 't') latest.current.onTicket();
       else if (key === 'e') latest.current.onNote();

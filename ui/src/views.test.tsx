@@ -10,6 +10,7 @@ import {
   REMOVE_MAP,
   STANDUP,
   TRABAJO,
+  chooseOption,
   renderApp,
   sidebar,
 } from './test/render';
@@ -26,7 +27,7 @@ describe('ticket view', () => {
     const { calls, user, view } = await showTicket('Carrier Commissions');
 
     expect(within(view).getByRole('button', { name: 'Open ticket CAR-5899' })).toBeTruthy();
-    expect(within(view).getByRole('button', { name: 'Status: In TEST' })).toBeTruthy();
+    expect(within(view).getByRole('combobox', { name: 'Status: In TEST' })).toBeTruthy();
     expect(within(view).getByRole('button', { name: 'Open ticket CAR-5899' }).getAttribute('title')).toContain(
       'https://jira.example.com/browse/CAR-5899',
     );
@@ -40,11 +41,20 @@ describe('ticket view', () => {
     expect(calls).toContainEqual({ cmd: 'open_ticket_all', args: { ticket: CARRIER } });
   });
 
-  it('changes the status from the picker', async () => {
-    const { calls, user, view } = await showTicket('Carrier Commissions');
+  it('changes the type from the picker in the header', async () => {
+    const { calls, view } = await showTicket('Carrier Commissions');
 
-    await user.click(within(view).getByRole('button', { name: 'Status: In TEST' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Done' }));
+    const picker = within(view).getByRole('combobox', { name: 'Ticket type' });
+    expect(picker.textContent).toBe('Ticket');
+    await chooseOption(picker, 'Bug');
+
+    expect(appliedCommands(calls)).toEqual([{ type: 'setTicketKind', ticket: CARRIER, kind: 'bug' }]);
+  });
+
+  it('changes the status from the picker', async () => {
+    const { calls, view } = await showTicket('Carrier Commissions');
+
+    await chooseOption(within(view).getByRole('combobox', { name: 'Status: In TEST' }), 'Done');
 
     expect(appliedCommands(calls)).toEqual([{ type: 'setTicketStatus', ticket: CARRIER, status: DONE }]);
   });

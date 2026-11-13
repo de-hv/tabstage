@@ -93,3 +93,9 @@ export function dragAt(source: HTMLElement, target: HTMLElement, offset: number,
 export function clickMenuItem(name: string | RegExp) {
   fireEvent.click(screen.getByRole('menuitem', { name }));
 }
+
+/** Picks an option of a themed `Select` (its button has the combobox role). */
+export async function chooseOption(combobox: HTMLElement, option: string | RegExp) {
+  fireEvent.keyDown(combobox, { key: 'Enter' });
+  fireEvent.click(await screen.findByRole('option', { name: option }));
+}

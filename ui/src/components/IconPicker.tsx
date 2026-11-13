@@ -1,4 +1,6 @@
 import * as Popover from '@radix-ui/react-popover';
+import * as Tabs from '@radix-ui/react-tabs';
+import * as ToggleGroup from '@radix-ui/react-toggle-group';
 import { RotateCcw, Search } from 'lucide-react';
 import { iconNames } from 'lucide-react/dynamic';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
@@ -57,37 +59,38 @@ export function IconPicker({ name, icon, open, onOpenChange, onChange, children 
           aria-label={`Icon of ${name}`}
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
-          <div className="icon-picker__tabs" role="tablist" aria-label="Icon kind">
-            {(['emoji', 'icons', 'text'] as const).map((kind) => (
+          <Tabs.Root className="icon-picker__body" value={tab} onValueChange={(next) => setTab(next as Tab)}>
+            <div className="icon-picker__tabs">
+              <Tabs.List className="icon-picker__tablist" aria-label="Icon kind">
+                {(['emoji', 'icons', 'text'] as const).map((kind) => (
+                  <Tabs.Trigger key={kind} value={kind} className="icon-picker__tab">
+                    {kind === 'emoji' ? 'Emoji' : kind === 'icons' ? 'Icons' : 'Text'}
+                  </Tabs.Trigger>
+                ))}
+              </Tabs.List>
               <button
-                key={kind}
                 type="button"
-                role="tab"
-                aria-selected={tab === kind}
-                className="icon-picker__tab"
-                onClick={() => setTab(kind)}
+                className="icon-picker__reset"
+                disabled={!icon}
+                onClick={() => {
+                  onOpenChange(false);
+                  onChange(null);
+                }}
               >
-                {kind === 'emoji' ? 'Emoji' : kind === 'icons' ? 'Icons' : 'Text'}
+                <RotateCcw className="icon" aria-hidden="true" />
+                Reset
               </button>
-            ))}
-            <button
-              type="button"
-              className="icon-picker__reset"
-              disabled={!icon}
-              onClick={() => {
-                onOpenChange(false);
-                onChange(null);
-              }}
-            >
-              <RotateCcw className="icon" aria-hidden="true" />
-              Reset
-            </button>
-          </div>
-          <div role="tabpanel" className="icon-picker__panel">
-            {tab === 'emoji' && <EmojiPanel current={icon} onPick={choose} />}
-            {tab === 'icons' && <SymbolPanel current={icon} onPick={choose} />}
-            {tab === 'text' && <TextPanel current={icon} onPick={choose} />}
-          </div>
+            </div>
+            <Tabs.Content value="emoji" className="icon-picker__panel">
+              <EmojiPanel current={icon} onPick={choose} />
+            </Tabs.Content>
+            <Tabs.Content value="icons" className="icon-picker__panel">
+              <SymbolPanel current={icon} onPick={choose} />
+            </Tabs.Content>
+            <Tabs.Content value="text" className="icon-picker__panel">
+              <TextPanel current={icon} onPick={choose} />
+            </Tabs.Content>
+          </Tabs.Root>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -155,19 +158,19 @@ function EmojiPanel({ current, onPick }: PanelProps) {
               </div>
             </>
           )}
-          <div className="icon-picker__groups" role="group" aria-label="Emoji category">
+          <ToggleGroup.Root
+            type="single"
+            className="icon-picker__groups"
+            aria-label="Emoji category"
+            value={String(group)}
+            onValueChange={(next) => next && setGroup(Number(next))}
+          >
             {EMOJI_GROUPS.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                className="icon-picker__group"
-                aria-pressed={group === option.id}
-                onClick={() => setGroup(option.id)}
-              >
+              <ToggleGroup.Item key={option.id} value={String(option.id)} className="icon-picker__group">
                 {option.label}
-              </button>
+              </ToggleGroup.Item>
             ))}
-          </div>
+          </ToggleGroup.Root>
         </>
       )}
       {all === null ? (

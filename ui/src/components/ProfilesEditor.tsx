@@ -4,11 +4,13 @@ import { useEffect, useState } from 'react';
 
 import type { AppError, Command, Profile, Snapshot } from '../api/types';
 import { findBrowser, profileView } from '../lib/browsers';
+import { BrowserBadge } from './BrowserBadge';
 import { InlineInput } from './InlineInput';
 import { ProfileColorButton } from './ProfileDot';
+import { Select } from './Select';
 
-/** Value of the "System browser" option of the browser select. */
-const SYSTEM = '';
+/** Value of the "System browser" option of the browser select (an item can't be ''). */
+const SYSTEM = 'system';
 
 interface Props {
   snapshot: Snapshot;
@@ -99,25 +101,26 @@ function ProfileCard({ snapshot, profile, focused, canRemove, apply, onRemove }:
         )}
       </div>
       <div className="profile-card__fields">
-        <label className="profile-card__browser">
+        <div className="profile-card__browser">
           <span className="profile-card__label">Opens in</span>
-          <select
-            className="input"
-            aria-label={`Browser for ${profile.name}`}
+          <Select
+            className="profile-card__select"
+            label={`Browser for ${profile.name}`}
             value={view?.binding?.browser ?? SYSTEM}
             autoFocus={focused}
-            onChange={(event) =>
-              apply({ type: 'bindProfile', profile: profile.id, browser: event.target.value || null })
+            onChange={(browser) =>
+              apply({ type: 'bindProfile', profile: profile.id, browser: browser === SYSTEM ? null : browser })
             }
-          >
-            <option value={SYSTEM}>System browser ({system})</option>
-            {snapshot.browsers.map((browser) => (
-              <option key={browser.id} value={browser.id}>
-                {browser.name}
-              </option>
-            ))}
-          </select>
-        </label>
+            options={[
+              { value: SYSTEM, label: `System browser (${system})` },
+              ...snapshot.browsers.map((browser) => ({
+                value: browser.id,
+                label: browser.name,
+                leading: <BrowserBadge name={browser.name} kind={browser.kind} />,
+              })),
+            ]}
+          />
+        </div>
       </div>
     </article>
   );

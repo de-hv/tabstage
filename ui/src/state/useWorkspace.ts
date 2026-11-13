@@ -6,12 +6,19 @@ import type { AppError, Command, DataFileInfo, ImportPreview, Opened, Relocate, 
 /** Errors a form shows next to its own fields instead of in the banner. */
 const INLINE_CODES: ReadonlySet<AppError['code']> = new Set(['invalidUrl', 'invalid', 'cloudFolder']);
 
-const NOTICE_MS = 3000;
+
+/** A short message shown at the bottom of the window. */
+export interface Notice {
+  id: number;
+  text: string;
+}
 
 export interface WorkspaceState {
   snapshot: Snapshot | null;
   error: AppError | null;
-  notice: string;
+  /** Oldest first; each one closes by itself after a few seconds. */
+  notices: Notice[];
+  dismissNotice: (id: number) => void;
   /** Applies a change. Resolves to the error, if any, so forms can show it. */
   apply: (command: Command) => Promise<AppError | null>;
   reload: () => Promise<void>;
@@ -41,13 +48,14 @@ export interface WorkspaceState {
 export function useWorkspace(): WorkspaceState {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [error, setError] = useState<AppError | null>(null);
-  const [notice, setNotice] = useState('');
-  const noticeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const nextNotice = useRef(0);
 
   const show = useCallback((text: string) => {
-    clearTimeout(noticeTimer.current);
-    setNotice(text);
-    noticeTimer.current = setTimeout(() => setNotice(''), NOTICE_MS);
+    nextNotice.current += 1;
+    const notice = { id: nextNotice.current, text };
+    // The same message again restarts it instead of stacking a copy.
+    setNotices((current) => [...current.filter((shown) => shown.text !== text), notice]);
   }, []);
 
   const run = useCallback(async (task: () => Promise<Snapshot>, inline = false) => {
@@ -64,7 +72,6 @@ export function useWorkspace(): WorkspaceState {
 
   useEffect(() => {
     void run(api.snapshot);
-    return () => clearTimeout(noticeTimer.current);
   }, [run]);
 
   // Every change is saved right away, so a file that changed on disk was
@@ -92,7 +99,8 @@ export function useWorkspace(): WorkspaceState {
   return {
     snapshot,
     error,
-    notice,
+    notices,
+    dismissNotice: (id) => setNotices((current) => current.filter((notice) => notice.id !== id)),
     apply: (command) => run(() => api.apply(command), true),
     reload: async () => void (await run(api.reload)),
     keepMine: async () => void (await run(api.forceSave)),

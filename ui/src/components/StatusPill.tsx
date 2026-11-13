@@ -1,4 +1,4 @@
-import * as Menu from '@radix-ui/react-dropdown-menu';
+import * as Select from '@radix-ui/react-select';
 import { Check, ChevronDown, Ellipsis, Settings2 } from 'lucide-react';
 import type { CSSProperties } from 'react';
 
@@ -39,44 +39,61 @@ interface PickerProps {
   onEditStatuses: () => void;
 }
 
-/** The status of a ticket as a button that opens the list of statuses. */
+/** Select values that are not statuses. */
+const NONE = '__none';
+const EDIT = '__edit';
+
+/** The status of a ticket as a button that opens the list of statuses (a listbox, with typeahead). */
 export function StatusPicker({ statuses, value, onChange, onEditStatuses }: PickerProps) {
   return (
-    <Menu.Root modal={false}>
-      <Menu.Trigger asChild>
-        <button
-          type="button"
-          className="status-button"
-          aria-label={`Status: ${value?.name ?? 'No status'}`}
-          data-none={value ? undefined : true}
-          style={value ? ({ '--lane': profileColor(value.color) } as CSSProperties) : undefined}
-        >
-          <span className="status-pill__dot" aria-hidden="true" />
-          {value?.name ?? 'No status'}
+    <Select.Root
+      value={value?.id ?? NONE}
+      onValueChange={(next) => {
+        if (next === EDIT) onEditStatuses();
+        else onChange(next === NONE ? null : next);
+      }}
+    >
+      <Select.Trigger
+        className="status-button"
+        aria-label={`Status: ${value?.name ?? 'No status'}`}
+        data-none={value ? undefined : true}
+        style={value ? ({ '--lane': profileColor(value.color) } as CSSProperties) : undefined}
+      >
+        <span className="status-pill__dot" aria-hidden="true" />
+        {value?.name ?? 'No status'}
+        <Select.Icon asChild>
           <ChevronDown className="icon" aria-hidden="true" />
-        </button>
-      </Menu.Trigger>
-      <Menu.Portal>
-        <Menu.Content className="menu" align="start" sideOffset={4} collisionPadding={8}>
-          {statuses.map((status) => (
-            <Menu.Item key={status.id} className="menu__item" onSelect={() => onChange(status.id)}>
-              <span className="status-pill__dot" style={{ '--lane': profileColor(status.color) } as CSSProperties} aria-hidden="true" />
-              <span className="menu__item-label">{status.name}</span>
-              {value?.id === status.id && <Check className="icon menu__chevron" aria-hidden="true" />}
-            </Menu.Item>
-          ))}
-          <Menu.Item className="menu__item" onSelect={() => onChange(null)}>
-            <span className="status-pill__dot status-pill__dot--none" aria-hidden="true" />
-            No status
-            {!value && <Check className="icon menu__chevron" aria-hidden="true" />}
-          </Menu.Item>
-          <Menu.Separator className="separator" />
-          <Menu.Item className="menu__item" onSelect={onEditStatuses}>
-            <Settings2 className="icon" aria-hidden="true" />
-            Edit statuses…
-          </Menu.Item>
-        </Menu.Content>
-      </Menu.Portal>
-    </Menu.Root>
+        </Select.Icon>
+      </Select.Trigger>
+      <Select.Portal>
+        <Select.Content className="menu select__content" position="popper" align="start" sideOffset={4} collisionPadding={8}>
+          <Select.Viewport>
+            {statuses.map((status) => (
+              <Select.Item key={status.id} value={status.id} className="menu__item">
+                <span className="status-pill__dot" style={{ '--lane': profileColor(status.color) } as CSSProperties} aria-hidden="true" />
+                <Select.ItemText>
+                  <span className="menu__item-label">{status.name}</span>
+                </Select.ItemText>
+                <Select.ItemIndicator className="menu__chevron">
+                  <Check className="icon" aria-hidden="true" />
+                </Select.ItemIndicator>
+              </Select.Item>
+            ))}
+            <Select.Item value={NONE} className="menu__item">
+              <span className="status-pill__dot status-pill__dot--none" aria-hidden="true" />
+              <Select.ItemText>No status</Select.ItemText>
+              <Select.ItemIndicator className="menu__chevron">
+                <Check className="icon" aria-hidden="true" />
+              </Select.ItemIndicator>
+            </Select.Item>
+            <Select.Separator className="separator" />
+            <Select.Item value={EDIT} className="menu__item">
+              <Settings2 className="icon" aria-hidden="true" />
+              <Select.ItemText>Edit statuses…</Select.ItemText>
+            </Select.Item>
+          </Select.Viewport>
+        </Select.Content>
+      </Select.Portal>
+    </Select.Root>
   );
 }
