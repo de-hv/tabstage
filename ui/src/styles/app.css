@@ -1063,12 +1063,13 @@
 
 /* Profile dots and the color picker */
 
+/* A rounded square, so a profile reads apart from a status's round dot. */
 .profile-dot {
   display: inline-block;
   flex: none;
   width: 12px;
   height: 12px;
-  border-radius: 50%;
+  border-radius: 30%;
 }
 
 .profile-dot-button {
@@ -1079,7 +1080,7 @@
   height: 22px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: 6px;
   background: transparent;
   cursor: pointer;
 }
