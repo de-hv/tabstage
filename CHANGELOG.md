@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/de-hv/tabstage-desktop/compare/v0.7.1...v0.7.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* Show which tickets belong to each status and parent in the sidebar ([32a423f](https://github.com/de-hv/tabstage-desktop/commit/32a423f152e76ef99715f08bde7b80526e286971))
+
 ## [0.7.1](https://github.com/de-hv/tabstage-desktop/compare/v0.7.0...v0.7.1) (2026-11-13)
 
 
